@@ -1,8 +1,10 @@
+# backend/routers/projects.py
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any
 from backend.memory.conversation import save_message
 from backend.engine.planner import generate_proposal
+from backend.engine.context import set_last_proposal   # ← NUEVO
 
 router = APIRouter()
 
@@ -22,6 +24,13 @@ class ProposalResponse(BaseModel):
 def proposal(req: ProposalRequest):
     save_message(req.session_id, role="user", content=f"[REQ] {req.requirements}")
     p = generate_proposal(req.requirements)
-    save_message(req.session_id, role="assistant",
-                 content=f"[PROPUESTA {p['methodology']}] Presupuesto {p['budget']['total_eur']} €")
+
+    # Guarda para explicaciones posteriores
+    set_last_proposal(req.session_id, p, req.requirements)
+
+    save_message(
+        req.session_id,
+        role="assistant",
+        content=f"[PROPUESTA {p['methodology']}] Presupuesto {p['budget']['total_eur']} €"
+    )
     return ProposalResponse(**p)
