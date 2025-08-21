@@ -1,6 +1,7 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 from backend.memory.conversation import save_message, get_history
+from backend.engine.brain import generate_reply
 
 router = APIRouter()
 
@@ -15,22 +16,19 @@ class ChatResponse(BaseModel):
 @router.post("/message", response_model=ChatResponse)
 def chat_message(req: ChatRequest):
     save_message(req.session_id, role="user", content=req.message)
-    reply = f"Entendido: «{req.message}». (Respuesta de prueba Parte 1)"
+    reply, why = generate_reply(req.session_id, req.message)
     save_message(req.session_id, role="assistant", content=reply)
-    return ChatResponse(
-        reply=reply,
-        explanation="Eco simple para validar el flujo (Parte 1).",
-    )
+    return ChatResponse(reply=reply, explanation=why)
 
 @router.websocket("/ws")
 async def chat_ws(websocket: WebSocket, session_id: str):
     await websocket.accept()
-    await websocket.send_text("👋 Hola, soy el asistente (Parte 1). Escribe y te respondo con eco.")
+    await websocket.send_text("👋 Hola, soy el asistente. Describe requisitos o usa /propuesta: …")
     try:
         while True:
             text = await websocket.receive_text()
             save_message(session_id, role="user", content=text)
-            reply = f"Eco: {text}"
+            reply, _ = generate_reply(session_id, text)
             save_message(session_id, role="assistant", content=reply)
             await websocket.send_text(reply)
     except WebSocketDisconnect:

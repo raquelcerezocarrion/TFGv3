@@ -1,9 +1,25 @@
 import React, { useEffect, useRef, useState } from 'react'
 import axios from 'axios'
 
-const API_BASE = 'http://127.0.0.1:8000'
+const CANDIDATES = [
+  () => `http://${window.location.hostname}:8000`,
+  () => 'http://127.0.0.1:8000',
+  () => 'http://localhost:8000',
+]
+
+async function detectApiBase() {
+  for (const make of CANDIDATES) {
+    const base = make()
+    try {
+      await axios.get(`${base}/health`, { timeout: 1500 })
+      return base
+    } catch { /* prueba el siguiente */ }
+  }
+  return null
+}
 
 export default function Chat() {
+  const [apiBase, setApiBase] = useState(null)
   const [sessionId] = useState(() => 'demo-' + Math.random().toString(36).slice(2, 8))
   const [messages, setMessages] = useState([
     { role: 'assistant', content: '👋 Hola, soy el asistente (Parte 1). Pídeme una propuesta o escribe cualquier cosa.' }
@@ -12,19 +28,28 @@ export default function Chat() {
   const wsRef = useRef(null)
   const listRef = useRef(null)
 
+  // Descubre el backend y abre WebSocket si es posible
   useEffect(() => {
-    const wsUrl = `ws://127.0.0.1:8000/chat/ws?session_id=${sessionId}`
-    const ws = new WebSocket(wsUrl)
-    wsRef.current = ws
+    (async () => {
+      const base = await detectApiBase()
+      if (!base) {
+        setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ No encuentro el backend en :8000. Asegúrate de arrancar: uvicorn backend.app:app --reload --host 0.0.0.0 --port 8000' }])
+        return
+      }
+      setApiBase(base)
 
-    ws.onmessage = (evt) => {
-      setMessages((prev) => [...prev, { role: 'assistant', content: evt.data }])
-    }
-    ws.onerror = () => {
-      setMessages((prev) => [...prev, { role: 'assistant', content: '⚠️ No se pudo conectar por WebSocket. Usaré HTTP.' }])
-    }
-
-    return () => ws.close()
+      try {
+        const u = new URL(base)
+        const proto = u.protocol === 'https:' ? 'wss' : 'ws'
+        const wsUrl = `${proto}://${u.host}/chat/ws?session_id=${sessionId}`
+        const ws = new WebSocket(wsUrl)
+        wsRef.current = ws
+        ws.onmessage = (evt) => setMessages(prev => [...prev, { role: 'assistant', content: evt.data }])
+        ws.onerror = () => setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ No se pudo conectar por WebSocket. Usaré HTTP.' }])
+      } catch {
+        setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ No se pudo conectar por WebSocket. Usaré HTTP.' }])
+      }
+    })()
   }, [sessionId])
 
   useEffect(() => {
@@ -34,16 +59,22 @@ export default function Chat() {
   const send = async () => {
     const text = input.trim()
     if (!text) return
-    setMessages((prev) => [...prev, { role: 'user', content: text }])
+    setMessages(prev => [...prev, { role: 'user', content: text }])
     setInput('')
 
+    if (!apiBase) {
+      setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ Backend no detectado. ¿Arrancaste uvicorn en :8000?' }])
+      return
+    }
+
+    // Comando de propuesta
     if (text.toLowerCase().startsWith('/propuesta:')) {
       const req = text.split(':').slice(1).join(':').trim() || 'Proyecto genérico'
       try {
-        const { data } = await axios.post(`${API_BASE}/projects/proposal`, {
+        const { data } = await axios.post(`${apiBase}/projects/proposal`, {
           session_id: sessionId,
           requirements: req
-        })
+        }, { headers: { 'Content-Type': 'application/json' }, timeout: 5000 })
         const pretty = [
           `📌 Metodología: ${data.methodology}`,
           `👥 Equipo: ${data.team.map(t => `${t.role} x${t.count}`).join(', ')}`,
@@ -51,24 +82,27 @@ export default function Chat() {
           `💶 Presupuesto: ${data.budget.total_eur} €`,
           `⚠️ Riesgos: ${data.risks.join('; ')}`,
         ].join('\n')
-        setMessages((prev) => [...prev, { role: 'assistant', content: pretty }])
+        setMessages(prev => [...prev, { role: 'assistant', content: pretty }])
       } catch (e) {
-        setMessages((prev) => [...prev, { role: 'assistant', content: 'Error obteniendo la propuesta.' }])
+        const msg = e?.response?.data?.detail || e?.message || 'Error obteniendo la propuesta.'
+        setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${msg}` }])
       }
       return
     }
 
+    // WS si está abierto; si no, HTTP
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(text)
     } else {
       try {
-        const { data } = await axios.post(`${API_BASE}/chat/message`, {
+        const { data } = await axios.post(`${apiBase}/chat/message`, {
           session_id: sessionId,
           message: text
-        })
-        setMessages((prev) => [...prev, { role: 'assistant', content: data.reply }])
-      } catch {
-        setMessages((prev) => [...prev, { role: 'assistant', content: 'Error enviando mensaje.' }])
+        }, { headers: { 'Content-Type': 'application/json' }, timeout: 5000 })
+        setMessages(prev => [...prev, { role: 'assistant', content: data.reply }])
+      } catch (e) {
+        const msg = e?.response?.data?.detail || e?.message || 'Error enviando mensaje.'
+        setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${msg}` }])
       }
     }
   }
