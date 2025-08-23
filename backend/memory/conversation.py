@@ -1,23 +1,20 @@
-from typing import List, Dict, Any
-from sqlalchemy import select, desc
-from backend.memory.state_store import get_session, ConversationMessage
+from __future__ import annotations
+from dataclasses import dataclass
+from typing import List
 
-def save_message(session_id: str, role: str, content: str) -> None:
-    with get_session() as s:
-        s.add(ConversationMessage(session_id=session_id, role=role, content=content))
-        s.commit()
+from backend.memory.state_store import log_message, list_messages
 
-def get_history(session_id: str, limit: int = 50) -> List[Dict[str, Any]]:
-    with get_session() as s:
-        stmt = (
-            select(ConversationMessage)
-            .where(ConversationMessage.session_id == session_id)
-            .order_by(desc(ConversationMessage.created_at))
-            .limit(limit)
-        )
-        rows = s.execute(stmt).scalars().all()
-        data = [
-            {"role": r.role, "content": r.content, "created_at": r.created_at.isoformat()}
-            for r in reversed(rows)
-        ]
-        return data
+@dataclass
+class ConversationMessage:
+    role: str
+    text: str
+    created_at: str  # ISO-8601
+
+def save_message(session_id: str, role: str, text: str) -> None:
+    log_message(session_id, role, text)
+
+def get_history(session_id: str, limit: int = 50) -> List[ConversationMessage]:
+    rows = list_messages(session_id, limit=limit)  # viene DESC
+    rows = list(reversed(rows))                   # lo pasamos a ASC
+    return [ConversationMessage(**r) for r in rows]
+

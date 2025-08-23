@@ -1,39 +1,44 @@
+# backend/routers/chat.py
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel, Field
-from backend.memory.conversation import save_message, get_history
+from pydantic import BaseModel
+from typing import Optional, Dict, Any
+
 from backend.engine.brain import generate_reply
 
 router = APIRouter()
 
-class ChatRequest(BaseModel):
-    session_id: str = Field(..., min_length=1)
-    message: str = Field(..., min_length=1)
+class ChatIn(BaseModel):
+    message: str
+    session_id: Optional[str] = None
 
-class ChatResponse(BaseModel):
-    reply: str
-    explanation: str
+def _reply(payload: ChatIn) -> Dict[str, Any]:
+    sid = payload.session_id or "default"
+    text, debug = generate_reply(sid, payload.message)
+    return {"reply": text, "debug": debug, "session_id": sid}
 
-@router.post("/message", response_model=ChatResponse)
-def chat_message(req: ChatRequest):
-    save_message(req.session_id, role="user", content=req.message)
-    reply, why = generate_reply(req.session_id, req.message)
-    save_message(req.session_id, role="assistant", content=reply)
-    return ChatResponse(reply=reply, explanation=why)
+# --- Endpoints HTTP (cubrimos varios paths habituales) ---
+@router.post("/")
+async def chat_root(payload: ChatIn):
+    return _reply(payload)
 
+@router.post("/send")
+async def chat_send(payload: ChatIn):
+    return _reply(payload)
+
+@router.post("/message")
+async def chat_message(payload: ChatIn):
+    return _reply(payload)
+
+# --- WebSocket opcional (el frontend puede intentar ws y hacer fallback) ---
 @router.websocket("/ws")
-async def chat_ws(websocket: WebSocket, session_id: str):
-    await websocket.accept()
-    await websocket.send_text("👋 Hola, soy el asistente. Describe requisitos o usa /propuesta: …")
+async def chat_ws(ws: WebSocket):
+    await ws.accept()
+    sid = "ws"
     try:
         while True:
-            text = await websocket.receive_text()
-            save_message(session_id, role="user", content=text)
-            reply, _ = generate_reply(session_id, text)
-            save_message(session_id, role="assistant", content=reply)
-            await websocket.send_text(reply)
+            msg = await ws.receive_text()
+            text, _ = generate_reply(sid, msg)
+            await ws.send_text(text)
     except WebSocketDisconnect:
-        pass
-
-@router.get("/history/{session_id}")
-def history(session_id: str, limit: int = 50):
-    return {"session_id": session_id, "messages": get_history(session_id, limit=limit)}
+        # conexión cerrada por el cliente
+        return
