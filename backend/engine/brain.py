@@ -2,6 +2,14 @@ import re
 from typing import Tuple, Dict, Any, List, Optional
 from backend.engine.planner import generate_proposal
 from backend.engine.context import get_last_proposal, set_last_proposal
+from backend.memory.state_store import save_proposal, log_message
+
+# NLU (opcional; si no hay modelo, cae en reglas internas del runtime)
+try:
+    from backend.nlu.intents import IntentsRuntime
+    _INTENTS = IntentsRuntime()
+except Exception:
+    _INTENTS = None
 
 # =============== Utilidades básicas ===============
 
@@ -11,7 +19,7 @@ def _norm(text: str) -> str:
 def _token_present(text: str, token: str) -> bool:
     return token in _norm(text)
 
-# =============== Detección de intenciones ===============
+# =============== Detección de intenciones (regex de respaldo) ===============
 
 def _is_greeting(text: str) -> bool:
     return bool(re.search(r"\b(hola|buenas|hey|hello|qué tal|que tal)\b", text, re.I))
@@ -44,7 +52,6 @@ def _asks_expand_risks(text: str) -> bool:
     return ("riesgo" in t or "riesgos" in t) and ("ampl" in t or "detall" in t or "profund" in t or "más" in t or "mas" in t)
 
 def _asks_risks_simple(text: str) -> bool:
-    """Preguntas tipo: 'qué riesgos hay', 'riesgos del proyecto', etc."""
     t = _norm(text)
     return ("riesgo" in t or "riesgos" in t)
 
@@ -57,9 +64,6 @@ def _asks_why_team_general(text: str) -> bool:
     return _asks_why(t) and ("equipo" in t or "roles" in t or "personal" in t or "plantilla" in t or "dimension" in t)
 
 def _asks_why_role_count(text: str) -> Optional[Tuple[str, float]]:
-    """
-    Detecta 'por qué 2 backend', 'por qué 0.5 ux', etc. Devuelve (ROL_CANÓNICO, CANTIDAD).
-    """
     t = _norm(text)
     m = re.search(r"(\d+(?:[.,]\d+)?)\s*(pm|project manager|tech\s*lead|arquitect[oa]|backend|frontend|qa|tester|quality|ux|ui|ml|data)", t)
     if not m:
@@ -95,7 +99,6 @@ def _canonical_role(role_text: str) -> str:
     return role_text.strip().title()
 
 def _extract_roles_from_text(text: str) -> List[str]:
-    """Devuelve lista de roles (canónicos) mencionados en el texto."""
     t = _norm(text)
     found = set()
     for k, v in _ROLE_SYNONYMS.items():
@@ -207,7 +210,7 @@ def _explain_team_general(proposal: Dict[str, Any], requirements: Optional[str])
     return reasons
 
 def _explain_phases(proposal: Dict[str, Any]) -> List[str]:
-    reasons = []
+    reasons: List[str] = []
     for ph in proposal["phases"]:
         nm = _norm(ph["name"])
         if "descubr" in nm:
@@ -263,14 +266,77 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
     text = message.strip()
     proposal, req_text = get_last_proposal(session_id)
 
-    # Comando explícito
+    # --- NLU (intents) opcional: atajos de alta confianza ---
+    intent, conf = ("other", 0.0)
+    if _INTENTS is not None:
+        try:
+            intent, conf = _INTENTS.predict(text)
+        except Exception:
+            intent, conf = ("other", 0.0)
+
+    if conf >= 0.80:
+        if intent == "greet":
+            return "¡Hola! ¿En qué te ayudo con tu proyecto? Describe requisitos o usa '/propuesta: ...' y preparo un plan.", "Saludo (intent)."
+        if intent == "goodbye":
+            return "¡Hasta luego! Si quieres, deja aquí los requisitos y seguiré trabajando en la propuesta.", "Despedida (intent)."
+        if intent == "thanks":
+            return "¡A ti! Si necesitas presupuesto o plan de equipo, dime los requisitos.", "Agradecimiento (intent)."
+        if intent == "help":
+            return ("Puedo: 1) generar una propuesta completa (equipo, fases, metodología, presupuesto, riesgos), "
+                    "2) explicar por qué tomo cada decisión, 3) rechazar/aceptar cambios y reajustar el plan."), "Ayuda (intent)."
+        if intent == "ask_risks" and not _asks_why(text):
+            risks = _expand_risks(req_text, proposal.get("methodology") if proposal else None)
+            return ("Riesgos del proyecto:\n- " + "\n- ".join(risks)), "Riesgos (intent)."
+        if intent == "ask_team" and not _asks_why(text):
+            if proposal:
+                reasons = _explain_team_general(proposal, req_text)
+                return ("Equipo propuesto — razones:\n- " + "\n- ".join(reasons)), "Equipo (intent)."
+        if intent == "ask_budget" and not _asks_why(text):
+            if proposal:
+                return ("\n".join(_explain_budget(proposal)), "Presupuesto (intent).")
+        if intent == "ask_methodology" and not _asks_why(text):
+            return ("Scrum: iteraciones fijas… Kanban: flujo continuo… Scrumban: híbrido… "
+                    "Si me das requisitos, elijo y justifico la mejor opción."), "Metodología (intent)."
+        if intent == "ask_why_budget" and proposal:
+            return ("Presupuesto — por qué:\n- " + "\n- ".join(_explain_budget(proposal))), "Por qué presupuesto (intent)."
+        if intent == "ask_why_methodology":
+            current_method = proposal["methodology"] if proposal else None
+            target = None
+            for m in ["scrumban", "kanban", "scrum", "metodolog"]:
+                if m in _norm(text):
+                    target = "Scrumban" if m == "scrumban" else ("Kanban" if m == "kanban" else ("Scrum" if m == "scrum" else current_method))
+                    break
+            if target:
+                reasons = _explain_methodology(target, req_text)
+                return ("¿Por qué **{}**?\n- ".format(target) + "\n- ".join(reasons)), "Por qué metodología (intent)."
+        if intent == "ask_why_team" and proposal:
+            reasons = _explain_team_general(proposal, req_text)
+            team_lines = [f"- {t['role']} x{t['count']}" for t in proposal["team"]]
+            return ("Equipo — por qué:\n- " + "\n- ".join(reasons) + "\nDesglose: \n" + "\n".join(team_lines)), "Por qué equipo (intent)."
+        if intent == "ask_why_role_count" and proposal:
+            rc = _asks_why_role_count(text)
+            if rc:
+                role, count = rc
+                return (f"¿Por qué **{count:g} {role}**?\n- " + "\n- ".join(_explain_role_count(role, count, req_text))), "Por qué rol x cantidad (intent)."
+
+    # --- Comando explícito ---
     if text.lower().startswith("/propuesta:"):
         req = text.split(":", 1)[1].strip() or "Proyecto genérico"
+        try: log_message(session_id, "user", f"[REQ] {req}")
+        except Exception: pass
+
         p = generate_proposal(req)
         set_last_proposal(session_id, p, req)
+
+        try: save_proposal(session_id, req, p)
+        except Exception: pass
+
+        try: log_message(session_id, "assistant", f"[PROPUESTA {p['methodology']}] {p['budget']['total_eur']} €")
+        except Exception: pass
+
         return _pretty_proposal(p), "He generado una propuesta basada en tus requisitos."
 
-    # Intenciones básicas
+    # --- Intenciones básicas (regex de respaldo) ---
     if _is_greeting(text):
         return "¡Hola! ¿En qué te ayudo con tu proyecto? Describe requisitos o usa '/propuesta: ...' y preparo un plan.", "Saludo detectado."
     if _is_farewell(text):
@@ -278,20 +344,17 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
     if _is_thanks(text):
         return "¡A ti! Si necesitas presupuesto o plan de equipo, dime los requisitos.", "Agradecimiento detectado."
     if _is_help(text):
-        return (
-            "Puedo: 1) generar una propuesta completa (equipo, fases, metodología, presupuesto, riesgos), "
-            "2) explicar por qué tomo cada decisión, 3) rechazar/aceptar cambios y reajustar el plan."
-        ), "Ayuda solicitada."
+        return ("Puedo: 1) generar una propuesta completa (equipo, fases, metodología, presupuesto, riesgos), "
+                "2) explicar por qué tomo cada decisión, 3) rechazar/aceptar cambios y reajustar el plan."), "Ayuda solicitada."
 
-    # --- Consultas directas de RIESGOS (sin 'por qué') ---
+    # --- RIESGOS directos ---
     if _asks_risks_simple(text) and not _asks_why(text):
         risks = _expand_risks(req_text, proposal.get("methodology") if proposal else None)
-        return ("Riesgos del proyecto:\n- " + "\n- ".join(risks)), "Listado de riesgos (contextualizados si hay requisitos/propuesta)."
+        return ("Riesgos del proyecto:\n- " + "\n- ".join(risks)), "Listado de riesgos."
 
-    # --- Consulta directa de un ROL concreto (sin 'por qué') ---
+    # --- ROL concreto (sin 'por qué') ---
     roles_mentioned = _extract_roles_from_text(text)
     if roles_mentioned and not _asks_why(text):
-        # Si hay exactamente 1 rol, explica SOLO ese.
         if len(roles_mentioned) == 1:
             r = roles_mentioned[0]
             bullets = _explain_role(r, req_text)
@@ -301,38 +364,30 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
                 if cnt is not None:
                     bullets = _explain_role_count(r, cnt, req_text)
                     extra = f"\nEn esta propuesta: **{cnt:g} {r}**."
-            return (f"{r} — función/valor:\n- " + "\n- ".join(bullets) + extra), "Explicación de rol concreto."
-        # Si cita varios roles, devuelve guía breve (no la explicación de todos).
+            return (f"{r} — función/valor:\n- " + "\n- ".join(bullets) + extra), "Explicación de rol."
         else:
             return ("Veo varios roles mencionados. Dime uno concreto (p. ej., 'QA' o 'Tech Lead') y te explico su función y por qué está en el plan."), "Varios roles detectados."
 
-    # Preguntas de dominio (sin 'por qué')
+    # --- Preguntas de dominio (sin 'por qué') ---
     if _asks_methodology(text) and not _asks_why(text):
-        return (
-            "Scrum: iteraciones fijas y roles definidos (bueno para incertidumbre). "
-            "Kanban: flujo continuo y límites de WIP (bueno para operación/soporte). "
-            "Scrumban: híbrido cuando hay cambios pero también trabajo continuo. "
-            "Si me das requisitos, elijo y justifico la mejor opción."
-        ), "Explicación de metodologías."
+        return ("Scrum: iteraciones fijas y roles definidos (bueno para incertidumbre). "
+                "Kanban: flujo continuo y límites de WIP (bueno para operación/soporte). "
+                "Scrumban: híbrido cuando hay cambios pero también trabajo continuo. "
+                "Si me das requisitos, elijo y justifico la mejor opción."), "Explicación de metodologías."
     if _asks_budget(text) and not _asks_why(text):
         if proposal:
-            return ("\n".join(_explain_budget(proposal)), "Desglose del presupuesto actual.")
-        return (
-            "Para estimar presupuesto considero: alcance → equipo → semanas → tarifa media + 10% de contingencia."
-        ), "Guía de presupuesto."
+            return ("\n".join(_explain_budget(proposal)), "Desglose del presupuesto.")
+        return ("Para estimar presupuesto considero: alcance → equipo → semanas → tarifa media + 10% de contingencia."), "Guía de presupuesto."
     if _asks_team(text) and not _asks_why(text):
         if proposal:
             reasons = _explain_team_general(proposal, req_text)
-            return ("Equipo propuesto — razones:\n- " + "\n- ".join(reasons)), "Explicación general del equipo."
-        return (
-            "Perfiles típicos: PM, Tech Lead, Backend, Frontend, QA, UX. "
-            "La cantidad depende de módulos: pagos, panel admin, mobile, IA… "
-            "Describe el alcance y dimensiono el equipo."
-        ), "Guía de roles."
+            return ("Equipo propuesto — razones:\n- " + "\n- ".join(reasons)), "Explicación del equipo."
+        return ("Perfiles típicos: PM, Tech Lead, Backend, Frontend, QA, UX. "
+                "La cantidad depende de módulos: pagos, panel admin, mobile, IA… "
+                "Describe el alcance y dimensiono el equipo."), "Guía de roles."
 
-    # --- Explicaciones "¿por qué...?" ---
+    # --- Explicaciones 'por qué' ---
     if _asks_why(text):
-        # Metodología
         current_method = proposal["methodology"] if proposal else None
         for m in ["scrum", "kanban", "scrumban", "metodolog"]:
             if m in _norm(text):
@@ -341,21 +396,14 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
                     reasons = _explain_methodology(target, req_text)
                     return ("¿Por qué **{}**?\n- ".format(target) + "\n- ".join(reasons)), "Explicación de metodología."
                 break
-
-        # Equipo/roles en general
         if proposal and _asks_why_team_general(text):
             reasons = _explain_team_general(proposal, req_text)
-            # añade desglose por rol (breve)
             team_lines = [f"- {t['role']} x{t['count']}" for t in proposal["team"]]
             return ("Equipo — por qué:\n- " + "\n- ".join(reasons) + "\nDesglose: \n" + "\n".join(team_lines)), "Explicación del equipo."
-
-        # Cantidad por rol
         rc = _asks_why_role_count(text)
         if proposal and rc:
             role, count = rc
-            return (f"¿Por qué **{count:g} {role}**?\n- " + "\n- ".join(_explain_role_count(role, count, req_text))), "Explicación de cantidad por rol."
-
-        # Fases
+            return (f"¿Por qué **{count:g} {role}**?\n- " + "\n- ".join(_explain_role_count(role, count, req_text))), "Cantidad por rol."
         if proposal and _asks_why_phases(text):
             expl = _explain_phases(proposal)
             m = re.search(r"\b(\d+)\s*fases\b", _norm(text))
@@ -363,22 +411,16 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
                 asked = int(m.group(1))
                 expl.insert(1, f"Se han propuesto {len(proposal['phases'])} fases (preguntas por {asked}).")
             return ("Fases — por qué:\n- " + "\n- ".join(expl)), "Explicación de fases."
-
-        # Presupuesto
         if proposal and _asks_budget(text):
             return ("Presupuesto — por qué:\n- " + "\n- ".join(_explain_budget(proposal))), "Explicación del presupuesto."
-
-        # Rol concreto con 'por qué' (sin número)
         roles_why = _extract_roles_from_text(text)
         if proposal and roles_why:
             r = roles_why[0]
             cnt = _find_role_count_in_proposal(proposal, r)
             if cnt is not None:
-                return (f"¿Por qué **{r}** en el plan?\n- " + "\n- ".join(_explain_role_count(r, cnt, req_text))), "Explicación de rol concreto."
+                return (f"¿Por qué **{r}** en el plan?\n- " + "\n- ".join(_explain_role_count(r, cnt, req_text))), "Explicación de rol."
             else:
-                return (f"¿Por qué **{r}**?\n- " + "\n- ".join(_explain_role(r, req_text))), "Explicación de rol concreto."
-
-        # Resumen general
+                return (f"¿Por qué **{r}**?\n- " + "\n- ".join(_explain_role(r, req_text))), "Explicación de rol."
         if proposal:
             generic = [
                 f"Metodología: {proposal['methodology']} → " + "; ".join(_explain_methodology(proposal['methodology'], req_text)),
@@ -386,18 +428,22 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
                 "Fases cubren descubrimiento→entrega; cada una reduce un riesgo.",
                 "Presupuesto = headcount × semanas × tarifa media + 10% contingencia."
             ]
-            return ("Explicación general:\n- " + "\n- ".join(generic)), "Explicación general de la propuesta."
+            return ("Explicación general:\n- " + "\n- ".join(generic)), "Explicación general."
         else:
             return ("Puedo justificar metodología, equipo, fases, presupuesto y riesgos. Genera una propuesta con '/propuesta: ...' y la explico punto por punto."), "No hay propuesta previa."
 
-    # --- Detección de requisitos en texto libre → genera y guarda propuesta ---
+    # --- Requisitos en texto libre → generar propuesta y guardar ---
     if _looks_like_requirements(text):
         p = generate_proposal(text)
         set_last_proposal(session_id, p, text)
+        try:
+            log_message(session_id, "user", f"[REQ] {text}")
+            save_proposal(session_id, text, p)
+            log_message(session_id, "assistant", f"[PROPUESTA {p['methodology']}] {p['budget']['total_eur']} €")
+        except Exception:
+            pass
         return _pretty_proposal(p), "He interpretado tu mensaje como requisitos y he generado una propuesta."
 
-    # Fallback
-    return (
-        "Te he entendido. Dame más contexto (objetivo, usuarios, módulos clave) "
-        "o escribe '/propuesta: ...' y te entrego un plan completo con justificación."
-    ), "Fallback neutro."
+    # --- Fallback ---
+    return ("Te he entendido. Dame más contexto (objetivo, usuarios, módulos clave) "
+            "o escribe '/propuesta: ...' y te entrego un plan completo con justificación."), "Fallback neutro."
