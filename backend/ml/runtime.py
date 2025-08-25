@@ -1,6 +1,17 @@
-# backend/ml/runtime.py
-from typing import Dict, Tuple
+from __future__ import annotations
+from typing import Dict, Tuple, List
+from pathlib import Path
 import re
+
+from backend.knowledge.methodologies import recommend_methodology, get_method_sources
+
+MODELS_DIR = Path("backend/models")
+MODELS_DIR.mkdir(parents=True, exist_ok=True)
+
+try:
+    import joblib
+except Exception:
+    joblib = None
 
 def _norm(s: str) -> str:
     return s.lower().strip()
@@ -8,7 +19,6 @@ def _norm(s: str) -> str:
 def _rx(t: str, pat: str) -> bool:
     return re.search(pat, t, re.I) is not None
 
-# ---------- features simples (las usa planner.py) ----------
 def extract_features(requirements: str) -> Dict[str, float]:
     t = _norm(requirements)
     feats: Dict[str, float] = {
@@ -26,33 +36,44 @@ def extract_features(requirements: str) -> Dict[str, float]:
     feats["complexity_sum"] = sum(feats.values())
     return feats
 
-# ---------- runtime mínimo (solo heurísticas, sin modelos) ----------
 class MLRuntime:
+    def __init__(self) -> None:
+        self.effort_model = None
+        if joblib is not None:
+            p = MODELS_DIR / "effort.joblib"
+            if p.exists():
+                try: self.effort_model = joblib.load(p)
+                except Exception: self.effort_model = None
+        # buffers para explicación de metodología
+        self._last_method_sources: List[Dict[str,str]] = []
+        self._last_method_why: List[str] = []
+        self._last_method_rank = []
+
+    # Selección explicable con reglas + fuentes
     def pick_methodology(self, requirements: str) -> Tuple[str, str]:
-        t = _norm(requirements)
-        if _rx(t, r"\b(operaci[oó]n|soporte|mantenimiento|24/7|tiempo real)\b"):
-            return "Kanban", "Heurística: flujo continuo/operación."
-        if _rx(t, r"\b(cambiante|incertidumbre|descubrimiento|mvp|explorar)\b"):
-            return "Scrum", "Heurística: requisitos cambiantes."
-        return "Scrumban", "Heurística: mezcla de desarrollo y operación."
+        method, why_lines, scored = recommend_methodology(requirements)
+        self._last_method_sources = get_method_sources(method)
+        self._last_method_why = why_lines
+        self._last_method_rank = scored
+        return method, "Reglas ponderadas por señales + documentación de autores."
 
-    def estimate_effort(self, requirements: str) -> Tuple[float, str, Dict[str, float]]:
+    # Estimación de esfuerzo (person-weeks): modelo si existe; si no, heurística simple
+    def estimate_effort(self, requirements: str) -> Tuple[float, str, Dict[str,float]]:
         feats = extract_features(requirements)
-        base = 4.0
-        weights = {
-            "has_payments": 2.0, "has_mobile": 2.0, "has_admin": 1.5, "has_realtime": 1.5,
-            "has_ml": 2.0, "has_auth": 0.8, "has_reports": 0.8, "has_integrations": 0.7
-        }
-        score = base
-        parts = [("base", base)]
-        for k, w in weights.items():
-            if feats.get(k, 0.0) > 0:
-                score += w
-                parts.append((k, w))
-        score *= (1.0 + 0.2 * feats["complexity_sum"])
-        weeks_equiv = float(round(score, 1))
-        expl = "Heurística: " + " + ".join(f"{k}({v})" for k, v in parts) + f" → ajuste complejidad ({feats['complexity_sum']:.1f})"
-        return weeks_equiv, expl, feats
-
-    def info(self):
-        return {"using": "heuristics_only", "models": False}
+        if self.effort_model is not None:
+            try:
+                X = [feats]
+                y = float(self.effort_model.predict(X)[0])
+                return max(2.0, round(y, 1)), "Modelo ML (effort.joblib).", feats
+            except Exception:
+                pass
+        # Heurística transparente (parece humano)
+        base = 6.0
+        base += 3.0 if feats["has_payments"] else 0.0
+        base += 2.0 if feats["has_admin"] else 0.0
+        base += 2.0 if feats["has_mobile"] else 0.0
+        base += 1.5 if feats["has_realtime"] else 0.0
+        base += 2.5 if feats["has_ml"] else 0.0
+        base += 1.0 if feats["has_integrations"] else 0.0
+        base += 0.5 * max(0.0, feats["complexity_tokens"] - 1.0)
+        return round(base, 1), "Heurística por módulos y complejidad.", feats

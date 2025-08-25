@@ -1,147 +1,89 @@
-# backend/memory/state_store.py
 from __future__ import annotations
-
-import os
-from pathlib import Path
+import json, os
 from datetime import datetime
-from typing import Optional, Dict, Any, Tuple, List
+from pathlib import Path
+from typing import List, Optional, Dict, Any
 
 from sqlalchemy import (
-    create_engine, Column, String, DateTime, Integer, ForeignKey, Text, JSON, Float, Boolean
+    create_engine, Column, Integer, String, DateTime, Text, JSON, ForeignKey, Boolean
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
-# -------------------------------------------------------------------
-# Configuración DB (sin pydantic_settings)
-# -------------------------------------------------------------------
-# Usa DATABASE_URL si existe; por defecto SQLite local ./data/app.db
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./data/app.db")
+# --- Ruta y engine ---
+DATA_DIR = Path("data"); DATA_DIR.mkdir(parents=True, exist_ok=True)
+DB_URL = f"sqlite:///{(DATA_DIR / 'app.db').as_posix()}"
 
-# Crear carpeta data/ si es SQLite local
-if DATABASE_URL.startswith("sqlite:///"):
-    Path("./data").mkdir(parents=True, exist_ok=True)
-
-# Para SQLite multihilo en Uvicorn
-engine = create_engine(
-    DATABASE_URL,
-    echo=False,
-    future=True,
-    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
-)
-
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+engine = create_engine(DB_URL, connect_args={"check_same_thread": False})
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 
-# -------------------------------------------------------------------
-# Modelos
-# -------------------------------------------------------------------
-
-class DbSession(Base):
-    __tablename__ = "sessions"
-    id = Column(String, primary_key=True)        # session_id del chat
-    started_at = Column(DateTime, default=datetime.utcnow)
-    meta_json = Column(JSON, nullable=True)
-
-    messages = relationship("MessageLog", back_populates="session", cascade="all, delete-orphan")
-    proposals = relationship("ProposalLog", back_populates="session", cascade="all, delete-orphan")
-
-
-class MessageLog(Base):
-    __tablename__ = "messages"
+# --- Modelos ---
+class ConversationMessage(Base):
+    __tablename__ = "conversation_messages"
     id = Column(Integer, primary_key=True, autoincrement=True)
-    session_id = Column(String, ForeignKey("sessions.id", ondelete="CASCADE"), index=True, nullable=False)
-    role = Column(String, nullable=False)        # "user" | "assistant"
-    text = Column(Text, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
-
-    session = relationship("DbSession", back_populates="messages")
-
+    session_id = Column(String, index=True, nullable=False)
+    role = Column(String, nullable=False)   # "user" | "assistant"
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 class ProposalLog(Base):
-    __tablename__ = "proposals"
+    __tablename__ = "proposal_logs"
     id = Column(Integer, primary_key=True, autoincrement=True)
-    session_id = Column(String, ForeignKey("sessions.id", ondelete="CASCADE"), index=True, nullable=False)
+    session_id = Column(String, index=True, nullable=False)
     requirements = Column(Text, nullable=False)
     proposal_json = Column(JSON, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
-    accepted = Column(Boolean, default=None)
-    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    feedbacks = relationship("ProposalFeedback", back_populates="proposal", cascade="all, delete-orphan")
 
-    session = relationship("DbSession", back_populates="proposals")
-
-
-class ModelRegistry(Base):
-    __tablename__ = "model_registry"
+class ProposalFeedback(Base):
+    __tablename__ = "proposal_feedbacks"
     id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String, index=True)            # "intents" | "methodology" | "effort"
-    version = Column(String, default="0")
-    path = Column(String)
-    metrics_json = Column(JSON, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    proposal_id = Column(Integer, ForeignKey("proposal_logs.id"), index=True, nullable=False)
+    session_id = Column(String, index=True, nullable=False)
+    accepted = Column(Boolean, nullable=False)               # True = aceptada
+    score = Column(Integer, nullable=True)                   # 1..5 opcional
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
-# -------------------------------------------------------------------
-# API del store
-# -------------------------------------------------------------------
+    proposal = relationship("ProposalLog", back_populates="feedbacks")
 
-def init_db() -> None:
-    Base.metadata.create_all(bind=engine)
+Base.metadata.create_all(engine)
 
-def _ensure_session(db, session_id: str) -> DbSession:
-    s = db.get(DbSession, session_id)
-    if s is None:
-        s = DbSession(id=session_id, started_at=datetime.utcnow())
-        db.add(s)
-        db.flush()
-    return s
-
-def log_message(session_id: str, role: str, text: str) -> None:
+# --- Conversación (compatibilidad con tu código) ---
+def log_message(session_id: str, role: str, content: str) -> None:
     with SessionLocal() as db:
-        _ensure_session(db, session_id)
-        msg = MessageLog(session_id=session_id, role=role, text=text)
-        db.add(msg)
+        db.add(ConversationMessage(session_id=session_id, role=role, content=content))
         db.commit()
 
+def list_messages(session_id: str, limit: int = 50) -> List[ConversationMessage]:
+    with SessionLocal() as db:
+        q = db.query(ConversationMessage).filter(ConversationMessage.session_id == session_id)\
+              .order_by(ConversationMessage.created_at.desc()).limit(limit).all()
+        return list(reversed(q))  # cronológico
+
+# --- Propuestas ---
 def save_proposal(session_id: str, requirements: str, proposal: Dict[str, Any]) -> int:
     with SessionLocal() as db:
-        _ensure_session(db, session_id)
         row = ProposalLog(session_id=session_id, requirements=requirements, proposal_json=proposal)
-        db.add(row)
-        db.commit()
-        db.refresh(row)
+        db.add(row); db.commit(); db.refresh(row)
         return int(row.id)
 
-def load_last_proposal(session_id: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+def get_last_proposal_row(session_id: str) -> Optional[ProposalLog]:
     with SessionLocal() as db:
-        row = (
-            db.query(ProposalLog)
-            .filter(ProposalLog.session_id == session_id)
-            .order_by(ProposalLog.created_at.desc())
-            .first()
-        )
-        if not row:
-            return None, None
-        return row.proposal_json, row.requirements
+        row = db.query(ProposalLog).filter(ProposalLog.session_id == session_id)\
+               .order_by(ProposalLog.created_at.desc()).first()
+        return row
 
-def feedback_proposal(proposal_id: int, accepted: Optional[bool], notes: Optional[str] = None) -> None:
+# --- Feedback ---
+def save_feedback(session_id: str, accepted: bool, score: Optional[int] = None, notes: Optional[str] = None) -> Optional[int]:
+    """Registra feedback sobre la ÚLTIMA propuesta de esa sesión. Devuelve id de feedback o None si no hay propuesta."""
+    last = get_last_proposal_row(session_id)
+    if not last:
+        return None
     with SessionLocal() as db:
-        row = db.query(ProposalLog).filter(ProposalLog.id == proposal_id).first()
-        if not row:
-            return
-        row.accepted = accepted
-        if notes:
-            row.notes = notes
-        db.commit()
-
-def list_messages(session_id: str, limit: int = 50) -> List[Dict[str, Any]]:
-    with SessionLocal() as db:
-        rows = (
-            db.query(MessageLog)
-            .filter(MessageLog.session_id == session_id)
-            .order_by(MessageLog.created_at.desc())
-            .limit(limit)
-            .all()
+        fb = ProposalFeedback(
+            proposal_id=last.id, session_id=session_id,
+            accepted=bool(accepted), score=score, notes=notes
         )
-        return [
-            {"role": r.role, "text": r.text, "created_at": r.created_at.isoformat()}
-            for r in rows
-        ]
+        db.add(fb); db.commit(); db.refresh(fb)
+        return int(fb.id)
