@@ -1,165 +1,194 @@
-from __future__ import annotations
-from typing import Dict, Any, List, Tuple
+# backend/engine/planner.py
+from typing import Dict, Any, List
 import math
 
-from backend.ml.runtime import MLRuntime, extract_features
-from backend.retrieval.similarity import get_retriever
+from backend.knowledge.methodologies import (
+    recommend_methodology,
+    explain_methodology_choice,
+    METHODOLOGIES,
+)
 
-# --- Modelos / Similares ---
-_RT = MLRuntime()
-_SIM = get_retriever()
+def _round_money(x: float) -> float:
+    return round(x, 2)
 
-# --- Tarifas por rol (€/persona-semana) ---
-ROLE_RATES = {
-    "PM": 2200.0,
-    "Tech Lead": 2400.0,
-    "Backend Dev": 2000.0,
-    "Frontend Dev": 1900.0,
-    "QA": 1600.0,
-    "UX/UI": 1800.0,
-    "ML Engineer": 2300.0,
-}
-CONTINGENCY = 0.10  # 10%
+def generate_proposal(requirements_text: str) -> Dict[str, Any]:
+    """
+    Genera una propuesta simple pero completa y, ahora, con
+    - decision_log por área (team, phases, budget, risks, methodology)
+    - methodology_sources para poder citar siempre.
+    """
+    # 1) Elegir metodología
+    chosen, score, scored = recommend_methodology(requirements_text)
+    method_info = METHODOLOGIES.get(chosen, {})
+    methodology_sources = method_info.get("sources", [])
 
-def _blend_effort_with_neighbors(requirements: str, eff_ml: float) -> Tuple[float, List[str], List[Dict[str, Any]]]:
-    sims = _SIM.retrieve(requirements, top_k=3)
-    notes: List[str] = []
-    usable = []
-    for s in sims:
-        try:
-            b = s.get("budget", {}) or {}
-            ass = b.get("assumptions", {}) or {}
-            e = float(ass.get("effort_person_weeks")
-                      or (float(ass.get("heads_equivalent")) * float(ass.get("project_weeks"))))
-            if e > 0:
-                usable.append((e, float(s.get("similarity", 0.0)), s))
-        except Exception:
-            continue
-    if not usable:
-        return eff_ml, ["Sin casos similares suficientes; uso estimación del modelo."], sims
-    num = sum(e * w for e, w, _ in usable)
-    den = sum(w for _, w, _ in usable) or 1.0
-    avg_nn = num / den
-    blended = 0.7 * eff_ml + 0.3 * avg_nn
-    notes.append(f"Mezcla esfuerzo: 70% modelo ({eff_ml:.1f}) + 30% vecinos ({avg_nn:.1f}) → {blended:.1f} pw.")
-    notes += [f"Vecino #{s['id']} simil={sim:.2f} → esfuerzo={e:.1f} pw" for e, sim, s in usable]
-    return float(round(blended, 1)), notes, sims
+    # 2) Equipo base (muy simple, derivado del alcance por keywords)
+    req = requirements_text.lower()
+    need_mobile = any(k in req for k in ["mobile", "móvil", "android", "ios", "app"])
+    need_admin  = any(k in req for k in ["admin", "backoffice", "panel"])
+    need_pay    = any(k in req for k in ["pago", "pagos", "stripe", "checkout"])
+    need_realtime = any(k in req for k in ["tiempo real", "realtime", "websocket"])
+    need_ml     = any(k in req for k in ["ml", "ia", "modelo", "machine learning"])
 
-def _build_team(feats: Dict[str, float], effort_pw: float) -> List[Dict[str, Any]]:
-    team: List[Dict[str, Any]] = []
-    team.append({"role": "PM", "count": 0.5})
-    team.append({"role": "Tech Lead", "count": 0.5})
-    backend = 1.0 + (1.0 if feats["has_payments"] or feats["has_integrations"] else 0.0)
-    frontend = 1.0 if (feats["has_admin"] or feats["has_mobile"]) else 0.5
-    qa = 1.0 if feats["complexity_sum"] >= 2.0 else 0.5
-    ux = 0.5 if (feats["has_mobile"] or feats["has_admin"]) else 0.0
-    ml = 0.5 if feats["has_ml"] else 0.0
-    team += [
-        {"role": "Backend Dev", "count": backend},
-        {"role": "Frontend Dev", "count": frontend},
-        {"role": "QA", "count": qa},
+    team: List[Dict[str, Any]] = [
+        {"role": "PM",           "count": 0.5},
+        {"role": "Tech Lead",    "count": 0.5},
+        {"role": "Backend Dev",  "count": 2.0},
+        {"role": "Frontend Dev", "count": 1.0},
+        {"role": "QA",           "count": 1.0},
+        {"role": "UX/UI",        "count": 0.5},
     ]
-    if ux > 0: team.append({"role": "UX/UI", "count": ux})
-    if ml > 0: team.append({"role": "ML Engineer", "count": ml})
-    if effort_pw >= 24:
-        team = [
-            {"role": r["role"], "count": (r["count"] + (0.5 if r["role"] in ("Backend Dev","Frontend Dev") else 0.0))}
-            for r in team
+    if need_admin:
+        team.append({"role": "Frontend Dev", "count": 0.5})
+    if need_pay:
+        team.append({"role": "Backend Dev", "count": 0.5})
+    if need_ml:
+        team.append({"role": "ML Engineer", "count": 0.5})
+
+    # 3) Fases (ligeras por metodología)
+    if chosen == "Kanban":
+        phases = [
+            {"name": "Descubrimiento & Diseño", "weeks": 2},
+            {"name": "Implementación flujo continuo (WIP/Columnas)", "weeks": 4},
+            {"name": "QA continuo & Observabilidad", "weeks": 2},
+            {"name": "Estabilización & Puesta en Producción", "weeks": 1},
         ]
-    return team
+    elif chosen == "XP":
+        phases = [
+            {"name": "Discovery + Historias & CRC", "weeks": 2},
+            {"name": "Iteraciones con TDD/Refactor/CI", "weeks": 6},
+            {"name": "Hardening & Pruebas de Aceptación", "weeks": 2},
+            {"name": "Release & Handover", "weeks": 1},
+        ]
+    elif chosen == "Scrum":
+        phases = [
+            {"name": "Incepción & Plan de Releases", "weeks": 2},
+            {"name": "Sprints de Desarrollo (2w)", "weeks": 6},
+            {"name": "QA/Hardening Sprint", "weeks": 2},
+            {"name": "Despliegue & Transferencia", "weeks": 1},
+        ]
+    else:
+        phases = [
+            {"name": "Discovery", "weeks": 2},
+            {"name": "Implementación iterativa", "weeks": 6},
+            {"name": "QA & Hardening", "weeks": 2},
+            {"name": "Release & Handover", "weeks": 1},
+        ]
 
-def _sum_heads(team: List[Dict[str, Any]]) -> float:
-    return float(sum(t["count"] for t in team))
+    # 4) Presupuesto sencillo por tarifa/rol
+    role_rates = {
+        "PM": 1200.0, "Tech Lead": 1400.0,
+        "Backend Dev": 1100.0, "Frontend Dev": 1000.0,
+        "QA": 900.0, "UX/UI": 1000.0, "ML Engineer": 1400.0,
+    }
+    project_weeks = sum(p["weeks"] for p in phases)
+    by_role = {}
+    for r in team:
+        role = r["role"]; cnt = r["count"]
+        rate = role_rates.get(role, 1000.0)
+        by_role.setdefault(role, 0.0)
+        by_role[role] += cnt * project_weeks * rate
 
-def _build_phases(project_weeks: int) -> List[Dict[str, Any]]:
-    dsc = 1 if project_weeks <= 6 else 2
-    setup = 1
-    dev = max(2, project_weeks - (dsc + setup + 2))
-    qa = 1 if project_weeks <= 6 else 2
-    rel = 1
-    return [
-        {"name": "Descubrimiento", "weeks": dsc},
-        {"name": "Arquitectura & Setup", "weeks": setup},
-        {"name": "Desarrollo Iterativo", "weeks": dev},
-        {"name": "QA & Hardening", "weeks": qa},
-        {"name": "Despliegue & Handover", "weeks": rel},
+    labor = _round_money(sum(by_role.values()))
+    contingency = _round_money(0.10 * labor)
+    total = _round_money(labor + contingency)
+
+    budget = {
+        "labor_estimate_eur": labor,
+        "contingency_10pct": contingency,
+        "total_eur": total,
+        "by_role": by_role,
+        "assumptions": {
+            "project_weeks": project_weeks,
+            "role_rates_eur_pw": role_rates
+        }
+    }
+
+    # 5) Riesgos rápidos
+    risks = [
+        "Cambios de alcance sin prioridad clara",
+        "Dependencias externas (APIs/terceros)",
+        "Datos insuficientes para pruebas de rendimiento/escalado",
     ]
+    if need_pay:
+        risks += ["PCI-DSS, fraude/chargebacks, idempotencia en cobros"]
+    if need_realtime:
+        risks += ["Latencia/picos → colas/cachés y observabilidad"]
+    if need_mobile:
+        risks += ["Aprobación en tiendas y compatibilidad de dispositivos"]
+    if need_ml:
+        risks += ["Calidad de datos, sesgo y monitorización de modelos"]
 
-def _expand_risks_from_feats(feats: Dict[str, float], methodology: str) -> List[str]:
-    risks: List[str] = ["Cambios de alcance", "Dependencias externas (APIs/terceros)"]
-    if feats["has_payments"]: risks += ["PCI-DSS, fraude/chargebacks, idempotencia"]
-    if feats["has_realtime"]: risks += ["Latencia y picos → colas/cachés, escalado"]
-    if feats["has_mobile"]: risks += ["Revisión de tiendas, compatibilidad dispositivos"]
-    if feats["has_ml"]: risks += ["Calidad de datos, sesgo, drift del modelo"]
-    if feats["has_admin"]: risks += ["RBAC y auditoría en backoffice"]
-    if methodology == "Kanban": risks += ["Respetar límites de WIP para evitar multitarea"]
-    if methodology == "Scrum": risks += ["Definir DoR/DoD para evitar scope creep"]
-    return risks
+    # 6) decision_log con FUENTES por área
+    decision_log: List[Dict[str, Any]] = []
 
-def _budget_by_role(team: List[Dict[str, Any]], project_weeks: int) -> Dict[str, float]:
-    by_role: Dict[str, float] = {}
-    for t in team:
-        role, n = t["role"], float(t["count"])
-        rate = ROLE_RATES.get(role, 1800.0)
-        by_role[role] = round(n * project_weeks * rate, 2)
-    return by_role
+    # Metodología
+    decision_log.append({
+        "area": "methodology",
+        "why": explain_methodology_choice(requirements_text, chosen),
+        "sources": methodology_sources,
+    })
 
-def generate_proposal(requirements: str) -> Dict[str, Any]:
-    # 1) Metodología (con razones y fuentes)
-    methodology, method_src = _RT.pick_methodology(requirements)
-    try:
-        from backend.knowledge.methodologies import get_method_sources, explain_methodology_choice
-        method_reasons = explain_methodology_choice(requirements, methodology)
-        method_sources = get_method_sources(methodology)
-    except Exception:
-        method_reasons = []
-        method_sources = []
+    # Equipo
+    decision_log.append({
+        "area": "team",
+        "why": ["Cobertura completa de funciones", "Dimensionado por módulos y riesgos"],
+        "sources": [
+            {"autor": "Forsgren, Humble, Kim", "titulo": "Accelerate", "anio": 2018,
+             "url": "https://itrevolution.com/accelerate/"},
+            {"autor": "Skelton, Pais", "titulo": "Team Topologies", "anio": 2019,
+             "url": "https://teamtopologies.com/"},
+            {"autor": "DeMarco, Lister", "titulo": "Peopleware", "anio": 1999,
+             "url": "https://www.oreilly.com/library/view/peopleware-productive-projects/9780133440707/"},
+        ],
+    })
 
-    # 2) Esfuerzo base
-    effort_ml, effort_src, feats = _RT.estimate_effort(requirements)
+    # Fases
+    decision_log.append({
+        "area": "phases",
+        "why": ["Descubrimiento→Entrega para reducir incertidumbre", "Inspección/adaptación continua"],
+        "sources": [
+            {"autor": "Jeff Patton", "titulo": "User Story Mapping", "anio": 2014,
+             "url": "http://jpattonassociates.com/user-story-mapping/"},
+            {"autor": "Jez Humble, David Farley", "titulo": "Continuous Delivery", "anio": 2010,
+             "url": "https://continuousdelivery.com/"},
+            {"autor": "Schwaber, Sutherland", "titulo": "The Scrum Guide", "anio": 2020,
+             "url": "https://scrumguides.org/"},
+        ],
+    })
 
-    # 3) Ajuste con similares
-    effort_final, blend_notes, sims = _blend_effort_with_neighbors(requirements, effort_ml)
+    # Presupuesto
+    decision_log.append({
+        "area": "budget",
+        "why": ["Estimación proporcional a personas×semanas×tarifa + contingencia"],
+        "sources": [
+            {"autor": "Steve McConnell", "titulo": "Software Estimation", "anio": 2006,
+             "url": "https://www.construx.com/resources/software-estimation/"},
+            {"autor": "Boehm", "titulo": "Cone of Uncertainty", "anio": 1981,
+             "url": "https://en.wikipedia.org/wiki/Cone_of_Uncertainty"},
+        ],
+    })
 
-    # 4) Equipo y semanas
-    team = _build_team(feats, effort_final)
-    heads = max(1.0, round(_sum_heads(team), 1))
-    project_weeks = int(math.ceil(effort_final / heads))
-
-    # 5) Presupuesto (por rol + contingencia)
-    labor_by_role = _budget_by_role(team, project_weeks)
-    labor = float(round(sum(labor_by_role.values()), 2))
-    contingency = float(round(labor * CONTINGENCY, 2))
-    total = float(round(labor + contingency, 2))
-
-    # 6) Fases y riesgos
-    phases = _build_phases(project_weeks)
-    risks = _expand_risks_from_feats(feats, methodology)
-
-    explanation: List[str] = []
-    explanation.append(f"Metodología: {method_src}")
-    explanation += [f"[{methodology}] {line}" for line in method_reasons]
-    explanation.append(f"Esfuerzo base: {effort_src}")
-    explanation += blend_notes
-    explanation.append("Coste por rol basado en tarifas medias de mercado.")
+    # Riesgos
+    decision_log.append({
+        "area": "risks",
+        "why": ["Riesgos típicos de pagos/realtime/mobile/ML"],
+        "sources": [
+            {"autor": "OWASP", "titulo": "Web Security Testing Guide", "anio": 2021,
+             "url": "https://owasp.org/www-project-wstg/"},
+            {"autor": "PCI Council", "titulo": "PCI DSS", "anio": 2024,
+             "url": "https://www.pcisecuritystandards.org/"},
+        ],
+    })
 
     return {
-        "methodology": methodology,
+        "methodology": chosen,
+        "methodology_score": score,
         "team": team,
         "phases": phases,
-        "budget": {
-            "total_eur": total,
-            "labor_estimate_eur": labor,
-            "contingency_10pct": contingency,
-            "by_role": labor_by_role,
-            "assumptions": {
-                "effort_person_weeks": effort_final,
-                "heads_equivalent": heads,
-                "project_weeks": project_weeks,
-                "role_rates_eur_pw": ROLE_RATES,
-            },
-        },
+        "budget": budget,
         "risks": risks,
-        "explanation": explanation,
-        "methodology_sources": method_sources,  # <<--- para citar autores
+        "explanation": explain_methodology_choice(requirements_text, chosen),
+        "decision_log": decision_log,
+        "methodology_sources": methodology_sources,  # <-- clave para citar siempre
     }

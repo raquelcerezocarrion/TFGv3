@@ -1,24 +1,31 @@
 # backend/engine/context.py
-from typing import Dict, Tuple, Optional, Any
+from typing import Tuple, Dict, Any, Optional
 
-# Memoria en proceso (por sesión). Para TFG es suficiente.
-_LAST_PROPOSAL: Dict[str, Tuple[Dict[str, Any], str]] = {}
-_PENDING_CHANGE: Dict[str, Dict[str, str]] = {}  # p.ej. {"target_method": "Scrum"}
+# Memoria simple en proceso por sesión
+_SESS: Dict[str, Dict[str, Any]] = {}
 
 def get_last_proposal(session_id: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
-    """Devuelve (propuesta, requisitos) de la sesión o (None, None)."""
-    return _LAST_PROPOSAL.get(session_id, (None, None))
+    s = _SESS.get(session_id, {})
+    return s.get("proposal"), s.get("requirements")
 
 def set_last_proposal(session_id: str, proposal: Dict[str, Any], requirements: str) -> None:
-    """Guarda la última propuesta y los requisitos asociados."""
-    _LAST_PROPOSAL[session_id] = (proposal, requirements)
+    s = _SESS.setdefault(session_id, {})
+    s["proposal"] = proposal
+    s["requirements"] = requirements
 
-# --- Cambio de metodología pendiente (sí/no) ---
+# ---- Petición de cambio de metodología (confirmación sí/no)
+def get_pending_change(session_id: str) -> Optional[Dict[str, Any]]:
+    return _SESS.get(session_id, {}).get("pending_change")
+
 def set_pending_change(session_id: str, target_method: str) -> None:
-    _PENDING_CHANGE[session_id] = {"target_method": target_method}
-
-def get_pending_change(session_id: str) -> Optional[Dict[str, str]]:
-    return _PENDING_CHANGE.get(session_id)
+    _SESS.setdefault(session_id, {})["pending_change"] = {"target_method": target_method}
 
 def clear_pending_change(session_id: str) -> None:
-    _PENDING_CHANGE.pop(session_id, None)
+    _SESS.setdefault(session_id, {}).pop("pending_change", None)
+
+# ---- NUEVO: recordar el área/tema de la última respuesta
+def set_last_area(session_id: str, area: Optional[str]) -> None:
+    _SESS.setdefault(session_id, {})["last_area"] = area
+
+def get_last_area(session_id: str) -> Optional[str]:
+    return _SESS.get(session_id, {}).get("last_area")
