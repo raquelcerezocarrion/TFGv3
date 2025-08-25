@@ -11,7 +11,7 @@ from backend.knowledge.methodologies import (
     recommend_methodology,
     compare_methods,
     normalize_method_name,
-    METHODOLOGIES,  # para "evitar_si" del alternativo
+    METHODOLOGIES,  # para fuentes y "evitar_si"
 )
 
 # Persistencia opcional (si falla, seguimos en memoria)
@@ -318,6 +318,77 @@ def _mentioned_methods(text: str) -> List[str]:
     return found
 
 
+# ====== detección de petición de cambio de metodología ======
+
+_CHANGE_PAT = re.compile(
+    r"(?:cambia(?:r)?\s+a|usar|quiero|prefiero|pasar\s+a)\s+(scrum|kanban|scrumban|xp|lean|crystal|fdd|dsdm|safe|devops)"
+    r"(?:\s+(?:en\s+vez\s+de|en\s+lugar\s+de)\s+(scrum|kanban|scrumban|xp|lean|crystal|fdd|dsdm|safe|devops))?",
+    re.I
+)
+
+def _parse_change_request(text: str) -> Optional[Tuple[str, Optional[str]]]:
+    """
+    Devuelve (target, alternative) si detecta 'cambia a X (en vez de Y)'.
+    """
+    t = _norm(text)
+    m = _CHANGE_PAT.search(t)
+    if m:
+        tgt = normalize_method_name(m.group(1))
+        alt = normalize_method_name(m.group(2)) if m.group(2) else None
+        return tgt, alt
+    # También soporta 'X en vez de Y' sin "cambiar"
+    m2 = re.search(
+        r"(scrum|kanban|scrumban|xp|lean|crystal|fdd|dsdm|safe|devops)\s+(?:en\s+vez\s+de|en\s+lugar\s+de)\s+"
+        r"(scrum|kanban|scrumban|xp|lean|crystal|fdd|dsdm|safe|devops)", t)
+    if m2:
+        a = normalize_method_name(m2.group(1))
+        b = normalize_method_name(m2.group(2))
+        return a, b
+    return None
+
+
+# ====== reajuste sencillo del plan cuando el usuario insiste ======
+
+def _retune_plan_for_method(p: Dict[str, Any], method: str) -> Dict[str, Any]:
+    """
+    Toca mínimamente fases/sources para alinear el plan al método forzado.
+    (No recalcula todo el equipo/presupuesto para mantener sencillez.)
+    """
+    p = dict(p)
+    p["methodology"] = method
+    info = METHODOLOGIES.get(method, {})
+    p["methodology_sources"] = info.get("sources", [])
+
+    # Ajuste básico de nombres de fases (opcional)
+    phases = []
+    if method == "Kanban":
+        phases = [
+            {"name": "Descubrimiento & Diseño", "weeks": 2},
+            {"name": "Implementación flujo continuo (WIP/Columnas)", "weeks": max(2, p["phases"][1]["weeks"]) if p.get("phases") else 4},
+            {"name": "QA continuo & Observabilidad", "weeks": 2},
+            {"name": "Estabilización & Puesta en Producción", "weeks": 1},
+        ]
+    elif method == "XP":
+        phases = [
+            {"name": "Discovery + Historias & CRC", "weeks": 2},
+            {"name": "Iteraciones con TDD/Refactor/CI", "weeks": max(4, p["phases"][1]["weeks"]) if p.get("phases") else 6},
+            {"name": "Hardening & Pruebas de Aceptación", "weeks": 2},
+            {"name": "Release & Handover", "weeks": 1},
+        ]
+    elif method == "Scrum":
+        phases = [
+            {"name": "Incepción & Plan de Releases", "weeks": 2},
+            {"name": "Sprints de Desarrollo (2w)", "weeks": max(4, p["phases"][1]["weeks"]) if p.get("phases") else 6},
+            {"name": "QA/Hardening Sprint", "weeks": 2},
+            {"name": "Despliegue & Transferencia", "weeks": 1},
+        ]
+    else:
+        phases = p.get("phases", [])
+    if phases:
+        p["phases"] = phases
+    return p
+
+
 # ===================== generación de respuesta =====================
 
 def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
@@ -358,6 +429,77 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             pass
         return _pretty_proposal(p), "Propuesta generada."
 
+    # Comando explícito: /cambiar: <Metodo>
+    if text.lower().startswith("/cambiar:"):
+        target = normalize_method_name(text.split(":", 1)[1].strip())
+        if not proposal or not req_text:
+            return "Primero necesito una propuesta en esta sesión. Usa '/propuesta: ...' y luego '/cambiar: {metodología}'.", "Cambiar sin propuesta."
+        new_plan = _retune_plan_for_method(proposal, target)
+        set_last_proposal(session_id, new_plan, req_text)
+        try:
+            save_proposal(session_id, req_text, new_plan)
+            log_message(session_id, "assistant", f"[CAMBIO METODOLOGIA → {target}]")
+        except Exception:
+            pass
+        return _pretty_proposal(new_plan), f"Plan reajustado a {target}."
+
+    # Petición natural de CAMBIO de metodología ("usar X en vez de Y", "cambia a X", etc.)
+    change_req = _parse_change_request(text)
+    if change_req:
+        target, alternative = change_req
+        if not proposal or not req_text:
+            return ("Para evaluar si conviene cambiar a **{}**, necesito una propuesta base. "
+                    "Genera una con '/propuesta: ...' y vuelvo a aconsejarte.".format(target)), "Cambio: sin propuesta."
+        current = proposal.get("methodology")
+        # puntuar
+        _, _, scored = recommend_methodology(req_text)
+        score_map = {name: (score, hits) for name, score, hits in scored}
+        sc_current, hits_current = score_map.get(current, (0.0, []))
+        sc_target, hits_target = score_map.get(target, (0.0, []))
+
+        margin = 0.02  # umbral mínimo de mejora para aconsejar cambio
+        advisable = sc_target >= sc_current + margin
+
+        # razones/evitar
+        why_target = explain_methodology_choice(req_text, target)
+        evitar_target = METHODOLOGIES.get(target, {}).get("evitar_si", [])
+        evitar_current = METHODOLOGIES.get(current, {}).get("evitar_si", [])
+
+        head = f"Propones cambiar a **{target}** (actual: **{current}**)."
+        scores = f"Puntuaciones según tus requisitos → {current}: {sc_current:.2f} • {target}: {sc_target:.2f}"
+
+        if advisable:
+            msg = [
+                head,
+                "✅ **Sí conviene** el cambio.",
+                scores,
+            ]
+            if hits_target:
+                msg.append("Señales que favorecen el cambio: " + "; ".join(hits_target))
+            if why_target:
+                msg.append("Razones a favor de la alternativa:")
+                msg += [f"- {x}" for x in why_target]
+            if evitar_current:
+                msg.append(f"Cuándo **no** conviene {current}: " + "; ".join(evitar_current))
+            msg.append(f"Si quieres, escribe **/cambiar: {target}** y reajusto el plan.")
+            return "\n".join(msg), "Consejo: cambiar metodología (sí)."
+        else:
+            msg = [
+                head,
+                "❌ **No conviene** el cambio en este contexto.",
+                scores,
+            ]
+            if hits_current:
+                msg.append("Señales que sostienen la metodología actual: " + "; ".join(hits_current))
+            why_current = explain_methodology_choice(req_text, current)
+            if why_current:
+                msg.append("Razones para mantener la actual:")
+                msg += [f"- {x}" for x in why_current]
+            if evitar_target:
+                msg.append(f"Riesgos si cambiamos a {target}: " + "; ".join(evitar_target))
+            msg.append(f"Aun así, si insistes, escribe **/cambiar: {target}** y reajusto el plan.")
+            return "\n".join(msg), "Consejo: cambiar metodología (no)."
+
     # Documentación/autores
     if _asks_sources(text):
         if proposal and proposal.get("methodology_sources"):
@@ -390,7 +532,7 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
     if _is_help(text):
         return (
             "Puedo: 1) generar una propuesta completa (equipo, fases, metodología, presupuesto, riesgos), "
-            "2) explicar por qué tomo cada decisión (con citas), 3) rechazar/aceptar cambios y reajustar el plan."
+            "2) explicar por qué tomo cada decisión (con citas), 3) evaluar cambios de metodología y reajustar el plan."
         ), "Ayuda."
 
     # Riesgos (sin 'por qué')
@@ -437,69 +579,48 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             "Describe el alcance y dimensiono el equipo."
         ), "Guía roles."
 
-    # ===================== Preguntas 'por qué' =====================
+    # ===================== Preguntas 'por qué' (metodología y resto) =====================
     if _asks_why(text):
         methods_in_text = _mentioned_methods(text)
         current_method = proposal["methodology"] if proposal else None
 
-        # 1) Comparativa si el usuario menciona 2 metodologías ("¿por qué XP en vez de Scrum?")
+        # 1) Comparativa directa si el usuario menciona 2 metodologías
         if len(methods_in_text) >= 2:
             a, b = methods_in_text[0], methods_in_text[1]
-
-            # Si hay propuesta y una coincide, usamos esa como elegida.
-            chosen = current_method if current_method in (a, b) else None
-            other = None
-            if chosen is not None:
-                other = b if chosen == a else a
-
-            # Puntuaciones para tus requisitos (si existen)
-            score_line = ""
-            reasons_hits_chosen: List[str] = []
-            reasons_hits_other: List[str] = []
-            sc_chosen = sc_other = None
             if req_text:
                 _, _, scored = recommend_methodology(req_text)
                 m = {name: (score, whylist) for name, score, whylist in scored}
-                # Si no estaba fijada la elegida, la decidimos por score
-                if chosen is None:
-                    sa = m.get(a, (0.0, []))[0]
-                    sb = m.get(b, (0.0, []))[0]
-                    chosen = a if sa >= sb else b
-                    other = b if chosen == a else a
-                # extraemos datos
-                sc_chosen, reasons_hits_chosen = m.get(chosen, (None, []))
-                sc_other, reasons_hits_other = m.get(other, (None, []))
+                chosen = current_method if current_method in (a, b) else (a if m.get(a, (0, []))[0] >= m.get(b, (0, []))[0] else b)
+                other = b if chosen == a else a
+                sc_chosen, reasons_hits_chosen = m.get(chosen, (0.0, []))
+                sc_other, _ = m.get(other, (0.0, []))
                 top3 = ", ".join([f"{name}({score:.2f})" for name, score, _ in scored[:3]])
-                score_line = f"Puntuaciones: {chosen}={sc_chosen:.2f} vs {other}={sc_other:.2f}. Top3: {top3}."
+
+                why_chosen = explain_methodology_choice(req_text or "", chosen)
+                evitar_other = METHODOLOGIES.get(other, {}).get("evitar_si", [])
+
+                msg = [
+                    f"He usado **{chosen}** en vez de **{other}** porque se ajusta mejor a tus requisitos.",
+                    f"Puntuaciones: {chosen}={sc_chosen:.2f} vs {other}={sc_other:.2f}. Top3: {top3}."
+                ]
+                if reasons_hits_chosen:
+                    msg.append("Señales que favorecen la elegida: " + "; ".join(reasons_hits_chosen))
+                if why_chosen:
+                    msg.append("A favor de la elegida:")
+                    msg += [f"- {x}" for x in why_chosen]
+                if evitar_other:
+                    msg.append(f"Cuándo **no** conviene {other}: " + "; ".join(evitar_other))
+                return "\n".join(msg), "Comparativa de metodologías (justificada)."
             else:
-                # Sin requisitos previos: comparativa genérica
                 lines = compare_methods(a, b)
                 return "\n".join(lines), "Comparativa de metodologías (genérica)."
-
-            # Explicación concreta
-            why_chosen = explain_methodology_choice(req_text or "", chosen)
-            evitar_other = METHODOLOGIES.get(other, {}).get("evitar_si", [])
-
-            msg = [
-                f"He usado **{chosen}** en vez de **{other}** porque se ajusta mejor a tus requisitos.",
-            ]
-            if score_line:
-                msg.append(score_line)
-            if reasons_hits_chosen:
-                msg.append("Señales que favorecen la elegida: " + "; ".join(reasons_hits_chosen))
-            if why_chosen:
-                msg.append("A favor de la elegida:")
-                msg += [f"- {x}" for x in why_chosen]
-            if evitar_other:
-                msg.append(f"Cuándo **no** conviene {other}: " + "; ".join(evitar_other))
-            return "\n".join(msg), "Comparativa de metodologías (justificada)."
 
         # 2) “¿por qué esa metodología?” o 1 sola mencionada
         target = None
         if methods_in_text:
             target = methods_in_text[0]
         elif "metodolog" in _norm(text):
-            target = current_method  # “esa metodología” (la de la propuesta actual)
+            target = current_method  # “esa metodología”
 
         if target:
             why_lines = explain_methodology_choice(req_text or "", target)
