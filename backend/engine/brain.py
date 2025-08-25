@@ -11,6 +11,7 @@ from backend.knowledge.methodologies import (
     recommend_methodology,
     compare_methods,
     normalize_method_name,
+    METHODOLOGIES,  # para "evitar_si" del alternativo
 )
 
 # Persistencia opcional (si falla, seguimos en memoria)
@@ -441,15 +442,57 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
         methods_in_text = _mentioned_methods(text)
         current_method = proposal["methodology"] if proposal else None
 
-        # 1) Comparativa directa si el usuario menciona 2 metodologías
+        # 1) Comparativa si el usuario menciona 2 metodologías ("¿por qué XP en vez de Scrum?")
         if len(methods_in_text) >= 2:
             a, b = methods_in_text[0], methods_in_text[1]
-            lines = compare_methods(a, b)
+
+            # Si hay propuesta y una coincide, usamos esa como elegida.
+            chosen = current_method if current_method in (a, b) else None
+            other = None
+            if chosen is not None:
+                other = b if chosen == a else a
+
+            # Puntuaciones para tus requisitos (si existen)
+            score_line = ""
+            reasons_hits_chosen: List[str] = []
+            reasons_hits_other: List[str] = []
+            sc_chosen = sc_other = None
             if req_text:
                 _, _, scored = recommend_methodology(req_text)
+                m = {name: (score, whylist) for name, score, whylist in scored}
+                # Si no estaba fijada la elegida, la decidimos por score
+                if chosen is None:
+                    sa = m.get(a, (0.0, []))[0]
+                    sb = m.get(b, (0.0, []))[0]
+                    chosen = a if sa >= sb else b
+                    other = b if chosen == a else a
+                # extraemos datos
+                sc_chosen, reasons_hits_chosen = m.get(chosen, (None, []))
+                sc_other, reasons_hits_other = m.get(other, (None, []))
                 top3 = ", ".join([f"{name}({score:.2f})" for name, score, _ in scored[:3]])
-                lines.append(f"Con tus requisitos, puntuación top: {top3}.")
-            return "\n".join(lines), "Comparativa de metodologías."
+                score_line = f"Puntuaciones: {chosen}={sc_chosen:.2f} vs {other}={sc_other:.2f}. Top3: {top3}."
+            else:
+                # Sin requisitos previos: comparativa genérica
+                lines = compare_methods(a, b)
+                return "\n".join(lines), "Comparativa de metodologías (genérica)."
+
+            # Explicación concreta
+            why_chosen = explain_methodology_choice(req_text or "", chosen)
+            evitar_other = METHODOLOGIES.get(other, {}).get("evitar_si", [])
+
+            msg = [
+                f"He usado **{chosen}** en vez de **{other}** porque se ajusta mejor a tus requisitos.",
+            ]
+            if score_line:
+                msg.append(score_line)
+            if reasons_hits_chosen:
+                msg.append("Señales que favorecen la elegida: " + "; ".join(reasons_hits_chosen))
+            if why_chosen:
+                msg.append("A favor de la elegida:")
+                msg += [f"- {x}" for x in why_chosen]
+            if evitar_other:
+                msg.append(f"Cuándo **no** conviene {other}: " + "; ".join(evitar_other))
+            return "\n".join(msg), "Comparativa de metodologías (justificada)."
 
         # 2) “¿por qué esa metodología?” o 1 sola mencionada
         target = None
