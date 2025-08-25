@@ -3,7 +3,10 @@ import re
 from typing import Tuple, Dict, Any, List, Optional
 
 from backend.engine.planner import generate_proposal
-from backend.engine.context import get_last_proposal, set_last_proposal
+from backend.engine.context import (
+    get_last_proposal, set_last_proposal,
+    get_pending_change, set_pending_change, clear_pending_change
+)
 
 # Conocimiento de metodologías (explicaciones y comparativas)
 from backend.knowledge.methodologies import (
@@ -11,17 +14,17 @@ from backend.knowledge.methodologies import (
     recommend_methodology,
     compare_methods,
     normalize_method_name,
-    METHODOLOGIES,  # para fuentes y "evitar_si"
+    METHODOLOGIES,
 )
 
-# Persistencia opcional (si falla, seguimos en memoria)
+# Persistencia opcional
 try:
     from backend.memory.state_store import save_proposal, log_message
 except Exception:  # pragma: no cover
     def save_proposal(*a, **k): return None
     def log_message(*a, **k): return None
 
-# NLU opcional (intents)
+# NLU opcional
 try:
     from backend.nlu.intents import IntentsRuntime
     _INTENTS = IntentsRuntime()
@@ -40,6 +43,14 @@ except Exception:  # pragma: no cover
 
 def _norm(text: str) -> str:
     return text.lower()
+
+def _is_yes(text: str) -> bool:
+    t = _norm(text).strip()
+    return t in {"si", "sí", "s", "ok", "vale", "dale", "confirmo", "correcto"} or "adelante" in t
+
+def _is_no(text: str) -> bool:
+    t = _norm(text).strip()
+    return t in {"no", "n", "mejor no"} or "cancel" in t or "cancela" in t
 
 
 # ===================== detectores =====================
@@ -161,7 +172,7 @@ def _pretty_proposal(p: Dict[str, Any]) -> str:
     )
 
 
-# ===================== explicabilidad =====================
+# ===================== explicabilidad básica =====================
 
 def _explain_role(role: str, requirements: Optional[str]) -> List[str]:
     t = _norm(requirements or "")
@@ -327,16 +338,13 @@ _CHANGE_PAT = re.compile(
 )
 
 def _parse_change_request(text: str) -> Optional[Tuple[str, Optional[str]]]:
-    """
-    Devuelve (target, alternative) si detecta 'cambia a X (en vez de Y)'.
-    """
     t = _norm(text)
     m = _CHANGE_PAT.search(t)
     if m:
         tgt = normalize_method_name(m.group(1))
         alt = normalize_method_name(m.group(2)) if m.group(2) else None
         return tgt, alt
-    # También soporta 'X en vez de Y' sin "cambiar"
+    # “X en vez de Y”
     m2 = re.search(
         r"(scrum|kanban|scrumban|xp|lean|crystal|fdd|dsdm|safe|devops)\s+(?:en\s+vez\s+de|en\s+lugar\s+de)\s+"
         r"(scrum|kanban|scrumban|xp|lean|crystal|fdd|dsdm|safe|devops)", t)
@@ -347,19 +355,13 @@ def _parse_change_request(text: str) -> Optional[Tuple[str, Optional[str]]]:
     return None
 
 
-# ====== reajuste sencillo del plan cuando el usuario insiste ======
-
 def _retune_plan_for_method(p: Dict[str, Any], method: str) -> Dict[str, Any]:
-    """
-    Toca mínimamente fases/sources para alinear el plan al método forzado.
-    (No recalcula todo el equipo/presupuesto para mantener sencillez.)
-    """
+    """Ajuste ligero de plan al forzar una metodología."""
     p = dict(p)
     p["methodology"] = method
     info = METHODOLOGIES.get(method, {})
     p["methodology_sources"] = info.get("sources", [])
 
-    # Ajuste básico de nombres de fases (opcional)
     phases = []
     if method == "Kanban":
         phases = [
@@ -395,6 +397,29 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
     text = message.strip()
     proposal, req_text = get_last_proposal(session_id)
 
+    # 0) Si hay un CAMBIO pendiente, interpreta SÍ/NO directamente
+    pending = get_pending_change(session_id)
+    if pending:
+        if _is_yes(text):
+            target = pending["target_method"]
+            if not proposal or not req_text:
+                clear_pending_change(session_id)
+                return "Necesito una propuesta base antes de cambiar. Usa '/propuesta: ...'.", "Cambio pendiente sin propuesta."
+            new_plan = _retune_plan_for_method(proposal, target)
+            set_last_proposal(session_id, new_plan, req_text)
+            clear_pending_change(session_id)
+            try:
+                save_proposal(session_id, req_text, new_plan)
+                log_message(session_id, "assistant", f"[CAMBIO CONFIRMADO → {target}]")
+            except Exception:
+                pass
+            return _pretty_proposal(new_plan), f"Cambio confirmado a {target}."
+        elif _is_no(text):
+            clear_pending_change(session_id)
+            return "Perfecto, mantengo la metodología actual.", "Cambio cancelado por el usuario."
+        else:
+            return "Tengo un cambio de metodología **pendiente**. ¿Lo aplico? **sí/no**", "Esperando confirmación de cambio."
+
     # Intents (si hay modelo entrenado)
     intent, conf = ("other", 0.0)
     if _INTENTS is not None:
@@ -429,11 +454,11 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             pass
         return _pretty_proposal(p), "Propuesta generada."
 
-    # Comando explícito: /cambiar: <Metodo>
+    # Comando explícito: /cambiar: <Metodo> (atajo opcional)
     if text.lower().startswith("/cambiar:"):
         target = normalize_method_name(text.split(":", 1)[1].strip())
         if not proposal or not req_text:
-            return "Primero necesito una propuesta en esta sesión. Usa '/propuesta: ...' y luego '/cambiar: {metodología}'.", "Cambiar sin propuesta."
+            return "Primero necesito una propuesta en esta sesión. Usa '/propuesta: ...' y luego confirma el cambio.", "Cambiar sin propuesta."
         new_plan = _retune_plan_for_method(proposal, target)
         set_last_proposal(session_id, new_plan, req_text)
         try:
@@ -443,7 +468,7 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             pass
         return _pretty_proposal(new_plan), f"Plan reajustado a {target}."
 
-    # Petición natural de CAMBIO de metodología ("usar X en vez de Y", "cambia a X", etc.)
+    # Petición natural de CAMBIO ("usar X", "prefiero X", "X en vez de Y", …) → pedir confirmación sí/no
     change_req = _parse_change_request(text)
     if change_req:
         target, alternative = change_req
@@ -451,54 +476,51 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             return ("Para evaluar si conviene cambiar a **{}**, necesito una propuesta base. "
                     "Genera una con '/propuesta: ...' y vuelvo a aconsejarte.".format(target)), "Cambio: sin propuesta."
         current = proposal.get("methodology")
-        # puntuar
+        # puntuaciones
         _, _, scored = recommend_methodology(req_text)
         score_map = {name: (score, hits) for name, score, hits in scored}
         sc_current, hits_current = score_map.get(current, (0.0, []))
         sc_target, hits_target = score_map.get(target, (0.0, []))
-
-        margin = 0.02  # umbral mínimo de mejora para aconsejar cambio
+        margin = 0.02
         advisable = sc_target >= sc_current + margin
 
-        # razones/evitar
         why_target = explain_methodology_choice(req_text, target)
         evitar_target = METHODOLOGIES.get(target, {}).get("evitar_si", [])
         evitar_current = METHODOLOGIES.get(current, {}).get("evitar_si", [])
 
         head = f"Propones cambiar a **{target}** (actual: **{current}**)."
-        scores = f"Puntuaciones según tus requisitos → {current}: {sc_current:.2f} • {target}: {sc_target:.2f}"
+        scores = f"Puntuaciones → {current}: {sc_current:.2f} • {target}: {sc_target:.2f}"
 
         if advisable:
             msg = [
-                head,
-                "✅ **Sí conviene** el cambio.",
+                head, "✅ **Sí parece conveniente** el cambio.",
                 scores,
             ]
             if hits_target:
-                msg.append("Señales que favorecen el cambio: " + "; ".join(hits_target))
+                msg.append("Señales a favor: " + "; ".join(hits_target))
             if why_target:
-                msg.append("Razones a favor de la alternativa:")
+                msg.append("Razones:")
                 msg += [f"- {x}" for x in why_target]
             if evitar_current:
                 msg.append(f"Cuándo **no** conviene {current}: " + "; ".join(evitar_current))
-            msg.append(f"Si quieres, escribe **/cambiar: {target}** y reajusto el plan.")
-            return "\n".join(msg), "Consejo: cambiar metodología (sí)."
         else:
             msg = [
-                head,
-                "❌ **No conviene** el cambio en este contexto.",
+                head, "❌ **No aconsejo** el cambio en este contexto.",
                 scores,
             ]
             if hits_current:
-                msg.append("Señales que sostienen la metodología actual: " + "; ".join(hits_current))
+                msg.append("Señales para mantener la actual: " + "; ".join(hits_current))
             why_current = explain_methodology_choice(req_text, current)
             if why_current:
-                msg.append("Razones para mantener la actual:")
+                msg.append("Razones para mantener:")
                 msg += [f"- {x}" for x in why_current]
             if evitar_target:
                 msg.append(f"Riesgos si cambiamos a {target}: " + "; ".join(evitar_target))
-            msg.append(f"Aun así, si insistes, escribe **/cambiar: {target}** y reajusto el plan.")
-            return "\n".join(msg), "Consejo: cambiar metodología (no)."
+
+        # Pedir confirmación y registrar cambio pendiente
+        set_pending_change(session_id, target)
+        msg.append(f"¿Quieres que **cambie el plan a {target}** ahora? **sí/no**")
+        return "\n".join(msg), "Consejo de cambio con confirmación."
 
     # Documentación/autores
     if _asks_sources(text):
@@ -532,7 +554,7 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
     if _is_help(text):
         return (
             "Puedo: 1) generar una propuesta completa (equipo, fases, metodología, presupuesto, riesgos), "
-            "2) explicar por qué tomo cada decisión (con citas), 3) evaluar cambios de metodología y reajustar el plan."
+            "2) explicar por qué tomo cada decisión (con citas), 3) evaluar cambios de metodología y reajustar el plan (sí/no)."
         ), "Ayuda."
 
     # Riesgos (sin 'por qué')
@@ -579,7 +601,7 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             "Describe el alcance y dimensiono el equipo."
         ), "Guía roles."
 
-    # ===================== Preguntas 'por qué' (metodología y resto) =====================
+    # ===================== 'por qué' (metodología y resto) =====================
     if _asks_why(text):
         methods_in_text = _mentioned_methods(text)
         current_method = proposal["methodology"] if proposal else None
@@ -620,7 +642,7 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
         if methods_in_text:
             target = methods_in_text[0]
         elif "metodolog" in _norm(text):
-            target = current_method  # “esa metodología”
+            target = current_method
 
         if target:
             why_lines = explain_methodology_choice(req_text or "", target)
