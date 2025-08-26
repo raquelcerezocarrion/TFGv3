@@ -2,6 +2,13 @@
 import re
 from typing import Tuple, Dict, Any, List, Optional
 
+# Memoria de usuario (preferencias; opcional según tu state_store)
+try:
+    from backend.memory.state_store import get_client_prefs, upsert_client_pref
+except Exception:  # pragma: no cover
+    def get_client_prefs(*a, **k): return {}
+    def upsert_client_pref(*a, **k): return None
+
 from backend.engine.planner import generate_proposal
 from backend.engine.context import (
     get_last_proposal, set_last_proposal,
@@ -136,6 +143,23 @@ def _asks_sources(text: str) -> bool:
     t = _norm(text)
     keys = ["fuente", "fuentes", "documentación", "documentacion", "autor", "autores", "bibliografía", "bibliografia", "en qué te basas", "en que te basas"]
     return any(k in t for k in keys)
+
+
+# ---------- catálogo/definición de metodologías ----------
+
+def _asks_method_list(text: str) -> bool:
+    t = _norm(text)
+    keys = [
+        "qué metodologías", "que metodologias", "metodologías usas", "metodologias usas",
+        "metodologías soportadas", "metodologias soportadas", "opciones", "lista de metodologías",
+        "que opciones hay", "qué opciones hay"
+    ]
+    return any(k in t for k in keys)
+
+def _asks_method_definition(text: str) -> bool:
+    """Detecta 'qué es xp', 'explícame kanban', 'en qué consiste scrum', etc."""
+    t = _norm(text)
+    return any(k in t for k in ["qué es", "que es", "explica", "explícame", "explicame", "en qué consiste", "en que consiste", "definición", "definicion"])
 
 
 # ===================== roles =====================
@@ -408,6 +432,51 @@ def _mentioned_methods(text: str) -> List[str]:
     return found
 
 
+# ---------- helpers de catálogo/definiciones ----------
+
+def _one_liner_from_info(info: Dict[str, Any], default_name: str) -> str:
+    # resumen corto
+    for k in ("resumen", "overview", "descripcion", "description"):
+        if isinstance(info.get(k), str) and info[k].strip():
+            s = info[k].strip()
+            cut = s.find(".")
+            return (s if cut == -1 else s[:cut+1]).strip()
+    pract = info.get("practicas_clave") or info.get("practicas") or []
+    fit = info.get("encaja_bien_si") or info.get("fit") or []
+    if pract:
+        return f"Marco {default_name} con prácticas clave: " + ", ".join(pract[:3]) + "."
+    if fit:
+        return f"Buena opción cuando: " + "; ".join(fit[:2]) + "."
+    return f"Marco {default_name} para gestionar desarrollo ágil."
+
+def _method_overview_text(method: str) -> str:
+    """Ficha resumida de una metodología + fuentes."""
+    info = METHODOLOGIES.get(method, {})
+    lines = [f"**{method}** — ¿qué es y cuándo usarla?"]
+    lines.append(_one_liner_from_info(info, method))
+    pract = info.get("practicas_clave") or info.get("practicas") or []
+    if pract:
+        lines.append("**Prácticas clave:** " + ", ".join(pract))
+    fit = info.get("encaja_bien_si") or info.get("fit") or []
+    if fit:
+        lines.append("**Encaja bien si:** " + "; ".join(fit))
+    avoid = info.get("evitar_si") or info.get("avoid") or []
+    if avoid:
+        lines.append("**Evitar si:** " + "; ".join(avoid))
+    src = info.get("sources") or []
+    if src:
+        lines.append("**Fuentes:**\n" + _format_sources(src))
+    return "\n".join(lines)
+
+def _catalog_text() -> str:
+    """Lista todas las metodologías soportadas con un renglón de resumen cada una."""
+    names = sorted(METHODOLOGIES.keys())
+    bullets = []
+    for name in names:
+        bullets.append(f"- **{name}** — {_one_liner_from_info(METHODOLOGIES.get(name, {}), name)}")
+    return "Metodologías que manejo:\n" + "\n".join(bullets) + "\n\n¿Quieres que te explique alguna en detalle o que recomiende la mejor para tu caso?"
+
+
 # ====== detección de petición de cambio de metodología ======
 _CHANGE_PAT = re.compile(
     r"(?:cambia(?:r)?\s+a|usar|quiero|prefiero|pasar\s+a)\s+(scrum|kanban|scrumban|xp|lean|crystal|fdd|dsdm|safe|devops)"
@@ -592,18 +661,11 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
         msg.append(f"¿Quieres que **cambie el plan a {target}** ahora? **sí/no**")
         return "\n".join(msg), "Consejo de cambio con confirmación."
 
-    # Documentación/autores
+    # Documentación/autores (citas)
     if _asks_sources(text):
-        # Si la última área fue phases/equipo, citamos esas + metodología.
-        # Si no hay área, citamos metodología por defecto.
-        # Como no mantenemos “last_area” aquí, asumir por defecto fases/equipo cuando
-        # la consulta previa fue de fases/equipo (el front suele enviar de seguido).
-        # Para robustez, citamos combinación.
         sour = []
         if proposal:
-            # metodología
             sour.extend(proposal.get("methodology_sources", []) or METHODOLOGIES.get(proposal.get("methodology",""),{}).get("sources", []))
-            # generales (fases/equipo)
             for s in AGILE_TEAM_SOURCES:
                 sour.append(s)
             text_out = "Fuentes generales de la propuesta — referencias:\n" + _format_sources(sour)
@@ -623,6 +685,23 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             total = s.get("budget", {}).get("total_eur")
             lines.append(f"• Caso #{s['id']} — Metodología {s['methodology']}, Equipo: {team}, Total: {total} €, similitud {s['similarity']:.2f}")
         return "Casos similares en mi memoria:\n" + "\n".join(lines), "Similares (k-NN TF-IDF)."
+
+    # -------- catálogo y definiciones de metodologías --------
+    if _asks_method_list(text):
+        try:
+            set_last_area(session_id, "metodologia")
+        except Exception:
+            pass
+        return _catalog_text(), "Catálogo de metodologías."
+
+    methods_in_text = _mentioned_methods(text)
+    if _asks_method_definition(text) and len(methods_in_text) == 1:
+        try:
+            set_last_area(session_id, "metodologia")
+        except Exception:
+            pass
+        m = methods_in_text[0]
+        return _method_overview_text(m), f"Definición de {m}."
 
     # Intenciones básicas
     if _is_greeting(text):
@@ -660,14 +739,17 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
                 if cnt is not None:
                     bullets = _explain_role_count(r, cnt, req_text)
                     extra = f"\nEn esta propuesta: **{cnt:g} {r}**."
-            return (f"{r} — función/valor:\n- " + "\n- ".join(bullets) + extra), "Rol concreto."
+            return (f"{r} — función/valor:\n- " + "\n".join(bullets) + extra), "Rol concreto."
         else:
             return ("Veo varios roles mencionados. Dime uno concreto (p. ej., 'QA' o 'Tech Lead') y te explico su función y por qué está en el plan."), "Varios roles."
 
     # Preguntas de dominio (sin 'por qué')
     if _asks_methodology(text) and not _asks_why(text):
-        return ("Metodologías soportadas: Scrum, Kanban, Scrumban, XP, Lean, Crystal, FDD, DSDM, SAFe y DevOps.\n"
-                "Dame tus requisitos y elijo la mejor con explicación y fuentes."), "Metodologías."
+        try:
+            set_last_area(session_id, "metodologia")
+        except Exception:
+            pass
+        return (_catalog_text()), "Metodologías (catálogo)."
     if _asks_budget(text) and not _asks_why(text):
         if proposal:
             return ("\n".join(_explain_budget(proposal))), "Presupuesto."
@@ -681,7 +763,7 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
         set_last_area(session_id, "equipo")
         if proposal:
             reasons = _explain_team_general(proposal, req_text)
-            return ("Equipo propuesto — razones:\n- " + "\n- ".join(reasons)), "Equipo."
+            return ("Equipo propuesto — razones:\n- " + "\n".join(reasons)), "Equipo."
         return (
             "Perfiles típicos: PM, Tech Lead, Backend, Frontend, QA, UX. "
             "La cantidad depende de módulos: pagos, panel admin, mobile, IA… "
@@ -690,10 +772,10 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
 
     # ===================== 'por qué' =====================
     if _asks_why(text):
-        methods_in_text = _mentioned_methods(text)
         current_method = proposal["methodology"] if proposal else None
 
         # Comparativa directa si el usuario menciona 2 metodologías
+        methods_in_text = _mentioned_methods(text)
         if len(methods_in_text) >= 2:
             a, b = methods_in_text[0], methods_in_text[1]
             if req_text:
