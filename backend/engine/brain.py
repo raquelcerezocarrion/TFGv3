@@ -1,5 +1,7 @@
 # backend/engine/brain.py
 import re
+import json
+import copy
 from typing import Tuple, Dict, Any, List, Optional
 
 # Memoria de usuario (preferencias; opcional según tu state_store)
@@ -533,7 +535,271 @@ def _retune_plan_for_method(p: Dict[str, Any], method: str) -> Dict[str, Any]:
         phases = p.get("phases", [])
     if phases:
         p["phases"] = phases
+    # si cambian fases, hay que recalcular presupuesto
+    p = _recompute_budget(p)
     return p
+
+
+# ===================== NUEVO: cambios sobre toda la propuesta =====================
+
+_PATCH_PREFIX = "__PATCH__:"
+
+def _make_pending_patch(session_id: str, patch: Dict[str, Any]) -> Tuple[str, str]:
+    """Guarda un parche pendiente con confirmación sí/no usando el mismo canal pending_change."""
+    try:
+        set_pending_change(session_id, _PATCH_PREFIX + json.dumps(patch, ensure_ascii=False))
+    except Exception:
+        # fallback por si falla el state_store
+        set_pending_change(session_id, _PATCH_PREFIX + json.dumps(patch))
+    area = patch.get("type", "propuesta")
+    summary = _summarize_patch(patch)
+    return f"Propones cambiar **{area}**:\n{summary}\n\n¿Aplico estos cambios? **sí/no**", f"Parche pendiente ({area})."
+
+def _parse_pending_patch(pending_val: str) -> Optional[Dict[str, Any]]:
+    if isinstance(pending_val, str) and pending_val.startswith(_PATCH_PREFIX):
+        try:
+            return json.loads(pending_val[len(_PATCH_PREFIX):])
+        except Exception:
+            return None
+    return None
+
+def _summarize_patch(patch: Dict[str, Any]) -> str:
+    t = patch.get("type")
+    if t == "team":
+        ops = patch.get("ops", [])
+        lines = []
+        for op in ops:
+            if op["op"] == "set":
+                lines.append(f"- {op['role']} → {op['count']} FTE")
+            elif op["op"] == "add":
+                lines.append(f"- Añadir {op['count']} {op['role']}")
+            elif op["op"] == "remove":
+                lines.append(f"- Quitar {op['role']}")
+        return "\n".join(lines) if lines else "- (sin cambios detectados)"
+    if t == "phases":
+        ops = patch.get("ops", [])
+        lines = []
+        for op in ops:
+            if op["op"] == "set_weeks":
+                lines.append(f"- Fase '{op['name']}' → {op['weeks']} semanas")
+            elif op["op"] == "add":
+                lines.append(f"- Añadir fase '{op['name']}' ({op['weeks']}s)")
+            elif op["op"] == "remove":
+                lines.append(f"- Quitar fase '{op['name']}'")
+        return "\n".join(lines) if lines else "- (sin cambios detectados)"
+    if t == "budget":
+        lines = []
+        if "contingency_pct" in patch:
+            lines.append(f"- Contingencia → {patch['contingency_pct']}%")
+        for role, rate in patch.get("role_rates", {}).items():
+            lines.append(f"- Tarifa {role} → {rate} €/pw")
+        return "\n".join(lines) if lines else "- (sin cambios detectados)"
+    if t == "risks":
+        lines = []
+        for r in patch.get("add", []):
+            lines.append(f"- Añadir riesgo: {r}")
+        for r in patch.get("remove", []):
+            lines.append(f"- Quitar riesgo: {r}")
+        return "\n".join(lines) if lines else "- (sin cambios detectados)"
+    return "- Cambio genérico a propuesta."
+
+def _recompute_budget(p: Dict[str, Any]) -> Dict[str, Any]:
+    """Recalcula presupuesto en base a team, phases y role_rates/contingencia."""
+    p = copy.deepcopy(p)
+    phases = p.get("phases", [])
+    team = p.get("team", [])
+    budget = p.get("budget", {}) or {}
+    ass = budget.get("assumptions", {}) or {}
+    role_rates = ass.get("role_rates_eur_pw", {}) or {
+        "PM": 1200.0, "Tech Lead": 1400.0,
+        "Backend Dev": 1100.0, "Frontend Dev": 1000.0,
+        "QA": 900.0, "UX/UI": 1000.0, "ML Engineer": 1400.0,
+    }
+    contingency_pct = round(100 * (budget.get("contingency_10pct", 0.0) / budget.get("labor_estimate_eur", 1.0))) if budget.get("labor_estimate_eur") else 10
+    # permitir override si ya vino en ass
+    if isinstance(ass.get("contingency_pct"), (int, float)):
+        contingency_pct = ass["contingency_pct"]
+
+    project_weeks = sum(ph.get("weeks", 0) for ph in phases)
+    by_role: Dict[str, float] = {}
+    for r in team:
+        role = r["role"]; cnt = float(r["count"])
+        rate = float(role_rates.get(role, 1000.0))
+        by_role.setdefault(role, 0.0)
+        by_role[role] += cnt * project_weeks * rate
+
+    labor = round(sum(by_role.values()), 2)
+    contingency = round((contingency_pct / 100.0) * labor, 2)
+    total = round(labor + contingency, 2)
+
+    p["budget"] = {
+        "labor_estimate_eur": labor,
+        "contingency_10pct": contingency,  # mantenemos el nombre original aunque cambie el pct
+        "total_eur": total,
+        "by_role": by_role,
+        "assumptions": {
+            "project_weeks": project_weeks,
+            "role_rates_eur_pw": role_rates,
+            "contingency_pct": contingency_pct
+        }
+    }
+    return p
+
+def _apply_patch(proposal: Dict[str, Any], patch: Dict[str, Any]) -> Dict[str, Any]:
+    """Aplica un parche estructurado a la propuesta y recalcula lo necesario."""
+    p = copy.deepcopy(proposal)
+    t = patch.get("type")
+
+    if t == "team":
+        ops = patch.get("ops", [])
+        # normalizamos roles
+        for op in ops:
+            op["role"] = _canonical_role(op["role"])
+        # aplicar
+        role_index = {r["role"].lower(): i for i, r in enumerate(p.get("team", []))}
+        for op in ops:
+            rkey = op["role"].lower()
+            if op["op"] == "set":
+                if rkey in role_index:
+                    p["team"][role_index[rkey]]["count"] = float(op["count"])
+                else:
+                    p["team"].append({"role": op["role"], "count": float(op["count"])})
+            elif op["op"] == "add":
+                if rkey in role_index:
+                    p["team"][role_index[rkey]]["count"] = float(p["team"][role_index[rkey]]["count"]) + float(op["count"])
+                else:
+                    p["team"].append({"role": op["role"], "count": float(op["count"])})
+            elif op["op"] == "remove":
+                p["team"] = [r for r in p["team"] if _norm(r["role"]) != rkey]
+        p = _recompute_budget(p)
+
+    elif t == "phases":
+        ops = patch.get("ops", [])
+        # mapa por nombre (case-insensitive)
+        def _find_phase_idx(name: str) -> Optional[int]:
+            for i, ph in enumerate(p.get("phases", [])):
+                if _norm(ph["name"]) == _norm(name):
+                    return i
+            return None
+        for op in ops:
+            if op["op"] == "set_weeks":
+                idx = _find_phase_idx(op["name"])
+                if idx is not None:
+                    p["phases"][idx]["weeks"] = int(op["weeks"])
+            elif op["op"] == "add":
+                p.setdefault("phases", []).append({"name": op["name"], "weeks": int(op["weeks"])})
+            elif op["op"] == "remove":
+                p["phases"] = [ph for ph in p.get("phases", []) if _norm(ph["name"]) != _norm(op["name"])]
+        p = _recompute_budget(p)
+
+    elif t == "budget":
+        # role_rates + contingency_pct
+        budget = p.get("budget", {}) or {}
+        ass = budget.get("assumptions", {}) or {}
+        role_rates = ass.get("role_rates_eur_pw", {}) or {}
+        role_rates.update({ _canonical_role(k): float(v) for k, v in (patch.get("role_rates") or {}).items() })
+        p.setdefault("budget", {})  # ensure
+        p["budget"].setdefault("assumptions", {})
+        p["budget"]["assumptions"]["role_rates_eur_pw"] = role_rates
+        if "contingency_pct" in patch:
+            pct = float(patch["contingency_pct"])
+            p["budget"]["assumptions"]["contingency_pct"] = pct
+        p = _recompute_budget(p)
+
+    elif t == "risks":
+        add = patch.get("add", []) or []
+        remove = patch.get("remove", []) or []
+        risks = p.get("risks", [])[:]
+        for r in add:
+            if r not in risks:
+                risks.append(r)
+        for r in remove:
+            risks = [x for x in risks if _norm(x) != _norm(r)]
+        p["risks"] = risks
+
+    # mantenemos sources de metodología siempre
+    info = METHODOLOGIES.get(p.get("methodology", ""), {})
+    p["methodology_sources"] = info.get("sources", [])
+    return p
+
+# ---------- Parsers de lenguaje natural → parches ----------
+
+def _parse_team_patch(text: str) -> Optional[Dict[str, Any]]:
+    t = _norm(text)
+    # add: añade 0.5 qa / agrega 1 backend
+    add_pat = re.findall(r"(?:añade|agrega|suma)\s+(\d+(?:[.,]\d+)?)\s+([a-zA-Z\s/]+)", t)
+    # set: deja/ajusta/pon 2 backend ; sube/baja a 1 qa
+    set_pat = re.findall(r"(?:deja|ajusta|pon|pone|establece|setea|sube|baja)\s+(?:a\s+)?(\d+(?:[.,]\d+)?)\s+([a-zA-Z\s/]+)", t)
+    # remove: quita/elimina ux
+    rem_pat = re.findall(r"(?:quita|elimina|borra)\s+([a-zA-Z\s/]+)", t)
+
+    ops = []
+    for num, role in add_pat:
+        ops.append({"op": "add", "role": role.strip(), "count": float(num.replace(",", "."))})
+    for num, role in set_pat:
+        ops.append({"op": "set", "role": role.strip(), "count": float(num.replace(",", "."))})
+    for role in rem_pat:
+        # evita marcar 'fase' etc como rol por falso positivo: role tokens típicos
+        if any(k in role for k in ["pm","lead","arquitect","backend","frontend","qa","ux","ui","ml","data","tester","quality"]):
+            ops.append({"op": "remove", "role": role.strip()})
+
+    if ops:
+        return {"type": "team", "ops": ops}
+    return None
+
+def _parse_phases_patch(text: str) -> Optional[Dict[str, Any]]:
+    t = _norm(text)
+    ops = []
+    # set weeks: fase X a 8 semanas / cambia 'Sprints de Desarrollo (2w)' a 10 semanas
+    for name, weeks in re.findall(r"(?:fase\s+)?'([^']+?)'\s+a\s+(\d+)\s*sem", t):
+        ops.append({"op": "set_weeks", "name": name.strip(), "weeks": int(weeks)})
+    for weeks, name in re.findall(r"(?:cambia|ajusta|pon)\s+(\d+)\s*sem(?:anas|ana|s)?\s+a\s+'([^']+)'", t):
+        ops.append({"op": "set_weeks", "name": name.strip(), "weeks": int(weeks)})
+
+    # add phase: añade fase 'Pilotaje' 2 semanas
+    for name, weeks in re.findall(r"(?:añade|agrega)\s+fase\s+'([^']+?)'\s+(\d+)\s*sem", t):
+        ops.append({"op": "add", "name": name.strip(), "weeks": int(weeks)})
+
+    # remove phase: quita/elimina fase 'QA'
+    for name in re.findall(r"(?:quita|elimina)\s+fase\s+'([^']+?)'", t):
+        ops.append({"op": "remove", "name": name.strip()})
+
+    if ops:
+        return {"type": "phases", "ops": ops}
+    return None
+
+def _parse_budget_patch(text: str) -> Optional[Dict[str, Any]]:
+    t = _norm(text)
+    role_rates = {}
+    # tarifa de backend a 1200 / rate pm 1300
+    for role, rate in re.findall(r"(?:tarifa|rate)\s+de?\s+([a-zA-Z\s/]+?)\s+a\s+(\d+)", t):
+        role_rates[_canonical_role(role.strip())] = float(rate)
+    # contingencia a 15%
+    cont = re.search(r"contingencia\s+(?:a\s+)?(\d+)\s*%+", t)
+    patch: Dict[str, Any] = {"type": "budget"}
+    if role_rates:
+        patch["role_rates"] = role_rates
+    if cont:
+        patch["contingency_pct"] = float(cont.group(1))
+    if len(patch.keys()) > 1:
+        return patch
+    return None
+
+def _parse_risks_patch(text: str) -> Optional[Dict[str, Any]]:
+    t = _norm(text)
+    add = [s.strip() for s in re.findall(r"(?:añade|agrega)\s+r(?:iesgo|isk)o?:?\s+(.+)", t)]
+    remove = [s.strip() for s in re.findall(r"(?:quita|elimina)\s+r(?:iesgo|isk)o?:?\s+(.+)", t)]
+    if add or remove:
+        return {"type": "risks", "add": add, "remove": remove}
+    return None
+
+def _parse_any_patch(text: str) -> Optional[Dict[str, Any]]:
+    # prioridad por áreas claras
+    for parser in (_parse_team_patch, _parse_phases_patch, _parse_budget_patch, _parse_risks_patch):
+        patch = parser(text)
+        if patch:
+            return patch
+    return None
 
 
 # ===================== generación de respuesta =====================
@@ -542,28 +808,52 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
     text = message.strip()
     proposal, req_text = get_last_proposal(session_id)
 
-    # 0) Cambio pendiente → sí/no
+    # 0) Cambio pendiente → sí/no (metodología o parches de propuesta)
     pending = get_pending_change(session_id)
     if pending:
-        if _is_yes(text):
-            target = pending["target_method"]
-            if not proposal or not req_text:
+        pending_val = pending["target_method"]
+        # ¿es un parche general?
+        pending_patch = _parse_pending_patch(pending_val)
+        if pending_patch:
+            if _is_yes(text):
+                if not proposal or not req_text:
+                    clear_pending_change(session_id)
+                    return "Necesito una propuesta base antes de cambiar. Usa '/propuesta: ...'.", "Cambio pendiente sin propuesta."
+                new_plan = _apply_patch(proposal, pending_patch)
+                set_last_proposal(session_id, new_plan, req_text)
                 clear_pending_change(session_id)
-                return "Necesito una propuesta base antes de cambiar. Usa '/propuesta: ...'.", "Cambio pendiente sin propuesta."
-            new_plan = _retune_plan_for_method(proposal, target)
-            set_last_proposal(session_id, new_plan, req_text)
-            clear_pending_change(session_id)
-            try:
-                save_proposal(session_id, req_text, new_plan)
-                log_message(session_id, "assistant", f"[CAMBIO CONFIRMADO → {target}]")
-            except Exception:
-                pass
-            return _pretty_proposal(new_plan), f"Cambio confirmado a {target}."
-        elif _is_no(text):
-            clear_pending_change(session_id)
-            return "Perfecto, mantengo la metodología actual.", "Cambio cancelado por el usuario."
+                try:
+                    save_proposal(session_id, req_text, new_plan)
+                    log_message(session_id, "assistant", f"[CAMBIO CONFIRMADO → {pending_patch.get('type')}]")
+                except Exception:
+                    pass
+                return _pretty_proposal(new_plan), f"Cambio confirmado ({pending_patch.get('type')})."
+            elif _is_no(text):
+                clear_pending_change(session_id)
+                return "Perfecto, mantengo la propuesta tal cual.", "Cambio cancelado por el usuario."
+            else:
+                return "Tengo un cambio **pendiente**. ¿Lo aplico? **sí/no**", "Esperando confirmación de cambio."
         else:
-            return "Tengo un cambio de metodología **pendiente**. ¿Lo aplico? **sí/no**", "Esperando confirmación de cambio."
+            # flujo original de cambio de metodología
+            if _is_yes(text):
+                target = pending_val  # método objetivo
+                if not proposal or not req_text:
+                    clear_pending_change(session_id)
+                    return "Necesito una propuesta base antes de cambiar. Usa '/propuesta: ...'.", "Cambio pendiente sin propuesta."
+                new_plan = _retune_plan_for_method(proposal, target)
+                set_last_proposal(session_id, new_plan, req_text)
+                clear_pending_change(session_id)
+                try:
+                    save_proposal(session_id, req_text, new_plan)
+                    log_message(session_id, "assistant", f"[CAMBIO CONFIRMADO → {target}]")
+                except Exception:
+                    pass
+                return _pretty_proposal(new_plan), f"Cambio confirmado a {target}."
+            elif _is_no(text):
+                clear_pending_change(session_id)
+                return "Perfecto, mantengo la metodología actual.", "Cambio cancelado por el usuario."
+            else:
+                return "Tengo un cambio de metodología **pendiente**. ¿Lo aplico? **sí/no**", "Esperando confirmación de cambio."
 
     # Intents (si hay modelo entrenado)
     intent, conf = ("other", 0.0)
@@ -601,19 +891,27 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             pass
         return _pretty_proposal(p), "Propuesta generada."
 
-    # Comando explícito: /cambiar:
+    # Comando explícito: /cambiar:   (se mantiene para método y se amplía con parches)
     if text.lower().startswith("/cambiar:"):
-        target = normalize_method_name(text.split(":", 1)[1].strip())
-        if not proposal or not req_text:
-            return "Primero necesito una propuesta en esta sesión. Usa '/propuesta: ...' y luego confirma el cambio.", "Cambiar sin propuesta."
-        new_plan = _retune_plan_for_method(proposal, target)
-        set_last_proposal(session_id, new_plan, req_text)
-        try:
-            save_proposal(session_id, req_text, new_plan)
-            log_message(session_id, "assistant", f"[CAMBIO METODOLOGIA → {target}]")
-        except Exception:
-            pass
-        return _pretty_proposal(new_plan), f"Plan reajustado a {target}."
+        arg = text.split(":", 1)[1].strip()
+        # si coincide con una metodología conocida → cambio directo
+        target = normalize_method_name(arg)
+        if target in METHODOLOGIES:
+            if not proposal or not req_text:
+                return "Primero necesito una propuesta en esta sesión. Usa '/propuesta: ...' y luego confirma el cambio.", "Cambiar sin propuesta."
+            new_plan = _retune_plan_for_method(proposal, target)
+            set_last_proposal(session_id, new_plan, req_text)
+            try:
+                save_proposal(session_id, req_text, new_plan)
+                log_message(session_id, "assistant", f"[CAMBIO METODOLOGIA → {target}]")
+            except Exception:
+                pass
+            return _pretty_proposal(new_plan), f"Plan reajustado a {target}."
+        # si no, intento parsear como parche general y pido confirmación
+        patch = _parse_any_patch(arg)
+        if patch:
+            return _make_pending_patch(session_id, patch)
+        return "No entendí qué cambiar. Puedes usar ejemplos: '/cambiar: añade 0.5 QA', '/cambiar: contingencia a 15%'", "Cambiar: sin parseo."
 
     # Cambio natural de metodología → consejo + confirmación
     change_req = _parse_change_request(text)
@@ -657,9 +955,16 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             if evitar_target:
                 msg.append(f"Riesgos si cambiamos a {target}: " + "; ".join(evitar_target))
 
+        # aquí guardamos un pending_change clásico (solo método)
         set_pending_change(session_id, target)
         msg.append(f"¿Quieres que **cambie el plan a {target}** ahora? **sí/no**")
         return "\n".join(msg), "Consejo de cambio con confirmación."
+
+    # NUEVO: Cambios naturales a otras áreas → confirmación con parche
+    if proposal:
+        patch = _parse_any_patch(text)
+        if patch:
+            return _make_pending_patch(session_id, patch)
 
     # Documentación/autores (citas)
     if _asks_sources(text):
@@ -713,7 +1018,8 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
     if _is_help(text):
         return (
             "Puedo: 1) generar una propuesta completa (equipo, fases, metodología, presupuesto, riesgos), "
-            "2) explicar por qué tomo cada decisión (con citas), 3) evaluar cambios de metodología y reajustar el plan (sí/no)."
+            "2) explicar por qué tomo cada decisión (con citas), 3) evaluar y **aplicar cambios** en metodología **y en toda la propuesta** (equipo, fases, presupuesto, riesgos) con confirmación **sí/no**.\n"
+            "Ejemplos: 'añade 0.5 QA', 'tarifa de Backend a 1200', 'contingencia a 15%', \"cambia 'Sprints de Desarrollo (2w)' a 8 semanas\", 'quita fase \"QA\"', 'añade riesgo: cumplimiento RGPD'."
         ), "Ayuda."
 
     # Fases (sin 'por qué')
@@ -865,7 +1171,7 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
                 f"Metodología: {proposal['methodology']}",
                 "Equipo dimensionado por módulos detectados y equilibrio coste/velocidad.",
                 "Fases cubren descubrimiento→entrega; cada una reduce un riesgo.",
-                "Presupuesto = headcount × semanas × tarifa por rol + 10% contingencia."
+                "Presupuesto = headcount × semanas × tarifa por rol + % de contingencia."
             ]
             return ("Explicación general:\n- " + "\n".join(generic)), "Explicación general."
         else:
@@ -895,3 +1201,4 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
         "Te he entendido. Dame más contexto (objetivo, usuarios, módulos clave) "
         "o escribe '/propuesta: ...' y te entrego un plan completo con justificación y fuentes."
     ), "Fallback."
+
