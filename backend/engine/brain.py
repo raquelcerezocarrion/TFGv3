@@ -91,7 +91,7 @@ def _asks_budget(text: str) -> bool:
     return bool(re.search(r"\b(presupuesto|coste|costos|estimaci[oó]n|precio)\b", text, re.I))
 
 def _asks_team(text: str) -> bool:
-    return bool(re.search(r"\b(equipo|roles|perfiles|staffing|personal|plantilla|dimension)\b", text, re.I))
+    return bool(re.search(r"\b(equipo|roles|perfiles|staffing|personal|dimension)\b", text, re.I))
 
 def _asks_risks_simple(text: str) -> bool:
     t = _norm(text)
@@ -544,16 +544,174 @@ def _retune_plan_for_method(p: Dict[str, Any], method: str) -> Dict[str, Any]:
 
 _PATCH_PREFIX = "__PATCH__:"
 
-def _make_pending_patch(session_id: str, patch: Dict[str, Any]) -> Tuple[str, str]:
-    """Guarda un parche pendiente con confirmación sí/no usando el mismo canal pending_change."""
+def _total_weeks(p: Dict[str, Any]) -> int:
+    return sum(int(ph.get("weeks", 0)) for ph in p.get("phases", []))
+
+def _fte_sum(p: Dict[str, Any]) -> float:
+    return float(sum(float(r.get("count", 0)) for r in p.get("team", [])))
+
+def _get_rate_map(p: Dict[str, Any]) -> Dict[str, float]:
+    return (p.get("budget", {}).get("assumptions", {}).get("role_rates_eur_pw", {}) or {})
+
+def _evaluate_patch(proposal: Dict[str, Any], patch: Dict[str, Any], req_text: Optional[str]) -> Tuple[str, str]:
+    """
+    Devuelve (texto_evaluacion, etiqueta_veredicto)
+    etiqueta_veredicto ∈ {'buena', 'neutra', 'mala'}
+    """
+    before = copy.deepcopy(proposal)
+    after = _apply_patch(proposal, patch)  # no muta 'proposal'
+    w0, w1 = _total_weeks(before), _total_weeks(after)
+    f0, f1 = _fte_sum(before), _fte_sum(after)
+    b0, b1 = before.get("budget", {}).get("total_eur", 0.0), after.get("budget", {}).get("total_eur", 0.0)
+    labor0 = before.get("budget", {}).get("labor_estimate_eur", 0.0)
+    labor1 = after.get("budget", {}).get("labor_estimate_eur", 0.0)
+    cont0 = before.get("budget", {}).get("assumptions", {}).get("contingency_pct", 10)
+    cont1 = after.get("budget", {}).get("assumptions", {}).get("contingency_pct", cont0)
+
+    delta_w = w1 - w0
+    delta_f = f1 - f0
+    delta_cost = round(b1 - b0, 2)
+
+    lines: List[str] = []
+    verdict = "neutra"
+
+    def add_line(s: str): lines.append(s)
+
+    # Cabecera por tipo
+    t = patch.get("type")
+    if t == "team":
+        add_line("📌 Evaluación del cambio de **equipo**:")
+        # Heurísticas de calidad/gestión
+        roles_before = {r["role"].lower(): float(r["count"]) for r in before.get("team", [])}
+        roles_after  = {r["role"].lower(): float(r["count"]) for r in after.get("team", [])}
+
+        def had(role): return roles_before.get(role.lower(), 0) > 0
+        def has(role): return roles_after.get(role.lower(), 0) > 0
+
+        critical = {"pm": "PM", "tech lead": "Tech Lead", "qa": "QA"}
+        critical_removed = [name for key, name in critical.items() if had(key) and not has(key)]
+        critical_added = [name for key, name in critical.items() if not had(key) and has(key)]
+
+        if critical_removed:
+            add_line(f"⚠️ Se elimina un rol crítico: {', '.join(critical_removed)} → riesgo de coordinación/calidad.")
+        if critical_added:
+            add_line(f"✅ Se incorpora rol crítico: {', '.join(critical_added)} → mejora gobernanza/calidad.")
+
+        # Cobertura de UX/QA
+        if had("qa") and roles_after.get("qa", 0) < roles_before.get("qa", 0):
+            add_line("⚠️ Menos QA → mayor riesgo de fuga de defectos y retrabajo.")
+        if roles_after.get("ux/ui", 0) > roles_before.get("ux/ui", 0):
+            add_line("✅ Más UX/UI suele mejorar conversión y reducir retrabajo de frontend.")
+
+        # Throughput
+        if delta_f > 0 and delta_w == 0:
+            add_line("➕ Más FTE con el mismo timeline → más throughput, potencialmente entrega antes dentro de las mismas semanas.")
+        if delta_f < 0 and delta_w == 0:
+            add_line("➖ Menos FTE con igual timeline → riesgo de cuello de botella en desarrollo.")
+
+        # Veredicto por reglas
+        if critical_removed:
+            verdict = "mala"
+        elif delta_f > 0 and has("qa"):
+            verdict = "buena"
+        elif delta_f < 0:
+            verdict = "mala"
+        else:
+            verdict = "neutra"
+
+    elif t == "phases":
+        add_line("📌 Evaluación del cambio de **fases/timeline**:")
+        if delta_w < 0:
+            pct = int(abs(delta_w) / (w0 or 1) * 100)
+            add_line(f"⚠️ Reduces el timeline en {abs(delta_w)} semanas (~{pct}%). Riesgo de calidad/alcance si no se compensa con más equipo.")
+            verdict = "mala" if pct >= 20 else "neutra"
+        elif delta_w > 0:
+            add_line(f"✅ Aumentas el timeline en {delta_w} semanas → más colchón para QA/estabilización.")
+            verdict = "buena"
+        else:
+            add_line("≈ El número total de semanas no cambia. Impacto neutro salvo por la redistribución interna.")
+            verdict = "neutra"
+
+        # Señales de QA/hardening si aparecen en nombres
+        names_after = " ".join(ph.get("name", "").lower() for ph in after.get("phases", []))
+        if any(k in names_after for k in ["qa", "hardening", "aceptación", "aceptacion", "observabilidad"]):
+            add_line("✅ Mantienes/añades fase(s) de QA/Hardening → reduce riesgo de regresiones.")
+            if verdict != "mala":
+                verdict = "buena"
+
+    elif t == "budget":
+        add_line("📌 Evaluación del cambio de **presupuesto**:")
+        # Contingencia
+        if "contingency_pct" in patch:
+            if cont1 < 10:
+                add_line(f"⚠️ Bajas contingencia al {cont1:.0f}% (<10%): optimista; riesgo ante incertidumbre.")
+                verdict = "mala"
+            elif cont1 > cont0:
+                add_line(f"✅ Subes contingencia al {cont1:.0f}%: más resiliencia ante cambios o riesgos.")
+                verdict = "buena"
+        # Tarifas
+        rate_map = _get_rate_map(after)
+        low_rates = [r for r, v in rate_map.items() if v < 800]
+        if low_rates:
+            add_line("⚠️ Algunas tarifas < 800 €/pw (p. ej., " + ", ".join(low_rates[:3]) + ") pueden ser poco realistas para perfiles medianos.")
+            if verdict != "buena":
+                verdict = "mala" if verdict == "mala" else "neutra"
+        if not ("contingency_pct" in patch or "role_rates" in patch):
+            add_line("Cambios de presupuesto no detectados con impacto claro.")
+            verdict = "neutra"
+
+    elif t == "risks":
+        add_line("📌 Evaluación del cambio de **riesgos**:")
+        adds = patch.get("add", []) or []
+        rems = patch.get("remove", []) or []
+        if adds:
+            add_line("✅ Añadir riesgos explicita supuestos y mejora la gestión preventiva.")
+            verdict = "buena"
+        if rems:
+            add_line("⚠️ Quitar riesgos del listado no elimina su posibilidad; hazlo solo si están mitigados/transferidos.")
+            if verdict != "buena":
+                verdict = "neutra"
+
+    # Impacto cuantitativo
+    add_line("")
+    add_line("📊 **Impacto estimado:**")
+    add_line(f"- Semanas totales: {w0} → {w1}  (Δ {delta_w:+d})")
+    add_line(f"- Headcount equivalente (FTE): {f0:g} → {f1:g}  (Δ {delta_f:+g})")
+    add_line(f"- Labor: {labor0:.2f} € → {labor1:.2f} €  (Δ {labor1 - labor0:+.2f} €)")
+    add_line(f"- Total con contingencia ({cont1:.0f}%): {b0:.2f} € → {b1:.2f} €  (Δ {delta_cost:+.2f} €)")
+
+    # Sello final
+    if verdict == "buena":
+        add_line("\n✅ **En general: buena idea** para tu contexto, según las heurísticas de calidad/gestión.")
+    elif verdict == "mala":
+        add_line("\n⚠️ **En general: mala idea** por los riesgos mencionados.")
+    else:
+        add_line("\nℹ️ **En general: impacto neutro**; depende de tus prioridades (coste vs. velocidad/calidad).")
+
+    return "\n".join(lines), verdict
+
+
+def _make_pending_patch(session_id: str, patch: Dict[str, Any], proposal: Optional[Dict[str, Any]] = None, req_text: Optional[str] = None) -> Tuple[str, str]:
+    """Guarda un parche pendiente con evaluación y confirmación sí/no usando el mismo canal pending_change."""
+    # Guardamos el parche en pending_change (compat: string con prefijo)
     try:
         set_pending_change(session_id, _PATCH_PREFIX + json.dumps(patch, ensure_ascii=False))
     except Exception:
-        # fallback por si falla el state_store
         set_pending_change(session_id, _PATCH_PREFIX + json.dumps(patch))
+
     area = patch.get("type", "propuesta")
     summary = _summarize_patch(patch)
-    return f"Propones cambiar **{area}**:\n{summary}\n\n¿Aplico estos cambios? **sí/no**", f"Parche pendiente ({area})."
+
+    eval_block = ""
+    if proposal:
+        try:
+            eval_text, _ = _evaluate_patch(proposal, patch, req_text)
+            eval_block = "\n\n" + eval_text
+        except Exception:
+            eval_block = "\n\n(Nota: no pude calcular la evaluación automática, pero puedo aplicar el cambio igualmente.)"
+
+    msg = f"Propones cambiar **{area}**:\n{summary}{eval_block}\n\n¿Aplico estos cambios? **sí/no**"
+    return msg, f"Parche pendiente ({area})."
 
 def _parse_pending_patch(pending_val: str) -> Optional[Dict[str, Any]]:
     if isinstance(pending_val, str) and pending_val.startswith(_PATCH_PREFIX):
@@ -832,7 +990,8 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
                 clear_pending_change(session_id)
                 return "Perfecto, mantengo la propuesta tal cual.", "Cambio cancelado por el usuario."
             else:
-                return "Tengo un cambio **pendiente**. ¿Lo aplico? **sí/no**", "Esperando confirmación de cambio."
+                # Cuando hay duda, recordamos que hay evaluación previa en el mensaje anterior
+                return "Tengo un cambio **pendiente** con evaluación. ¿Lo aplico? **sí/no**", "Esperando confirmación de cambio."
         else:
             # flujo original de cambio de metodología
             if _is_yes(text):
@@ -907,10 +1066,12 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             except Exception:
                 pass
             return _pretty_proposal(new_plan), f"Plan reajustado a {target}."
-        # si no, intento parsear como parche general y pido confirmación
+        # si no, intento parsear como parche general y pido confirmación con evaluación
         patch = _parse_any_patch(arg)
         if patch:
-            return _make_pending_patch(session_id, patch)
+            if not proposal:
+                return "Primero necesito una propuesta en esta sesión. Usa '/propuesta: ...' y después propón cambios.", "Cambiar: sin propuesta."
+            return _make_pending_patch(session_id, patch, proposal, req_text)
         return "No entendí qué cambiar. Puedes usar ejemplos: '/cambiar: añade 0.5 QA', '/cambiar: contingencia a 15%'", "Cambiar: sin parseo."
 
     # Cambio natural de metodología → consejo + confirmación
@@ -960,11 +1121,11 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
         msg.append(f"¿Quieres que **cambie el plan a {target}** ahora? **sí/no**")
         return "\n".join(msg), "Consejo de cambio con confirmación."
 
-    # NUEVO: Cambios naturales a otras áreas → confirmación con parche
+    # NUEVO: Cambios naturales a otras áreas → confirmación con parche + evaluación
     if proposal:
         patch = _parse_any_patch(text)
         if patch:
-            return _make_pending_patch(session_id, patch)
+            return _make_pending_patch(session_id, patch, proposal, req_text)
 
     # Documentación/autores (citas)
     if _asks_sources(text):
@@ -1201,4 +1362,3 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
         "Te he entendido. Dame más contexto (objetivo, usuarios, módulos clave) "
         "o escribe '/propuesta: ...' y te entrego un plan completo con justificación y fuentes."
     ), "Fallback."
-
