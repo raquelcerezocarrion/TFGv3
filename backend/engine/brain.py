@@ -365,6 +365,198 @@ def _explain_phases_method_aware(proposal: Dict[str, Any]) -> List[str]:
             else:
                 lines.append(f"- {ph['name']}: entregables que reducen riesgos específicos.")
     return lines
+# === NUEVO: detección y explicación de fase concreta ===
+
+_PHASE_CANON = {
+    'incepcion': {
+        'incepcion','incepción','inception','discovery','inicio','kickoff',
+        'plan de releases','plan de release','plan de entregas','plan de lanzamientos',
+        'release planning','plan de lanzamiento'
+    },
+    'sprints de desarrollo': {
+        'sprint','sprints','iteraciones','desarrollo','implementation','implementacion'
+    },
+    'qa/hardening': {
+        'qa','quality','calidad','hardening','stabilization','stabilizacion',
+        'aceptacion','aceptación','pruebas de aceptación','testing'
+    },
+    'despliegue & transferencia': {
+        'despliegue','release','go-live','produccion','producción','handover',
+        'transferencia','salida a produccion','salida a producción'
+    },
+    'descubrimiento & diseño': {
+        'descubrimiento','discovery','diseño','diseno','design'
+    }
+}
+
+def _norm_simple(s: str) -> str:
+    t = (s or '').lower().strip()
+    return t.translate(str.maketrans("áéíóúüñ", "aeiouun"))
+
+def _phase_tokens(s: str) -> List[str]:
+    return re.findall(r"[a-z0-9/]+", _norm_simple(s))
+
+def _match_phase_name(query: str, proposal: Optional[Dict[str, Any]]) -> Optional[str]:
+    tq = _norm_simple(query)
+
+    def score(a: str, b: str) -> float:
+        sa, sb = set(_phase_tokens(a)), set(_phase_tokens(b))
+        return (len(sa & sb) / len(sa | sb)) if (sa and sb) else 0.0
+
+    # 1) intentar casar con fases de la propuesta actual
+    best, best_score = None, 0.0
+    if proposal:
+        for ph in proposal.get('phases', []):
+            name = ph.get('name', '')
+            sc = max(score(tq, name), score(name, tq))
+            if sc > best_score:
+                best, best_score = name, sc
+            if _norm_simple(name) in tq or tq in _norm_simple(name):
+                best, best_score = name, 1.0
+                break
+
+    # 2) si no hay match claro, usar alias/canon
+    for canon, aliases in _PHASE_CANON.items():
+        for a in aliases:
+            if a in tq:
+                if proposal:
+                    for ph in proposal.get('phases', []):
+                        if canon.split()[0] in _norm_simple(ph.get('name', '')):
+                            return ph['name']
+                return canon.title()
+
+    return best
+
+def _explain_specific_phase(asked: str, proposal: Optional[Dict[str, Any]]) -> str:
+    method = (proposal or {}).get('methodology', 'Scrum')
+    name = _match_phase_name(asked, proposal) or asked.title()
+    n = _norm_simple(name)
+
+    def block(title: str, bullets: List[str]) -> str:
+        return f"**{title}:**\n- " + "\n- ".join(bullets)
+
+    # Incepción / Plan de releases / Discovery
+    if any(k in n for k in ['incepcion','inception','discovery','plan','inicio','kickoff']):
+        return "\n\n".join([
+            f"**{name}** — descripción detallada",
+            block("Objetivo", [
+                "Alinear visión, alcance y riesgos.",
+                "Definir roadmap y criterios de éxito (DoR/DoD).",
+                "Acordar governance, cadencia y Definition of Ready."
+            ]),
+            block("Entregables", [
+                "Mapa de alcance y priorización.",
+                "Plan de releases inicial y milestones.",
+                "Backlog inicial con épicas/historias y riesgos identificados."
+            ]),
+            block("Buenas prácticas", [
+                "Workshops con stakeholders.",
+                "Decisiones visibles (ADR).",
+                "Políticas de entrada al flujo/sprint claras."
+            ]),
+            block("KPIs", [
+                "Claridad de alcance consensuada.",
+                "Riesgos y supuestos registrados.",
+                "Aprobación de stakeholders."
+            ]),
+            f"Metodología actual: **{method}**."
+        ])
+
+    # Sprints / Iteraciones / Desarrollo
+    if any(k in n for k in ['sprint','iteracion','desarrollo']):
+        cad = "2 semanas" if method in ("Scrum", "XP", "Scrumban") else "flujo continuo"
+        return "\n\n".join([
+            f"**{name}** — descripción detallada",
+            block("Objetivo", [
+                "Entregar valor incremental con feedback frecuente.",
+                "Mantener calidad interna alta."
+            ]),
+            block("Entregables", [
+                "Incremento potencialmente desplegable.",
+                "Código revisado y probado.",
+                "Demo/Review con stakeholders."
+            ]),
+            block("Buenas prácticas", [
+                f"Cadencia de {cad} con límites WIP razonables.",
+                "Pairing/PRs, definición de 'hecho' compartida.",
+                "Backlog refinado."
+            ]),
+            block("KPIs", [
+                "Lead time / cycle time.",
+                "Velocidad estable.",
+                "Baja tasa de defectos por iteración."
+            ]),
+            f"Metodología actual: **{method}**."
+        ])
+
+    # QA / Hardening / Estabilización
+    if any(k in n for k in ['qa','hardening','stabiliz','aceptacion','testing']):
+        return "\n\n".join([
+            f"**{name}** — descripción detallada",
+            block("Objetivo", [
+                "Reducir defectos y riesgo operativo antes del release.",
+                "Validar criterios de aceptación, performance y seguridad."
+            ]),
+            block("Entregables", [
+                "Plan de pruebas ejecutado y evidencias.",
+                "Pruebas de carga y seguridad.",
+                "Issues críticos cerrados."
+            ]),
+            block("Buenas prácticas", [
+                "Automatización de regresión/UI.",
+                "Ambiente staging 'production-like'.",
+                "Control de cambios (code freeze) acotado."
+            ]),
+            block("KPIs", [
+                "Tasa de defectos abierta/cerrada.",
+                "Cobertura de pruebas.",
+                "Resultados de performance."
+            ]),
+            f"Metodología actual: **{method}**."
+        ])
+
+    # Despliegue / Release / Handover
+    if any(k in n for k in ['despliegue','release','produccion','handover','transferencia','go-live','salida']):
+        return "\n\n".join([
+            f"**{name}** — descripción detallada",
+            block("Objetivo", [
+                "Poner el incremento en producción de forma segura.",
+                "Transferir conocimiento a Operaciones/cliente."
+            ]),
+            block("Entregables", [
+                "Checklist de release completado.",
+                "Plan de rollback y comunicación.",
+                "Documentación operativa y formación."
+            ]),
+            block("Buenas prácticas", [
+                "Deploy gradual / feature flags.",
+                "Observabilidad y alertas activas.",
+                "Postmortem ligero si hay incidencias."
+            ]),
+            block("KPIs", [
+                "Tiempo de recuperación (MTTR).",
+                "Incidentes post-release.",
+                "Adopción del usuario final."
+            ]),
+            f"Metodología actual: **{method}**."
+        ])
+
+    # Genérico
+    return "\n\n".join([
+        f"**{name}** — descripción detallada",
+        block("Objetivo", [
+            "Contribuir al resultado del proyecto bajo el enfoque seleccionado."
+        ]),
+        block("Entregables", [
+            "Artefactos definidos para cerrar la fase.",
+            "Riesgos mitigados y decisiones registradas."
+        ]),
+        block("Buenas prácticas", [
+            "Definir criterios de entrada/salida.",
+            "Visibilidad del trabajo y deudas."
+        ]),
+        f"Metodología actual: **{method}**."
+    ])
 
 def _explain_budget(proposal: Dict[str, Any]) -> List[str]:
     b = proposal["budget"]
@@ -1182,6 +1374,18 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             "2) explicar por qué tomo cada decisión (con citas), 3) evaluar y **aplicar cambios** en metodología **y en toda la propuesta** (equipo, fases, presupuesto, riesgos) con confirmación **sí/no**.\n"
             "Ejemplos: 'añade 0.5 QA', 'tarifa de Backend a 1200', 'contingencia a 15%', \"cambia 'Sprints de Desarrollo (2w)' a 8 semanas\", 'quita fase \"QA\"', 'añade riesgo: cumplimiento RGPD'."
         ), "Ayuda."
+    # NUEVO: si preguntan por una fase concreta → explicarla en detalle
+    phase_detail = _match_phase_name(text, proposal)
+    if phase_detail and (any(k in _norm(text) for k in [
+        "qué es","que es","explica","explícame","explicame",
+        "en qué consiste","en que consiste","para qué sirve","para que sirve",
+        "definición","definicion"
+    ]) or "?" in text or len(text.split()) <= 6):
+        try:
+            set_last_area(session_id, "phases")
+        except Exception:
+            pass
+        return _explain_specific_phase(text, proposal), f"Fase concreta: {phase_detail}."
 
     # Fases (sin 'por qué')
     if _asks_phases_simple(text) and not _asks_why(text):
