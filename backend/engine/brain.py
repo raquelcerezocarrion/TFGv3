@@ -180,6 +180,9 @@ def _asks_budget_breakdown(text: str) -> bool:
     ]
     return any(k in t for k in keys)
 
+def _asks_training_plan(text: str) -> bool:
+    t = _norm(text)
+    return any(k in t for k in ["gaps", "carencias", "plan de formacion", "plan de formación", "upskilling", "formacion", "formación"])
 
 def _asks_sources(text: str) -> bool:
     t = _norm(text)
@@ -826,6 +829,121 @@ def _suggest_staffing(proposal: Dict[str, Any], staff: List[Dict[str, Any]]) -> 
             a = best.get("availability_pct", 100)
             extra = f" ({s}, {a}%)" if s or a != 100 else ""
             lines.append(f"  • {role} → {best['name']}{extra}: {why}")
+    return lines
+# ====== GAPS & FORMACIÓN ======
+
+_TRAINING_CATALOG = {
+    "cypress": ["Cypress fundamentals (oficial)", "Curso E2E con Cypress", "Guía de patrones de test E2E"],
+    "playwright": ["Playwright intro (MS)", "Playwright testing cookbook"],
+    "tdd": ["TDD by example (K. Beck)", "Katas TDD (cyber-dojo)"],
+    "owasp": ["OWASP Top 10 (oficial)", "Cheat Sheets OWASP"],
+    "pci": ["PCI-DSS overview", "Stripe Radar & antifraude"],
+    "stripe": ["Stripe Payments (docs)", "Idempotency keys (Stripe)"],
+    "kubernetes": ["Kubernetes fundamentals (CKAD)", "K8s Hands-on Labs"],
+    "terraform": ["Terraform up & running", "Oficial HashiCorp - intro"],
+    "observability": ["Prometheus + Grafana (labs)", "OpenTelemetry 101"],
+    "react": ["React beta docs", "React Testing Library"],
+    "typescript": ["TS handbook", "Tipos avanzados para React"],
+    "django": ["Django tutorial oficial", "DRF guía práctica"],
+    "fastapi": ["FastAPI docs", "Pydantic patterns"],
+    "spring": ["Spring Boot guides", "Spring Security basics"],
+    "node": ["Node + Express docs", "Pruebas con Jest/Supertest"],
+    "postgres": ["PostgreSQL performance", "Migrations & índices"],
+    "ci/cd": ["GitHub Actions (oficial)", "GitLab CI pipelines"],
+    "performance": ["k6/Locust intro", "Rendimiento web (MDN)"]
+}
+
+# temas "must" inferidos por stack/dominio/fases/metodología
+def _infer_required_topics(proposal: Dict[str, Any]) -> List[str]:
+    req = set()
+    st = (proposal.get("stack") or {})
+    meth = _norm(proposal.get("methodology", ""))
+    if st:
+        s = _norm(" ".join(f"{k}:{v}" for k, v in st.items()))
+        if "aws" in s or "gcp" in s or "azure" in s:
+            req.update(["kubernetes", "terraform", "observability", "ci/cd"])
+        if "react" in s or "frontend" in s:
+            req.update(["react", "typescript", "ci/cd"])
+        if "django" in s or "fastapi" in s:
+            req.update(["django", "fastapi", "ci/cd"])
+        if "spring" in s or "java" in s:
+            req.update(["spring", "ci/cd"])
+        if "node" in s:
+            req.update(["node", "ci/cd"])
+        if "postgres" in s:
+            req.add("postgres")
+    # Riesgos/dominio conocidos
+    risks = " ".join(_norm(r) for r in proposal.get("risks", []))
+    if any(k in risks for k in ["pci", "fraude", "chargeback"]):
+        req.update(["pci", "stripe", "owasp"])
+    # QA y seguridad siempre aparecen en hardening
+    if any("qa" in _norm(ph.get("name", "")) or "hardening" in _norm(ph.get("name", "")) for ph in proposal.get("phases", [])):
+        req.update(["cypress", "playwright", "owasp", "performance"])
+    # XP/Scrum → calidad interna
+    if "xp" in meth or "scrum" in meth:
+        req.add("tdd")
+    return sorted(req)
+
+def _person_has_topic(person: Dict[str, Any], topic: str) -> bool:
+    blob = _norm(" ".join(person.get("skills", [])) + " " + (person.get("seniority") or "") + " " + (person.get("role") or ""))
+    return _norm(topic) in blob
+
+def _closest_upskilling_candidates(staff: List[Dict[str, Any]], topic: str) -> List[Dict[str, Any]]:
+    # heurística simple: rol más cercano + seniority + disponibilidad
+    def proximity(p: Dict[str, Any]) -> float:
+        r = _canonical_role(p.get("role", ""))
+        s = _norm(p.get("seniority") or "")
+        base = 0.0
+        if topic in ("cypress", "playwright", "tdd", "owasp", "performance"):
+            # QA/Dev enfoque
+            if r in ("QA", "Backend Dev", "Frontend Dev"): base += 1.0
+        if topic in ("kubernetes", "terraform", "observability", "ci/cd"):
+            if r in ("DevOps", "Tech Lead", "Backend Dev"): base += 1.0
+        if topic in ("react", "typescript"):
+            if r == "Frontend Dev": base += 1.0
+        if topic in ("django", "fastapi", "spring", "node", "postgres"):
+            if r in ("Backend Dev", "Tech Lead"): base += 1.0
+        if "lead" in s or "principal" in s or "senior" in s: base += 0.5
+        base *= max(0.3, float(p.get("availability_pct", 100)) / 100.0)
+        # bonus si ya aparece el tema de forma parcial en skills
+        if _person_has_topic(p, topic): base += 1.0
+        return base
+    return sorted(staff, key=proximity, reverse=True)[:3]
+
+def _analyze_skill_gaps(proposal: Dict[str, Any], staff: List[Dict[str, Any]]) -> Dict[str, Any]:
+    topics = _infer_required_topics(proposal)
+    present = {t: any(_person_has_topic(p, t) for p in staff) for t in topics}
+    gaps = [t for t, ok in present.items() if not ok]
+    findings = []
+    for g in gaps:
+        cands = _closest_upskilling_candidates(staff, g)
+        resources = _TRAINING_CATALOG.get(g, [])[:2]
+        findings.append({
+            "topic": g,
+            "why": f"Necesario por stack/dominio/fases (p.ej., {proposal.get('methodology','')}).",
+            "upskill_candidates": [{"name": c["name"], "role": c.get("role",""), "availability_pct": c.get("availability_pct",100)} for c in cands],
+            "resources": resources,
+            "external_hint": "Refuerzo externo 0.5 FTE durante 2–4 semanas si no hay disponibilidad interna."
+        })
+    return {"topics": topics, "gaps": findings}
+
+def _render_training_plan(proposal: Dict[str, Any], staff: List[Dict[str, Any]]) -> List[str]:
+    report = _analyze_skill_gaps(proposal, staff)
+    lines: List[str] = []
+    if not report["topics"]:
+        return ["(No detecto temas críticos a partir del stack/metodología actual.)"]
+    lines.append("**Gaps detectados & plan de formación**")
+    if not report["gaps"]:
+        lines.append("- ✔︎ No hay carencias relevantes respecto al stack/metodología.")
+        return lines
+    for g in report["gaps"]:
+        lines.append(f"- **{g['topic']}** — {g['why']}")
+        if g["upskill_candidates"]:
+            who = ", ".join(f"{c['name']} ({c['role']} {c['availability_pct']}%)" for c in g["upskill_candidates"])
+            lines.append(f"  • Upskilling recomendado: {who}")
+        if g["resources"]:
+            lines.append(f"  • Recursos: " + " | ".join(g["resources"]))
+        lines.append(f"  • Alternativa: {g['external_hint']}")
     return lines
 
     def _pct(x: float, base: float) -> float:
@@ -1598,17 +1716,18 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
         )
         return prompt, "Solicitud de plantilla."
 
-    # ——— Si el usuario pega su plantilla: parsear y recomendar asignación
+       # ——— Si el usuario pega su plantilla: parsear, asignar y analizar formación
     if proposal and _looks_like_staff_list(text):
         staff = _parse_staff_list(text)
         if not staff:
             return ("No pude reconocer la plantilla. Usa: 'Nombre — Rol — Skills — Seniority — %'.",), "Formato staff no válido."
-        lines = _suggest_staffing(proposal, staff)
+        asign = _suggest_staffing(proposal, staff)
+        training = _render_training_plan(proposal, staff)
         try:
             set_last_area(session_id, "staffing")
         except Exception:
             pass
-        return ("\n".join(lines)), "Asignación sugerida."
+        return ("\n".join(asign + [""] + training)), "Asignación + formación."
 
     # Comando explícito: /propuesta
     if text.lower().startswith("/propuesta:"):
@@ -1949,6 +2068,18 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
         except Exception:
             pass
         return _pretty_proposal(p), "Propuesta a partir de requisitos."
+    # ——— GAPS & FORMACIÓN BAJO DEMANDA ———
+    if _asks_training_plan(text):
+        # Si tienes un store de plantilla en memoria, recógelo; si no, pedimos que pegue la plantilla
+        staff = []
+        try:
+            staff = get_staff_roster(session_id)  # si implementaste el store opcional
+        except Exception:
+            staff = []
+        if not staff:
+            return ("Pégame la **plantilla** (Nombre — Rol — Skills — Seniority — %) para analizar carencias y proponerte un plan de formación."), "Falta plantilla."
+        training = _render_training_plan(proposal, staff) if proposal else ["Primero generemos una propuesta para conocer stack/metodología."]
+        return ("\n".join(training)), "Plan de formación."
 
     # Fallback
     return (
