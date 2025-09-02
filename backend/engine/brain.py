@@ -96,6 +96,37 @@ def _asks_team(text: str) -> bool:
 def _asks_risks_simple(text: str) -> bool:
     t = _norm(text)
     return ("riesgo" in t or "riesgos" in t)
+def _accepts_proposal(text: str) -> bool:
+    """Detecta 'acepto la propuesta', 'aprobamos', 'adelante con la propuesta', etc."""
+    t = _norm(text)
+    keys = [
+        "aceptamos la propuesta", "acepto la propuesta", "aprobamos la propuesta", "aprobada la propuesta",
+        "adelante con la propuesta", "ok con la propuesta", "conforme con la propuesta",
+        "cerramos la propuesta", "aprobamos el plan", "acepto el plan", "ok al plan",
+        "vamos adelante", "arrancamos el proyecto", "empecemos", "comencemos", "seguimos con esta propuesta"
+    ]
+    # Evitamos confundir el 'sí' de confirmaciones parciales: pedimos que aparezca 'propuesta' o 'plan' o un verbo claro
+    return any(k in t for k in keys)
+
+def _looks_like_staff_list(text: str) -> bool:
+    """
+    Detecta plantilla pegada tanto en múltiples líneas como en una sola línea
+    (ej. '- Ana — Backend — ... - Luis — QA — ...').
+    """
+    t = _norm(text)
+    role_hints = ["backend", "frontend", "qa", "quality", "tester", "devops", "sre", "pm",
+                  "product owner", "po", "ux", "ui", "mobile", "android", "ios", "ml", "data", "arquitect"]
+    # Caso 1: varias líneas y separadores
+    if ("\n" in text) and any(sep in text for sep in ["—", "-", "|", ":"]) and any(h in t for h in role_hints):
+        return True
+    # Caso 2: una sola línea con varios items separados por ' - ' / ' • ' y patrón Nombre — Rol
+    if "—" in text and (text.count(" - ") >= 2 or " • " in text or ";" in text):
+        return True
+    # Caso 3: al menos dos patrones 'nombre — rol' en la misma línea
+    if len(re.findall(r"[A-Za-zÁÉÍÓÚÑáéíóúñ][^—\n]{1,40}\s—\s[A-Za-z]", text)) >= 2:
+        return True
+    return False
+
 
 def _asks_why(text: str) -> bool:
     t = _norm(text)
@@ -139,7 +170,16 @@ def _asks_similar(text: str) -> bool:
 
 def _asks_budget_breakdown(text: str) -> bool:
     t = _norm(text)
-    return any(k in t for k in ["desglose", "detalle", "por rol", "tarifa", "partidas", "coste por", "costes por"])
+    keys = [
+        "desglose", "detalle", "presupuesto detallado", "detalle del presupuesto",
+        "por rol", "por roles", "tarifa", "partidas", "coste por", "costes por",
+        "por fase", "por fases", "coste por fase", "reparto", "matriz",
+        "en que se gasta", "en qué se gasta", "a que se destina", "a qué se destina",
+        "para que va destinado", "para qué va destinado",
+        "capex", "opex"
+    ]
+    return any(k in t for k in keys)
+
 
 def _asks_sources(text: str) -> bool:
     t = _norm(text)
@@ -567,22 +607,344 @@ def _explain_budget(proposal: Dict[str, Any]) -> List[str]:
     ]
 
 def _explain_budget_breakdown(proposal: Dict[str, Any]) -> List[str]:
-    b = proposal.get("budget", {}) or {}
-    by_role = b.get("by_role", {}) or {}
+    """
+    Desglose máximo del presupuesto:
+    - Por rol (FTE × tarifa/semana × semanas por fase y % del total de labor)
+    - Por fase (suma de todos los roles + %)
+    - Matriz rol × fase (importe por celda)
+    - Asignación proporcional de la contingencia por rol y por fase
+    - Tareas, personal (en € aprox.) y programas/recursos por fase, en función del nombre de la fase/metodología
+    """
+    p = proposal or {}
+    b = p.get("budget", {}) or {}
     ass = b.get("assumptions", {}) or {}
-    rates = ass.get("role_rates_eur_pw", {}) or {}
-    weeks = ass.get("project_weeks")
-    lines = []
-    if by_role and weeks:
-        lines.append(f"Desglose por rol (semanas de proyecto: {weeks}):")
-        for role, amount in by_role.items():
-            rate = rates.get(role, "N/A")
-            lines.append(f"- {role}: {amount:.2f} €  (tarifa {rate} €/pw)")
-    else:
-        lines.append("No hay desglose por rol disponible.")
-    lines.append(f"Labor: {b.get('labor_estimate_eur')} €  +  Contingencia (10%): {b.get('contingency_10pct')} €")
-    lines.append(f"Total: {b.get('total_eur')} €")
+    rates: Dict[str, float] = ass.get("role_rates_eur_pw", {}) or {}
+    team: List[Dict[str, Any]] = p.get("team", []) or []
+    phases: List[Dict[str, Any]] = p.get("phases", []) or []
+
+    # Semanas totales: assumptions.project_weeks o suma de fases (fallback 1)
+    weeks_total = int(ass.get("project_weeks") or sum(int(ph.get("weeks", 0)) for ph in phases) or 1)
+    if not phases:
+        phases = [{"name": "Proyecto", "weeks": weeks_total}]
+
+    # FTE por rol
+    role_to_fte = {str(r.get("role", "")).strip(): float(r.get("count", 0.0)) for r in team if str(r.get("role", "")).strip()}
+
+    # Cálculos
+    per_role: Dict[str, float] = {}
+    per_phase: Dict[str, float] = {ph["name"]: 0.0 for ph in phases}
+    matrix: Dict[str, Dict[str, float]] = {role: {ph["name"]: 0.0 for ph in phases} for role in role_to_fte}
+
+    labor = 0.0
+    for role, fte in role_to_fte.items():
+        rate = float(rates.get(role, 1000.0))  # valor por defecto
+        role_total = 0.0
+        for ph in phases:
+            w = int(ph.get("weeks", 0)) or 0
+            cell = fte * rate * w
+            matrix[role][ph["name"]] = cell
+            per_phase[ph["name"]] += cell
+            role_total += cell
+        per_role[role] = role_total
+        labor += role_total
+
+    contingency_pct = float(ass.get("contingency_pct", 10.0))
+    contingency_eur = labor * contingency_pct / 100.0
+    total = labor + contingency_eur
+# ====== staffing: parseo y matching ======
+
+# Palabras clave por rol para puntuar habilidades
+_ROLE_KEYWORDS = {
+    "Backend Dev": ["api", "rest", "graphql", "python", "java", "node", "spring", "django", "fastapi", "sql", "postgres", "aws", "gcp", "azure", "seguridad"],
+    "Frontend Dev": ["react", "vue", "angular", "typescript", "javascript", "css", "accesibilidad", "redux", "next", "vite"],
+    "QA": ["qa", "testing", "pruebas", "e2e", "automat", "cypress", "playwright", "jest", "pytest", "regresion", "performance", "seguridad"],
+    "Tech Lead": ["arquitect", "design", "estandares", "review", "mentoria", "lider", "solucion"],
+    "PM": ["plan", "alcance", "prioridad", "stakeholder", "roadmap", "reporte", "cadencia"],
+    "Product Owner": ["producto", "backlog", "prioridad", "historias", "aceptacion"],
+    "DevOps": ["ci", "cd", "docker", "kubernetes", "k8s", "terraform", "aws", "gcp", "azure", "observabilidad", "prometheus", "grafana", "pipelines", "sre"],
+    "UX/UI": ["ux", "ui", "figma", "research", "prototip", "usabilidad", "wireframe", "dise"],
+    "ML Engineer": ["ml", "modelo", "pytorch", "tensorflow", "sklearn", "serving", "mlo"],
+    "Data": ["etl", "elt", "sql", "warehouse", "dbt", "bigquery", "redshift", "spark"],
+    "Mobile Dev": ["android", "kotlin", "swift", "react native", "flutter"]
+}
+
+def _parse_staff_list(text: str) -> List[Dict[str, Any]]:
+    """
+    Formato flexible (una o varias líneas):
+    Nombre — Rol — Skills clave — Seniority — Disponibilidad%
+    Separadores admitidos: —  -  |  :    (los items pueden venir en una sola línea: '- Ana — ... - Luis — ...')
+    """
+    # 1) Trocear en items (por líneas o bullets dentro de una misma línea)
+    raw_lines: List[str] = []
+    for ln in text.strip().splitlines() or [text.strip()]:
+        ln = ln.strip()
+        if not ln:
+            continue
+        # Si hay varios items en una misma línea, dividir por bullets ' - ' / ' • ' / ';'
+        if re.search(r"\s[-•]\s+", ln) or ";" in ln:
+            parts = re.split(r"\s[-•]\s+|;", ln)
+            raw_lines += [p.strip() for p in parts if p.strip()]
+        else:
+            raw_lines.append(ln)
+
+    staff: List[Dict[str, Any]] = []
+    for raw in raw_lines:
+        ln = raw.strip().lstrip("•*- ").strip()
+        if not ln or "—" not in ln:
+            # Acepta otros separadores si no vino '—'
+            ln = re.sub(r"\s[-|:]\s", " — ", ln)
+            if "—" not in ln:
+                continue
+        parts = re.split(r"\s*—\s*", ln)
+        if len(parts) < 2:
+            continue
+        name = parts[0].strip()
+        role = _canonical_role(parts[1])
+        rest = " — ".join(parts[2:]) if len(parts) > 2 else ""
+        # disponibilidad %
+        m = re.search(r"(\d{1,3})\s*%", rest)
+        availability = min(100, int(m.group(1))) if m else 100
+        # seniority
+        seniority = None
+        for key in ["principal", "lead", "senior", "sr", "semi senior", "ssr", "mid", "jr", "junior"]:
+            if key in _norm(rest):
+                seniority = key
+                break
+        # skills
+        skills = [s.strip() for s in re.split(r",|/|\|", rest) if s.strip()]
+        # fallback si no hay comas
+        if not skills:
+            skills = re.findall(r"[a-zA-Z0-9+#/.]{2,}", rest)
+        staff.append({"name": name, "role": role, "skills": skills, "availability_pct": availability, "seniority": seniority})
+    return staff
+
+
+def _score_staff_for_role(role: str, person: Dict[str, Any]) -> float:
+    score = 0.0
+    if _canonical_role(person.get("role", "")) == role:
+        score += 4.0
+    kws = _ROLE_KEYWORDS.get(role, [])
+    hay = _norm(" ".join(person.get("skills", [])) + " " + (person.get("seniority") or ""))
+    for kw in kws:
+        if _norm(kw) in hay:
+            score += 0.5
+    s = _norm(person.get("seniority") or "")
+    if "principal" in s or "lead" in s: score += 2.0
+    elif "senior" in s or "sr" in s:     score += 1.2
+    elif "junior" in s or "jr" in s:     score += 0.2
+    avail = max(0.5, min(1.2, float(person.get("availability_pct", 100)) / 100.0))
+    return score * avail
+def _matched_keywords(role: str, person: Dict[str, Any]) -> List[str]:
+    kws = _ROLE_KEYWORDS.get(role, [])
+    hay = _norm((" ".join(person.get("skills", [])) + " " + (person.get("seniority") or "")).strip())
+    out = []
+    for kw in kws:
+        if _norm(kw) in hay:
+            # Devuelve la forma original si estaba en skills; si no, el kw
+            hit = next((s for s in person.get("skills", []) if _norm(s) == _norm(kw)), kw)
+            if hit not in out:
+                out.append(hit)
+    return out[:5]
+
+def _why_person_for_role(role: str, person: Dict[str, Any]) -> str:
+    matches = _matched_keywords(role, person)
+    s = person.get("seniority") or ""
+    a = person.get("availability_pct", 100)
+    bits = []
+    if matches:
+        bits.append(f"skills afines ({', '.join(matches)})")
+    if s:
+        bits.append(f"seniority {s}")
+    if a != 100:
+        bits.append(f"disponibilidad {a}%")
+    if _canonical_role(person.get("role","")) == role and not matches:
+        bits.append("rol declarado coincide")
+    return "; ".join(bits) or "perfil compatible con el rol"
+
+def _phase_key(name: str) -> str:
+    t = _norm(name)
+    if any(k in t for k in ["discover", "dise", "kickoff", "plan"]): return "discovery"
+    if any(k in t for k in ["sprint", "iterac", "kanban", "desarrollo", "build"]): return "build"
+    if any(k in t for k in ["qa", "hardening", "stabil"]): return "qa"
+    if any(k in t for k in ["release", "handover", "desplieg", "produ"]): return "release"
+    return "generic"
+
+_PHASE_ROLES = {
+    "discovery": ["PM", "Product Owner", "Tech Lead", "UX/UI"],
+    "build": ["Backend Dev", "Frontend Dev", "Mobile Dev", "DevOps", "QA", "Tech Lead"],
+    "qa": ["QA", "DevOps", "Backend Dev", "Frontend Dev"],
+    "release": ["DevOps", "Tech Lead", "PM"],
+    "generic": ["PM", "Tech Lead", "QA", "Backend Dev", "Frontend Dev"]
+}
+
+def _suggest_staffing(proposal: Dict[str, Any], staff: List[Dict[str, Any]]) -> List[str]:
+    """
+    Devuelve asignación recomendada:
+    - Por rol (mejor persona y por qué)
+    - Por fase (mejor persona para cada rol esperado en esa fase) con breve justificación
+    """
+    roles_needed = [r.get("role") for r in proposal.get("team", []) if r.get("role")]
+    lines: List[str] = []
+
+    # — Por rol
+    lines.append("**Asignación por rol (mejor persona y por qué)**")
+    if not roles_needed:
+        lines.append("- (La propuesta no tiene equipo definido todavía).")
+    for role in roles_needed:
+        if not staff:
+            lines.append(f"- {role}: (no hay candidatos cargados)")
+            continue
+        cands = sorted(staff, key=lambda p: _score_staff_for_role(role, p), reverse=True)
+        best = cands[0]
+        why = _why_person_for_role(role, best)
+        s = (best.get("seniority") or "").strip()
+        a = best.get("availability_pct", 100)
+        extra = f" ({s}, {a}%)" if s or a != 100 else ""
+        lines.append(f"- {role}: {best['name']}{extra} → {why}")
+        # alternativas rápidas (sin explicación para no saturar)
+        alt = [c["name"] for c in cands[1:3]]
+        if alt:
+            lines.append(f"  · Alternativas: {', '.join(alt)}")
+
+    # — Por fase
+    lines.append("")
+    lines.append("**Asignación sugerida por fase/tareas**")
+    for ph in proposal.get("phases", []):
+        pk = _phase_key(ph.get("name", ""))
+        expected = [r for r in _PHASE_ROLES.get(pk, []) if r in roles_needed]
+        if not expected:
+            continue
+        lines.append(f"- {ph.get('name','')}:")
+        for role in expected:
+            cands = sorted(staff, key=lambda p: _score_staff_for_role(role, p), reverse=True)
+            if not cands:
+                lines.append(f"  • {role}: (sin candidatos)")
+                continue
+            best = cands[0]
+            why = _why_person_for_role(role, best)
+            s = (best.get("seniority") or "").strip()
+            a = best.get("availability_pct", 100)
+            extra = f" ({s}, {a}%)" if s or a != 100 else ""
+            lines.append(f"  • {role} → {best['name']}{extra}: {why}")
     return lines
+
+    def _pct(x: float, base: float) -> float:
+        return (100.0 * x / base) if base else 0.0
+
+    def _eur(x: float) -> str:
+        return f"{x:.2f} €"
+
+    # Arquetipos de fase → tareas/recursos (por nombre)
+    def phase_key(n: str) -> str:
+        t = n.lower()
+        if any(k in t for k in ["discover", "dise", "crc", "inception", "inicio", "kickoff"]): return "discovery"
+        if any(k in t for k in ["sprint", "iterac", "kanban", "flujo", "desarrollo"]): return "build"
+        if any(k in t for k in ["qa", "hardening", "stabil"]): return "qa"
+        if any(k in t for k in ["release", "handover", "deploy", "despliegue", "produ"]): return "release"
+        return "generic"
+
+    TASKS = {
+        "discovery": [
+            "Workshops con stakeholders/usuarios",
+            "Historias y tarjetas CRC; alcance/priorización",
+            "Arquitectura objetivo y decisiones (ADR)",
+            "Plan de releases/milestones; DoR/DoD"
+        ],
+        "build": [
+            "Backend (APIs/domino/seguridad)",
+            "Frontend/App (UI/estado/accesibilidad)",
+            "Integraciones (pagos/terceros/notificaciones)",
+            "Revisiones de código, pairing y refactor con TDD/CI"
+        ],
+        "qa": [
+            "Plan/Estrategia de pruebas y evidencias",
+            "Automatización (regresión/E2E)",
+            "Performance y seguridad (no-funcionales)",
+            "Cierre de defectos críticos"
+        ],
+        "release": [
+            "Empaquetado y orquestación de despliegue",
+            "Observabilidad: logging, métricas, alertas",
+            "Comunicación/rollback y verificación en vivo",
+            "Transferencia de conocimiento (runbooks)"
+        ],
+        "generic": [
+            "Actividades específicas para el objetivo de la fase",
+            "Sincronización con stakeholders y control de riesgos"
+        ],
+    }
+
+    RESOURCES = {
+        "discovery": ["Miro/Mural", "Confluence/Notion", "Jira/YouTrack", "C4/ADR"],
+        "build": ["GitHub/GitLab", "CI (Actions/GitLab CI)", "Docker", "Kubernetes", "Postman", "Sentry"],
+        "qa": ["JUnit/PyTest/Cypress/Playwright", "k6/Locust", "OWASP ZAP", "SonarQube"],
+        "release": ["ArgoCD/FluxCD", "Terraform/CloudFormation", "Prometheus/Grafana", "Feature Flags"],
+        "generic": ["Herramientas de gestión y repositorio de código"],
+    }
+
+    lines: List[str] = []
+    lines.append("Presupuesto — **desglose máximo**")
+    lines.append("")
+    lines.append(f"Labor: {_eur(labor)}   •   Contingencia ({contingency_pct:.1f}%): {_eur(contingency_eur)}   •   Total: {_eur(total)}")
+    lines.append("")
+
+    # 1) Por roles
+    lines.append("**Distribución por roles**:")
+    if per_role:
+        for role, amount in sorted(per_role.items(), key=lambda kv: kv[1], reverse=True):
+            fte = role_to_fte.get(role, 0.0)
+            rate = float(rates.get(role, 1000.0))
+            lines.append(f"- {role}: {fte:g} FTE × {rate:.0f} €/sem × {weeks_total} sem → {_eur(amount)} ({_pct(amount, labor):.1f}%)")
+    else:
+        lines.append("- (No hay equipo definido; añade roles para una estimación precisa.)")
+
+    # 2) Por fases
+    lines.append("")
+    lines.append("**Distribución por fases**:")
+    for ph_name, amount in sorted(per_phase.items(), key=lambda kv: kv[1], reverse=True):
+        w = next((int(ph.get("weeks", 0)) for ph in phases if ph["name"] == ph_name), 0)
+        lines.append(f"- {ph_name} ({w}s): {_eur(amount)} ({_pct(amount, labor):.1f}%)")
+
+    # 3) Matriz rol × fase
+    lines.append("")
+    lines.append("**Matriz rol × fase**:")
+    any_cell = False
+    for role, cells in matrix.items():
+        parts = [f"{ph['name']}: {_eur(cells.get(ph['name'], 0.0))}" for ph in phases if cells.get(ph['name'], 0.0) > 0.0]
+        if parts:
+            lines.append(f"- {role}: " + " • ".join(parts))
+            any_cell = True
+    if not any_cell:
+        lines.append("- (Sin celdas con importe; revisa FTE, tarifas o semanas).")
+
+    # 4) Contingencia asignada
+    lines.append("")
+    lines.append(f"**Contingencia** {contingency_pct:.1f}% → {_eur(contingency_eur)} (asignación proporcional):")
+    if labor > 0:
+        lines.append("• Por **rol**: " + ", ".join(f"{r} {_eur(contingency_eur * (v/labor))}" for r, v in sorted(per_role.items(), key=lambda kv: kv[1], reverse=True)))
+        lines.append("• Por **fase**: " + ", ".join(f"{ph} {_eur(contingency_eur * (v/labor))}" for ph, v in sorted(per_phase.items(), key=lambda kv: kv[1], reverse=True)))
+    else:
+        lines.append("• (No hay labor para distribuir.)")
+
+    # 5) Tareas, personal y recursos por fase
+    lines.append("")
+    lines.append("**Tareas, personal y recursos por fase**:")
+    for ph in phases:
+        ph_name = ph.get("name", "")
+        ph_cost = per_phase.get(ph_name, 0.0)
+        key = phase_key(ph_name)
+        task_list = TASKS.get(key, TASKS["generic"])
+        res_list = RESOURCES.get(key, RESOURCES["generic"])
+        # Top 3 roles con mayor peso en la fase
+        top_roles = sorted(((r, matrix[r][ph_name]) for r in matrix), key=lambda kv: kv[1], reverse=True)[:3]
+        lines.append(f"- {ph_name} — {_eur(ph_cost)}:")
+        if any(v > 0 for _, v in top_roles):
+            lines.append("  • Personal implicado: " + ", ".join(f"{r} {_eur(v)}" for r, v in top_roles if v > 0))
+        lines.append("  • Tareas principales: " + "; ".join(task_list))
+        lines.append("  • Programas/recursos: " + ", ".join(res_list))
+
+    return lines
+
 
 def _expand_risks(requirements: Optional[str], methodology: Optional[str]) -> List[str]:
     t = _norm(requirements or "")
@@ -1220,6 +1582,33 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             return "¡Hasta luego! Si quieres, deja aquí los requisitos y seguiré trabajando en la propuesta.", "Despedida (intent)."
         if intent == "thanks":
             return "¡A ti! Si necesitas presupuesto o plan de equipo, dime los requisitos.", "Agradecimiento (intent)."
+    # ——— Aceptación de propuesta → pedir plantilla del equipo para asignar personas
+    if proposal and _accepts_proposal(text):
+        try:
+            set_last_area(session_id, "staffing")
+        except Exception:
+            pass
+        prompt = (
+            "¡Genial, propuesta **aprobada**! Para asignar personas a cada tarea, "
+            "cuéntame tu plantilla (una por línea) con este formato:\n"
+            "Nombre — Rol — Skills clave — Seniority — Disponibilidad%\n"
+            "Ejemplos:\n"
+            "- Ana Ruiz — Backend — Python, Django, AWS — Senior — 100%\n"
+            "- Luis Pérez — QA — Cypress, E2E — Semi Senior — 50%"
+        )
+        return prompt, "Solicitud de plantilla."
+
+    # ——— Si el usuario pega su plantilla: parsear y recomendar asignación
+    if proposal and _looks_like_staff_list(text):
+        staff = _parse_staff_list(text)
+        if not staff:
+            return ("No pude reconocer la plantilla. Usa: 'Nombre — Rol — Skills — Seniority — %'.",), "Formato staff no válido."
+        lines = _suggest_staffing(proposal, staff)
+        try:
+            set_last_area(session_id, "staffing")
+        except Exception:
+            pass
+        return ("\n".join(lines)), "Asignación sugerida."
 
     # Comando explícito: /propuesta
     if text.lower().startswith("/propuesta:"):
