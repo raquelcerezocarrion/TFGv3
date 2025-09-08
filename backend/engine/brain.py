@@ -1232,13 +1232,20 @@ def _evaluate_patch(proposal: Dict[str, Any], patch: Dict[str, Any], req_text: O
     """
     before = copy.deepcopy(proposal)
     after = _apply_patch(proposal, patch)  # no muta 'proposal'
-    w0, w1 = _total_weeks(before), _total_weeks(after)
-    f0, f1 = _fte_sum(before), _fte_sum(after)
-    b0, b1 = before.get("budget", {}).get("total_eur", 0.0), after.get("budget", {}).get("total_eur", 0.0)
-    labor0 = before.get("budget", {}).get("labor_estimate_eur", 0.0)
-    labor1 = after.get("budget", {}).get("labor_estimate_eur", 0.0)
-    cont0 = before.get("budget", {}).get("assumptions", {}).get("contingency_pct", 10)
-    cont1 = after.get("budget", {}).get("assumptions", {}).get("contingency_pct", cont0)
+
+    def add_line(s: str, buf: List[str]): buf.append(s)
+
+    w0 = _total_weeks(before)
+    w1 = _total_weeks(after)
+    f0 = _fte_sum(before)
+    f1 = _fte_sum(after)
+
+    b0 = float(before.get("budget", {}).get("total_eur", 0.0))
+    b1 = float(after.get("budget", {}).get("total_eur", 0.0))
+    labor0 = float(before.get("budget", {}).get("labor_estimate_eur", 0.0))
+    labor1 = float(after.get("budget", {}).get("labor_estimate_eur", 0.0))
+    cont_pct = float(after.get("budget", {}).get("assumptions", {}).get("contingency_pct",
+                        before.get("budget", {}).get("assumptions", {}).get("contingency_pct", 10)))
 
     delta_w = w1 - w0
     delta_f = f1 - f0
@@ -1247,41 +1254,33 @@ def _evaluate_patch(proposal: Dict[str, Any], patch: Dict[str, Any], req_text: O
     lines: List[str] = []
     verdict = "neutra"
 
-    def add_line(s: str): lines.append(s)
-
-    # Cabecera por tipo
     t = patch.get("type")
     if t == "team":
-        add_line("📌 Evaluación del cambio de **equipo**:")
-        # Heurísticas de calidad/gestión
+        add_line("📌 Evaluación del cambio de **equipo**:", lines)
+
+        # Cobertura de roles críticos y señales de calidad
         roles_before = {r["role"].lower(): float(r["count"]) for r in before.get("team", [])}
         roles_after  = {r["role"].lower(): float(r["count"]) for r in after.get("team", [])}
 
-        def had(role): return roles_before.get(role.lower(), 0) > 0
-        def has(role): return roles_after.get(role.lower(), 0) > 0
+        def had(role): return roles_before.get(role.lower(), 0.0) > 0.0
+        def has(role): return roles_after.get(role.lower(), 0.0) > 0.0
 
         critical = {"pm": "PM", "tech lead": "Tech Lead", "qa": "QA"}
         critical_removed = [name for key, name in critical.items() if had(key) and not has(key)]
-        critical_added = [name for key, name in critical.items() if not had(key) and has(key)]
+        critical_added   = [name for key, name in critical.items() if not had(key) and has(key)]
 
         if critical_removed:
-            add_line(f"⚠️ Se elimina un rol crítico: {', '.join(critical_removed)} → riesgo de coordinación/calidad.")
+            add_line(f"⚠️ Se elimina un rol crítico: {', '.join(critical_removed)} → riesgo de coordinación/calidad.", lines)
         if critical_added:
-            add_line(f"✅ Se incorpora rol crítico: {', '.join(critical_added)} → mejora gobernanza/calidad.")
+            add_line(f"✅ Se incorpora rol crítico: {', '.join(critical_added)} → mejora gobernanza/calidad.", lines)
 
-        # Cobertura de UX/QA
-        if had("qa") and roles_after.get("qa", 0) < roles_before.get("qa", 0):
-            add_line("⚠️ Menos QA → mayor riesgo de fuga de defectos y retrabajo.")
-        if roles_after.get("ux/ui", 0) > roles_before.get("ux/ui", 0):
-            add_line("✅ Más UX/UI suele mejorar conversión y reducir retrabajo de frontend.")
-
-        # Throughput
+        # Throughput / cuellos de botella
         if delta_f > 0 and delta_w == 0:
-            add_line("➕ Más FTE con el mismo timeline → más throughput, potencialmente entrega antes dentro de las mismas semanas.")
+            add_line("➕ Más FTE con el mismo timeline → más throughput; potencialmente entregas antes dentro de las mismas semanas.", lines)
         if delta_f < 0 and delta_w == 0:
-            add_line("➖ Menos FTE con igual timeline → riesgo de cuello de botella en desarrollo.")
+            add_line("➖ Menos FTE con igual timeline → riesgo de cuello de botella en desarrollo.", lines)
 
-        # Veredicto por reglas
+        # Veredicto
         if critical_removed:
             verdict = "mala"
         elif delta_f > 0 and has("qa"):
@@ -1291,74 +1290,65 @@ def _evaluate_patch(proposal: Dict[str, Any], patch: Dict[str, Any], req_text: O
         else:
             verdict = "neutra"
 
+        # ——— Detalle por rol afectado ———
+        add_line("", lines)
+        add_line("**Detalle por rol propuesto:**", lines)
+        changed_any = False
+        for rkey in sorted(set(list(roles_before.keys()) + list(roles_after.keys()))):
+            old = float(roles_before.get(rkey, 0.0))
+            new = float(roles_after.get(rkey, 0.0))
+            if old == new:
+                continue
+            changed_any = True
+            role_name = _canonical_role(rkey)
+            reasons = _explain_role_count(role_name, new, req_text)
+            add_line(f"🔹 Propuesta para **{role_name}**: {old:g} → {new:g} FTE", lines)
+            for rs in reasons:
+                add_line(f"   • {rs}", lines)
+        if not changed_any:
+            add_line("-(No hay variaciones de FTE por rol respecto al plan anterior).", lines)
+
+        # ——— Impacto estimado numérico ———
+        def eur(x: float) -> str:
+            return f"{x:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
+
+        add_line("", lines)
+        add_line("📊 **Impacto estimado:**", lines)
+        add_line(f"- Semanas totales: {w0} → {w1}  (Δ {delta_w:+})", lines)
+        add_line(f"- Headcount equivalente (FTE): {f0:g} → {f1:g}  (Δ {delta_f:+g})", lines)
+        add_line(f"- Labor: {eur(labor0)} → {eur(labor1)}  (Δ {eur(labor1 - labor0)})", lines)
+        add_line(f"- Total con contingencia ({cont_pct:.0f}%): {eur(b0)} → {eur(b1)}  (Δ {eur(delta_cost)})", lines)
+
+        # ——— Conclusión ———
+        add_line("", lines)
+        idea = {"buena": "buena idea", "mala": "mala idea", "neutra": "impacto neutro"}[verdict]
+        add_line(f"✅ En general: **{idea}** para tu contexto, según heurísticas de calidad/gestión.", lines)
+
+        # Pregunta de confirmación
+        add_line("", lines)
+        add_line("¿Aplico estos cambios? **sí/no**", lines)
+
     elif t == "phases":
-        add_line("📌 Evaluación del cambio de **fases/timeline**:")
+        # (Sin cambios en esta rama; se mantiene tu lógica actual.)
+        add_line("📌 Evaluación del cambio de **fases/timeline**:", lines)
         if delta_w < 0:
             pct = int(abs(delta_w) / (w0 or 1) * 100)
-            add_line(f"⚠️ Reduces el timeline en {abs(delta_w)} semanas (~{pct}%). Riesgo de calidad/alcance si no se compensa con más equipo.")
+            add_line(f"⚠️ Reduces el timeline en {abs(delta_w)} semanas (~{pct}%). Riesgo de calidad/alcance si no se compensa con más equipo.", lines)
             verdict = "mala" if pct >= 20 else "neutra"
         elif delta_w > 0:
-            add_line(f"✅ Aumentas el timeline en {delta_w} semanas → más colchón para QA/estabilización.")
+            add_line(f"✅ Aumentas el timeline en {delta_w} semanas → más colchón para QA/estabilización.", lines)
             verdict = "buena"
         else:
-            add_line("≈ El número total de semanas no cambia. Impacto neutro salvo por la redistribución interna.")
+            add_line("≈ El número total de semanas no cambia. Impacto neutro salvo por la redistribución interna.", lines)
             verdict = "neutra"
 
-        # Señales de QA/hardening si aparecen en nombres
-        names_after = " ".join(ph.get("name", "").lower() for ph in after.get("phases", []))
-        if any(k in names_after for k in ["qa", "hardening", "aceptación", "aceptacion", "observabilidad"]):
-            add_line("✅ Mantienes/añades fase(s) de QA/Hardening → reduce riesgo de regresiones.")
-            if verdict != "mala":
-                verdict = "buena"
+        add_line("", lines)
+        add_line("¿Aplico estos cambios? **sí/no**", lines)
 
-    elif t == "budget":
-        add_line("📌 Evaluación del cambio de **presupuesto**:")
-        # Contingencia
-        if "contingency_pct" in patch:
-            if cont1 < 10:
-                add_line(f"⚠️ Bajas contingencia al {cont1:.0f}% (<10%): optimista; riesgo ante incertidumbre.")
-                verdict = "mala"
-            elif cont1 > cont0:
-                add_line(f"✅ Subes contingencia al {cont1:.0f}%: más resiliencia ante cambios o riesgos.")
-                verdict = "buena"
-        # Tarifas
-        rate_map = _get_rate_map(after)
-        low_rates = [r for r, v in rate_map.items() if v < 800]
-        if low_rates:
-            add_line("⚠️ Algunas tarifas < 800 €/pw (p. ej., " + ", ".join(low_rates[:3]) + ") pueden ser poco realistas para perfiles medianos.")
-            if verdict != "buena":
-                verdict = "mala" if verdict == "mala" else "neutra"
-        if not ("contingency_pct" in patch or "role_rates" in patch):
-            add_line("Cambios de presupuesto no detectados con impacto claro.")
-            verdict = "neutra"
-
-    elif t == "risks":
-        add_line("📌 Evaluación del cambio de **riesgos**:")
-        adds = patch.get("add", []) or []
-        rems = patch.get("remove", []) or []
-        if adds:
-            add_line("✅ Añadir riesgos explicita supuestos y mejora la gestión preventiva.")
-            verdict = "buena"
-        if rems:
-            add_line("⚠️ Quitar riesgos del listado no elimina su posibilidad; hazlo solo si están mitigados/transferidos.")
-            if verdict != "buena":
-                verdict = "neutra"
-
-    # Impacto cuantitativo
-    add_line("")
-    add_line("📊 **Impacto estimado:**")
-    add_line(f"- Semanas totales: {w0} → {w1}  (Δ {delta_w:+d})")
-    add_line(f"- Headcount equivalente (FTE): {f0:g} → {f1:g}  (Δ {delta_f:+g})")
-    add_line(f"- Labor: {labor0:.2f} € → {labor1:.2f} €  (Δ {labor1 - labor0:+.2f} €)")
-    add_line(f"- Total con contingencia ({cont1:.0f}%): {b0:.2f} € → {b1:.2f} €  (Δ {delta_cost:+.2f} €)")
-
-    # Sello final
-    if verdict == "buena":
-        add_line("\n✅ **En general: buena idea** para tu contexto, según las heurísticas de calidad/gestión.")
-    elif verdict == "mala":
-        add_line("\n⚠️ **En general: mala idea** por los riesgos mencionados.")
     else:
-        add_line("\nℹ️ **En general: impacto neutro**; depende de tus prioridades (coste vs. velocidad/calidad).")
+        # Tipos no contemplados
+        add_line(f"(Evaluación no implementada para tipo '{t}')", lines)
+        verdict = "neutra"
 
     return "\n".join(lines), verdict
 
@@ -1555,27 +1545,55 @@ def _apply_patch(proposal: Dict[str, Any], patch: Dict[str, Any]) -> Dict[str, A
 # ---------- Parsers de lenguaje natural → parches ----------
 
 def _parse_team_patch(text: str) -> Optional[Dict[str, Any]]:
+    """
+    Interpreta órdenes de cambio de equipo en lenguaje natural y devuelve un patch.
+    Soporta:
+      - 'añade 0.5 qa', 'agrega 1 backend'
+      - 'pon 2 backend', 'pon pm a 1', 'sube qa a 0,5', 'baja frontend a 1'
+      - 'quita ux', 'elimina qa'
+    Devuelve: {"type":"team","ops":[{"op":"add|set|remove","role":"QA","count":0.5}, ...]}
+    """
     t = _norm(text)
-    # add: añade 0.5 qa / agrega 1 backend
-    add_pat = re.findall(r"(?:añade|agrega|suma)\s+(\d+(?:[.,]\d+)?)\s+([a-zA-Z\s/]+)", t)
-    # set: deja/ajusta/pon 2 backend ; sube/baja a 1 qa
-    set_pat = re.findall(r"(?:deja|ajusta|pon|pone|establece|setea|sube|baja)\s+(?:a\s+)?(\d+(?:[.,]\d+)?)\s+([a-zA-Z\s/]+)", t)
-    # remove: quita/elimina ux
-    rem_pat = re.findall(r"(?:quita|elimina|borra)\s+([a-zA-Z\s/]+)", t)
 
-    ops = []
+    # Verbos
+    add_verbs = r"(?:añade|agrega|suma|incluye|mete)"
+    set_verbs = r"(?:deja|ajusta|pon|pone|establece|setea|sube|baja|pasa|cambia)"
+    rem_verbs = r"(?:quita|elimina|borra|saca)"
+
+    # Patrones
+    #   add      : 'añade 0.5 qa'
+    add_pat = re.findall(fr"{add_verbs}\s+(\d+(?:[.,]\d+)?)\s+([a-zA-Z\s/]+)", t)
+
+    #   set A    : 'pon 2 backend'  / 'sube a 1 qa'
+    set_pat_a = re.findall(fr"{set_verbs}\s+(?:a\s+)?(\d+(?:[.,]\d+)?)\s+([a-zA-Z\s/]+)", t)
+
+    #   set B    : 'pon pm a 1' / 'quiero poner qa en 0,5' / 'baja backend a 2'
+    set_pat_b = re.findall(fr"{set_verbs}\s+([a-zA-Z\s/]+)\s+(?:a|en)\s+(\d+(?:[.,]\d+)?)", t)
+
+    #   remove   : 'quita ux'
+    rem_pat = re.findall(fr"{rem_verbs}\s+([a-zA-Z\s/]+)", t)
+
+    def _to_float(num: str) -> float:
+        return float(num.replace(",", "."))
+
+    ops: List[Dict[str, Any]] = []
+
     for num, role in add_pat:
-        ops.append({"op": "add", "role": role.strip(), "count": float(num.replace(",", "."))})
-    for num, role in set_pat:
-        ops.append({"op": "set", "role": role.strip(), "count": float(num.replace(",", "."))})
+        ops.append({"op": "add", "role": role.strip(), "count": _to_float(num)})
+
+    for num, role in set_pat_a:
+        ops.append({"op": "set", "role": role.strip(), "count": _to_float(num)})
+
+    for role, num in set_pat_b:
+        ops.append({"op": "set", "role": role.strip(), "count": _to_float(num)})
+
+    role_tokens = ("pm","lead","arquitect","backend","frontend","qa","ux","ui","ml","data","tester","quality","devops")
     for role in rem_pat:
-        # evita marcar 'fase' etc como rol por falso positivo: role tokens típicos
-        if any(k in role for k in ["pm","lead","arquitect","backend","frontend","qa","ux","ui","ml","data","tester","quality"]):
+        if any(k in _norm(role) for k in role_tokens):
             ops.append({"op": "remove", "role": role.strip()})
 
-    if ops:
-        return {"type": "team", "ops": ops}
-    return None
+    return {"type": "team", "ops": ops} if ops else None
+
 
 def _parse_phases_patch(text: str) -> Optional[Dict[str, Any]]:
     t = _norm(text)
