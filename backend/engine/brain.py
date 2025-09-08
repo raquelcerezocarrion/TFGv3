@@ -1048,6 +1048,239 @@ def _render_training_plan(proposal: Dict[str, Any], staff: List[Dict[str, Any]])
     def _eur(x: float) -> str:
         return f"{x:.2f} €"
 
+from collections import defaultdict
+import re
+from datetime import datetime
+
+def _match_phase_archetype(name: str) -> str:
+    n = _norm(name)
+    if any(k in n for k in ["descubr", "discovery", "kickoff", "visión", "vision", "inicio"]):
+        return "discovery"
+    if any(k in n for k in ["analisis", "análisis", "requirements", "requisitos"]):
+        return "analysis"
+    if any(k in n for k in ["diseño", "ux", "ui", "wireframe", "protot"]):
+        return "design"
+    if any(k in n for k in ["arquitect", "architecture"]):
+        return "architecture"
+    if any(k in n for k in ["sprint", "desarrollo", "build", "implement", "coding"]):
+        return "development"
+    if any(k in n for k in ["qa", "test", "prueba", "quality", "verific"]):
+        return "qa"
+    if any(k in n for k in ["uat", "aceptación", "aceptacion", "usuario"]):
+        return "uat"
+    if any(k in n for k in ["deploy", "despliegue", "release", "lanzamiento"]):
+        return "release"
+    if any(k in n for k in ["cierre", "retro", "postmortem", "handover", "mantenimiento"]):
+        return "closure"
+    return "development"
+
+def _phase_tasks_for_archetype(archetype: str, methodology: str) -> list:
+    """Devuelve una lista de dicts {name, roles, explain} para esa fase."""
+    m = _norm(methodology)
+    t = []
+
+    if archetype == "discovery":
+        t = [
+            {"name": "Entrevistas y alineación con stakeholders",
+             "roles": ["PM", "UX"],
+             "explain": "Reunirse con las personas clave para entender objetivos, restricciones y criterios de éxito."},
+            {"name": "Definición de alcance y límites",
+             "roles": ["PM", "Tech Lead"],
+             "explain": "Acordar qué entra y qué no, versiones iniciales de roadmap y entregables."},
+            {"name": "Mapa de usuarios y casos de uso",
+             "roles": ["UX", "PM"],
+             "explain": "Identificar tipos de usuario y los flujos principales que necesitan cubrir."},
+            {"name": "Priorización inicial del backlog",
+             "roles": ["PM", "Tech Lead"],
+             "explain": "Ordenar funcionalidades por valor y riesgo para decidir el orden de trabajo."},
+        ]
+
+    elif archetype == "analysis":
+        t = [
+            {"name": "Historias de usuario y criterios de aceptación",
+             "roles": ["PM", "QA"],
+             "explain": "Redactar historias claras y criterios de aceptación comprobables para cada historia."},
+            {"name": "Requisitos no funcionales",
+             "roles": ["Tech Lead", "DevOps"],
+             "explain": "Definir rendimiento, seguridad, observabilidad, accesibilidad y disponibilidad esperada."},
+            {"name": "Riesgos y supuestos",
+             "roles": ["PM", "Tech Lead"],
+             "explain": "Registrar riesgos principales y supuestos críticos que hay que validar."},
+        ]
+
+    elif archetype == "design":
+        t = [
+            {"name": "Wireframes y flujo de pantallas",
+             "roles": ["UX"],
+             "explain": "Prototipos de baja/media fidelidad para validar la experiencia de usuario."},
+            {"name": "Diseño UI y guías de estilo",
+             "roles": ["UX"],
+             "explain": "Componentes visuales, tipografías, colores y estados para asegurar consistencia."},
+            {"name": "Revisión técnica de diseño",
+             "roles": ["Tech Lead", "Frontend"],
+             "explain": "Validar que los diseños son viables y alineados con la arquitectura y componentes."},
+        ]
+
+    elif archetype == "architecture":
+        t = [
+            {"name": "Decisiones de arquitectura (ADR)",
+             "roles": ["Tech Lead"],
+             "explain": "Tomar y documentar decisiones clave de arquitectura y sus alternativas."},
+            {"name": "Modelado de datos y diseño de APIs",
+             "roles": ["Backend", "Tech Lead"],
+             "explain": "Definir entidades, relaciones y contratos de API entre servicios o módulos."},
+            {"name": "Seguridad y cumplimiento",
+             "roles": ["Tech Lead", "DevOps"],
+             "explain": "Controles de seguridad, secretos, cifrado y requisitos regulatorios (p. ej., RGPD)."},
+        ]
+
+    elif archetype == "development":
+        # Ajustes sutiles por metodología
+        if "scrum" in m:
+            planning_explain = "Planificar el trabajo del sprint con estimaciones y capacidad del equipo."
+        elif "kanban" in m:
+            planning_explain = "Acordar políticas de flujo, límites WIP y orden del tablero."
+        else:
+            planning_explain = "Planificar las actividades de implementación y dependencias."
+
+        t = [
+            {"name": "Planificación de trabajo",
+             "roles": ["PM", "Tech Lead"],
+             "explain": planning_explain},
+            {"name": "Implementación backend",
+             "roles": ["Backend"],
+             "explain": "Desarrollar endpoints, lógica de negocio y acceso a datos con pruebas unitarias."},
+            {"name": "Implementación frontend",
+             "roles": ["Frontend"],
+             "explain": "Construir vistas, estados y componentes reutilizables integrados con APIs."},
+            {"name": "Integración y contratos API",
+             "roles": ["Backend", "Frontend"],
+             "explain": "Alinear contratos, gestionar errores y asegurar compatibilidad de extremo a extremo."},
+            {"name": "Pipelines CI/CD",
+             "roles": ["DevOps"],
+             "explain": "Configurar pipelines de build, test y despliegue automatizados."},
+            {"name": "Pruebas unitarias",
+             "roles": ["Backend", "Frontend", "QA"],
+             "explain": "Asegurar cobertura básica y evitar regresiones en componentes críticos."},
+        ]
+
+    elif archetype == "qa":
+        t = [
+            {"name": "Pruebas funcionales y de regresión",
+             "roles": ["QA"],
+             "explain": "Validar funcionalidades y comprobar que cambios no rompen lo existente."},
+            {"name": "Pruebas end-to-end",
+             "roles": ["QA"],
+             "explain": "Simular flujos completos del usuario para detectar fallos de integración."},
+            {"name": "Gestión de defectos",
+             "roles": ["QA", "PM"],
+             "explain": "Registrar, priorizar y hacer seguimiento de incidencias hasta su cierre."},
+        ]
+
+    elif archetype == "uat":
+        t = [
+            {"name": "Preparación de entorno y datos de prueba",
+             "roles": ["QA", "DevOps"],
+             "explain": "Dejar el entorno listo y con datos representativos para que negocio pruebe."},
+            {"name": "Guía UAT y soporte durante pruebas",
+             "roles": ["PM", "QA"],
+             "explain": "Explicar qué probar y asistir a usuarios durante la validación."},
+            {"name": "Recoger feedback y acta de aceptación",
+             "roles": ["PM"],
+             "explain": "Consolidar comentarios, acordar correcciones y documentar el OK de negocio."},
+        ]
+
+    elif archetype == "release":
+        t = [
+            {"name": "Checklist de publicación",
+             "roles": ["DevOps", "Tech Lead"],
+             "explain": "Verificar versiones, variables, backups y ventanas de despliegue."},
+            {"name": "Despliegue y migraciones",
+             "roles": ["DevOps", "Backend"],
+             "explain": "Ejecutar el despliegue, migrar datos y validar salud de los servicios."},
+            {"name": "Observabilidad post-release",
+             "roles": ["DevOps", "Backend"],
+             "explain": "Monitorizar métricas/logs y reaccionar ante alertas tras el lanzamiento."},
+        ]
+
+    elif archetype == "closure":
+        t = [
+            {"name": "Handover y documentación",
+             "roles": ["PM", "Backend", "Frontend"],
+             "explain": "Entregar documentación funcional y técnica, y acordar el soporte."},
+            {"name": "Retrospectiva final",
+             "roles": ["PM"],
+             "explain": "Analizar qué funcionó y qué mejorar en siguientes iteraciones."},
+            {"name": "Plan de mantenimiento",
+             "roles": ["PM", "DevOps"],
+             "explain": "Definir incidencias, ventanas de mantenimiento y estrategia de parches."},
+        ]
+
+    return t
+
+def _render_phase_task_breakdown(proposal: dict, staff: list) -> list:
+    """
+    Devuelve líneas de texto: por cada fase del plan, tareas asignadas a personas concretas.
+    staff: [{'name','role','skills','seniority','availability'}...]
+    """
+    lines = []
+    phases = proposal.get("phases", []) or []
+    meth = proposal.get("methodology", "") or ""
+
+    # Agrupar plantilla por rol canónico
+    staff_by_role = defaultdict(list)
+    for person in (staff or []):
+        role = _canonical_role(person.get("role", ""))
+        staff_by_role[_norm(role)].append(person)
+
+    # Contador por rol para repartir tareas de forma round-robin
+    rr_counters = defaultdict(int)
+
+    def _pick_assignee(role_needed: str):
+        key = _norm(_canonical_role(role_needed))
+        pool = staff_by_role.get(key, [])
+        if not pool:
+            return None
+        idx = rr_counters[key] % len(pool)
+        rr_counters[key] += 1
+        return pool[idx], _canonical_role(role_needed)
+
+    if not phases:
+        return ["No tengo fases definidas todavía para repartir tareas."]
+
+    lines.append("Plan de trabajo detallado por fases y personas:")
+    for ph in phases:
+        pname = ph.get("name", "Fase")
+        weeks = ph.get("weeks", 0)
+        lines.append(f"")
+        lines.append(f"Fase: {pname} ({weeks}s)")
+        arche = _match_phase_archetype(pname)
+        tasks = _phase_tasks_for_archetype(arche, meth)
+
+        for t in tasks:
+            assigned = None
+            chosen_role = None
+            for r in (t.get("roles") or []):
+                picked = _pick_assignee(r)
+                if picked:
+                    assigned, chosen_role = picked
+                    break
+
+            if not assigned:
+                falta = ", ".join(_canonical_role(r) for r in (t.get("roles") or []))
+                lines.append(f"- {t['name']}: NO ASIGNADO. Falta perfil ({falta}). Qué es: {t['explain']}")
+            else:
+                nm = assigned.get("name", "Sin nombre")
+                avail = assigned.get("availability") or assigned.get("availability_pct") or assigned.get("pct") or assigned.get("%") or 100
+                try:
+                    if isinstance(avail, str):
+                        avail = int(re.sub(r"[^0-9]", "", avail) or "100")
+                except Exception:
+                    avail = 100
+                lines.append(f"- {t['name']} — responsable: {nm} ({chosen_role}, {avail}% disponibilidad). Qué es: {t['explain']}")
+
+    return lines
+
     # Arquetipos de fase → tareas/recursos (por nombre)
     def phase_key(n: str) -> str:
         t = n.lower()
@@ -2700,7 +2933,7 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
                 clear_pending_change(session_id)
                 return "Perfecto, mantengo la propuesta tal cual.", "Cambio cancelado por el usuario."
             else:
-                return "Tengo un cambio **pendiente** con evaluación. ¿Lo aplico? **sí/no**", "Esperando confirmación de cambio."
+                return "Tengo un cambio pendiente con evaluación. ¿Lo aplico? sí/no", "Esperando confirmación de cambio."
         else:
             # flujo original de cambio de metodología
             if _is_yes(text):
@@ -2721,8 +2954,9 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
                 clear_pending_change(session_id)
                 return "Perfecto, mantengo la metodología actual.", "Cambio cancelado por el usuario."
             else:
-                return "Tengo un cambio de metodología **pendiente**. ¿Lo aplico? **sí/no**", "Esperando confirmación de cambio."
-        # === MODO FORMACIÓN: activar, guiar por nivel/temas y salir ===
+                return "Tengo un cambio de metodología pendiente. ¿Lo aplico? sí/no", "Esperando confirmación de cambio."
+
+    # === MODO FORMACIÓN: activar, guiar por nivel/temas y salir ===
     if _wants_training(text):
         _enter_training(session_id)
         return (
@@ -2782,7 +3016,6 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             "Para salir, escribe: salir de la formación."
         ), "Formación: ayuda"
 
-
     # Intents (si hay modelo entrenado)
     intent, conf = ("other", 0.0)
     if _INTENTS is not None:
@@ -2792,7 +3025,7 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             pass
     if conf >= 0.80:
         if intent == "greet":
-            return "¡Hola! ¿En qué te ayudo con tu proyecto? Describe requisitos o usa '/propuesta: ...' y preparo un plan.", "Saludo (intent)."
+            return "¡Hola! ¿Quieres generar una propuesta de proyecto o aprender un poco sobre consultoría? Si prefieres aprender, di: quiero formarme.", "Saludo (intent)."
         if intent == "goodbye":
             return "¡Hasta luego! Si quieres, deja aquí los requisitos y seguiré trabajando en la propuesta.", "Despedida (intent)."
         if intent == "thanks":
@@ -2805,7 +3038,7 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
         except Exception:
             pass
         prompt = (
-            "¡Genial, propuesta **aprobada**! Para asignar personas a cada tarea, "
+            "¡Genial, propuesta aprobada! Para asignar personas a cada tarea, "
             "cuéntame tu plantilla (una por línea) con este formato:\n"
             "Nombre — Rol — Skills clave — Seniority — Disponibilidad%\n"
             "Ejemplos:\n"
@@ -2814,18 +3047,44 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
         )
         return prompt, "Solicitud de plantilla."
 
-    # ——— Si el usuario pega su plantilla: parsear, asignar y analizar formación
+    # ——— Si el usuario pega su plantilla: parsear, asignar, formación y tareas por fase
     if proposal and _looks_like_staff_list(text):
         staff = _parse_staff_list(text)
         if not staff:
             return "No pude reconocer la plantilla. Usa: 'Nombre — Rol — Skills — Seniority — %'.", "Formato staff no válido."
-        asign = _suggest_staffing(proposal, staff)
-        training = _render_training_plan(proposal, staff)
+
+        # 1) Sugerir asignación por rol
+        try:
+            asign = _suggest_staffing(proposal, staff)
+        except Exception:
+            asign = ["Asignación sugerida no disponible por ahora."]
+
+        # 2) Plan de formación
+        try:
+            training = _render_training_plan(proposal, staff)
+        except Exception:
+            training = ["Plan de formación no disponible por ahora."]
+
+        # 3) Desglose de tareas por persona y por fase
+        try:
+            phase_tasks = _render_phase_task_breakdown(proposal, staff)
+        except Exception as e:
+            phase_tasks = [f"No pude generar el desglose de tareas por fase: {e}"]
+
         try:
             set_last_area(session_id, "staffing")
         except Exception:
             pass
-        return ("\n".join(asign + [""] + training)), "Asignación + formación."
+
+        out = []
+        if asign:
+            out += asign
+        if training:
+            out += [""] + training
+        if phase_tasks:
+            out += [""] + phase_tasks
+
+        return "\n".join(out), "Asignación + formación + tareas por fase."
 
     # Comando explícito: /propuesta
     if text.lower().startswith("/propuesta:"):
@@ -2835,7 +3094,6 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
         except Exception:
             pass
         p = generate_proposal(req)
-        # adjunta fuentes de metodología
         info = METHODOLOGIES.get(p.get("methodology", ""), {})
         p["methodology_sources"] = info.get("sources", [])
         set_last_proposal(session_id, p, req)
@@ -2851,7 +3109,6 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
     # Comando explícito: /cambiar:
     if text.lower().startswith("/cambiar:"):
         arg = text.split(":", 1)[1].strip()
-        # si coincide con una metodología conocida → cambio directo
         target = normalize_method_name(arg)
         if target in METHODOLOGIES:
             if not proposal or not req_text:
@@ -2877,7 +3134,7 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
     if change_req:
         target, alternative = change_req
         if not proposal or not req_text:
-            return ("Para evaluar si conviene cambiar a **{}**, necesito una propuesta base. "
+            return ("Para evaluar si conviene cambiar a {}, necesito una propuesta base. "
                     "Genera una con '/propuesta: ...' y vuelvo a aconsejarte.".format(target)), "Cambio: sin propuesta."
         current = proposal.get("methodology")
         _, _, scored = recommend_methodology(req_text)
@@ -2891,20 +3148,20 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
         evitar_target = METHODOLOGIES.get(target, {}).get("evitar_si", [])
         evitar_current = METHODOLOGIES.get(current, {}).get("evitar_si", [])
 
-        head = f"Propones cambiar a **{target}** (actual: **{current}**)."
+        head = f"Propones cambiar a {target} (actual: {current})."
         scores = f"Puntuaciones → {current}: {sc_current:.2f} • {target}: {sc_target:.2f}"
 
         if advisable:
-            msg = [head, "✅ **Sí parece conveniente** el cambio.", scores]
+            msg = [head, "Sí parece conveniente el cambio.", scores]
             if hits_target:
                 msg.append("Señales a favor: " + "; ".join(hits_target))
             if why_target:
                 msg.append("Razones:")
                 msg += [f"- {x}" for x in why_target]
             if evitar_current:
-                msg.append(f"Cuándo **no** conviene {current}: " + "; ".join(evitar_current))
+                msg.append(f"Cuándo no conviene {current}: " + "; ".join(evitar_current))
         else:
-            msg = [head, "❌ **No aconsejo** el cambio en este contexto.", scores]
+            msg = [head, "No aconsejo el cambio en este contexto.", scores]
             if hits_current:
                 msg.append("Señales para mantener la actual: " + "; ".join(hits_current))
             why_current = explain_methodology_choice(req_text, current)
@@ -2915,7 +3172,7 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
                 msg.append(f"Riesgos si cambiamos a {target}: " + "; ".join(evitar_target))
 
         set_pending_change(session_id, target)
-        msg.append(f"¿Quieres que **cambie el plan a {target}** ahora? **sí/no**")
+        msg.append(f"¿Quieres que cambie el plan a {target} ahora? sí/no")
         return "\n".join(msg), "Consejo de cambio con confirmación."
 
     # NUEVO: Cambios naturales a otras áreas → confirmación con parche + evaluación
@@ -2949,7 +3206,7 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             lines.append(f"• Caso #{s['id']} — Metodología {s['methodology']}, Equipo: {team}, Total: {total} €, similitud {s['similarity']:.2f}")
         return "Casos similares en mi memoria:\n" + "\n".join(lines), "Similares (k-NN TF-IDF)."
 
-    # ★★★ CALENDARIO / PLAZOS → pide fecha, calcula y prepara confirmación ★★★
+    # CALENDARIO / PLAZOS → pide fecha, calcula y prepara confirmación
     if _looks_like_timeline_intent(text) or _parse_start_date_es(text) is not None:
         if not proposal:
             return ("Primero genero una propuesta para conocer fases/semana y así calcular los plazos. "
@@ -2957,8 +3214,8 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
 
         start = _parse_start_date_es(text)
         if not start:
-            return ("¿Desde **cuándo** quieres empezar el proyecto? "
-                    "Dime una fecha (p. ej., '2025-10-01', '1/10/2025', '1 de octubre', 'en 2 semanas')."), "Pedir fecha inicio."
+            return ("¿Desde cuándo quieres empezar el proyecto? "
+                    "Dime una fecha (por ejemplo: 2025-10-01, 1/10/2025, 1 de octubre, en 2 semanas)."), "Pedir fecha inicio."
 
         preview_lines = _render_timeline_text(proposal, start)
         try:
@@ -2968,37 +3225,28 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
         except Exception:
             return "\n".join(preview_lines), "Calendario (solo vista)."
 
-    # ★★★ COMUNICACIÓN & FEEDBACK (Gobernanza) → canales + cadencia + ventanas + confirmación ★★★
+    # COMUNICACIÓN & FEEDBACK (Gobernanza)
     ntext = _norm(text)
     if any(w in ntext for w in [
         "feedback","retroaliment","comunicacion","comunicación","canal","reunion","reunión",
         "ceremonia","cadencia","ritmo","status","demo","retro","governance","gobernanza"
     ]):
         if not proposal:
-            return ("Primero necesito una propuesta para adaptar **canales y cadencias** a metodología y fases. "
+            return ("Primero necesito una propuesta para adaptar canales y cadencias a metodología y fases. "
                     "Usa '/propuesta: ...'."), "Gobernanza sin propuesta."
 
-        # 1) Calcular recomendaciones (independiente de helpers externos)
         meth = (proposal.get("methodology") or "").lower()
         tl = proposal.get("timeline") or {}
-        start_iso = tl.get("start_date")
-        start = None
-        try:
-            if start_iso:
-                start = datetime.fromisoformat(start_iso).date()
-        except Exception:
-            start = None
 
         channels = ["Slack/Teams (canal #proyecto)", "Jira/Board Kanban", "Confluence/Docs", "Google Meet/Zoom para síncronas"]
-        cadence = []
         if "scrum" in meth:
-            cadence = ["Daily 15m", "Planning cada 2 semanas", "Review + Retro cada 2 semanas"]
+            cadence = ["Daily 15 min", "Planning cada 2 semanas", "Review + Retrospectiva cada 2 semanas"]
         elif "kanban" in meth:
-            cadence = ["Daily 10m", "Revisión de flujo semanal", "Retro mensual"]
+            cadence = ["Daily 10 min", "Revisión de flujo semanal", "Retrospectiva mensual"]
         elif "waterfall" in meth or "cascada" in meth:
-            cadence = ["Status semanal 30m", "Comité de cambios quincenal", "Revisión de hito por fase"]
+            cadence = ["Status semanal 30 min", "Comité de cambios quincenal", "Revisión de hito por fase"]
         else:
-            cadence = ["Status semanal 30m", "Demostración quincenal", "Retro mensual"]
+            cadence = ["Status semanal 30 min", "Demostración quincenal", "Retrospectiva mensual"]
 
         feedback_windows = []
         events = tl.get("events") or []
@@ -3013,10 +3261,10 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
         else:
             feedback_windows = ["Definir ventanas de feedback al fijar calendario (demos quincenales y revisión al cierre de cada fase)."]
 
-        preferred_docs = ["Definition of Ready/Done", "ADR (Architecture Decision Records)", "Roadmap + Changelog", "Guía de PR y DoR/DoD"]
+        preferred_docs = ["Definition of Ready/Done", "ADR (Architecture Decision Records)", "Roadmap y Changelog", "Guía de PR y DoR/DoD"]
 
         preview = [
-            f"🗣️ **Comunicación & feedback** (metodología: {proposal.get('methodology','')}):",
+            f"Comunicación y feedback (metodología: {proposal.get('methodology','')}):",
             "- Canales: " + ", ".join(channels),
             "- Cadencia: " + " • ".join(cadence),
             "- Ventanas de feedback:",
@@ -3024,7 +3272,6 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             "- Artefactos: " + ", ".join(preferred_docs)
         ]
 
-        # 2) Preparar patch para añadir a la propuesta
         gov = {
             "channels": channels,
             "cadence": cadence,
@@ -3038,7 +3285,7 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
         except Exception:
             return "\n".join(preview), "Gobernanza (solo vista)."
 
-    # ★★★ RIESGOS → detalle + plan + confirmación sí/no ★★★
+    # RIESGOS → detalle + plan + confirmación
     if _asks_risks_simple(text):
         try:
             set_last_area(session_id, "riesgos")
@@ -3049,16 +3296,14 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             return ("Aún no tengo una propuesta para analizar riesgos. "
                     "Genera una con '/propuesta: ...' y luego te detallo riesgos y plan de prevención."), "Riesgos sin propuesta."
 
-        # 1) Texto detallado (con fallback seguro si el helper no está)
         try:
             detailed_lines = _render_risks_detail(proposal)
             text_out = "\n".join(detailed_lines)
         except Exception:
             lst = _expand_risks(req_text, proposal.get("methodology"))
-            extra = f"\n\nPuedo añadir un **plan de prevención** adaptado a **{proposal.get('methodology','')}**." if proposal.get("methodology") else ""
-            text_out = "⚠️ **Riesgos**:\n- " + "\n- ".join(lst) + extra
+            extra = f"\n\nPuedo añadir un plan de prevención adaptado a {proposal.get('methodology','')}." if proposal.get("methodology") else ""
+            text_out = "Riesgos:\n- " + "\n- ".join(lst) + extra
 
-        # 2) Preparar parche para añadir los controles a la propuesta
         try:
             patch = _build_risk_controls_patch(proposal)  # {'type':'risks','ops':[...]}
             eval_text, _ = _make_pending_patch(session_id, patch, proposal, req_text)
@@ -3066,7 +3311,7 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
         except Exception:
             return text_out, "Riesgos (detalle sin patch)."
 
-    # -------- catálogo y definiciones de metodologías --------
+    # Catálogo y definiciones de metodologías
     if _asks_method_list(text):
         try:
             set_last_area(session_id, "metodologia")
@@ -3085,7 +3330,7 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
 
     # Intenciones básicas
     if _is_greeting(text):
-        return "¡Hola! ¿En qué te ayudo con tu proyecto? Describe requisitos o usa '/propuesta: ...' y preparo un plan.", "Saludo."
+        return "¡Hola! ¿Quieres generar una propuesta de proyecto o aprender un poco sobre consultoría? Si prefieres aprender, di: quiero formarme.", "Saludo."
     if _is_farewell(text):
         return "¡Hasta luego! Si quieres, deja aquí los requisitos y seguiré trabajando en la propuesta.", "Despedida."
     if _is_thanks(text):
@@ -3093,11 +3338,13 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
     if _is_help(text):
         return (
             "Puedo: 1) generar una propuesta completa (equipo, fases, metodología, presupuesto, riesgos), "
-            "2) explicar por qué tomo cada decisión (con citas), 3) evaluar y **aplicar cambios** en metodología **y en toda la propuesta** (equipo, fases, presupuesto, riesgos) con confirmación **sí/no**.\n"
-            "Ejemplos: 'añade 0.5 QA', 'tarifa de Backend a 1200', 'contingencia a 15%', \"cambia 'Sprints de Desarrollo (2w)' a 8 semanas\", 'quita fase \"QA\"', 'añade riesgo: cumplimiento RGPD'."
+            "2) explicar por qué tomo cada decisión (con citas), 3) evaluar y aplicar cambios con confirmación (sí/no) en metodología y en toda la propuesta, "
+            "4) modo formación por niveles (principiante/intermedio/experto).\n"
+            "Ejemplos: 'añade 0.5 QA', 'tarifa de Backend a 1200', 'contingencia a 15%', 'cambia Sprints de Desarrollo a 8 semanas', "
+            "'quita fase QA', 'añade riesgo: cumplimiento RGPD', 'quiero formarme'."
         ), "Ayuda."
 
-    # NUEVO: si preguntan por una fase concreta → explicarla en detalle
+    # si preguntan por una fase concreta → explicarla en detalle
     phase_detail = _match_phase_name(text, proposal)
     if phase_detail and (any(k in _norm(text) for k in [
         "qué es","que es","explica","explícame","explicame",
@@ -3132,10 +3379,10 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
                 cnt = _find_role_count_in_proposal(proposal, r)
                 if cnt is not None:
                     bullets = _explain_role_count(r, cnt, req_text)
-                    extra = f"\nEn esta propuesta: **{cnt:g} {r}**."
-            return (f"{r} — función/valor:\n- " + "\n".join(bullets) + extra), "Rol concreto."
+                    extra = f"\nEn esta propuesta: {cnt:g} {r}."
+            return (f"{r} — función y valor:\n- " + "\n- ".join(bullets) + extra), "Rol concreto."
         else:
-            return ("Veo varios roles mencionados. Dime uno concreto (p. ej., 'QA' o 'Tech Lead') y te explico su función y por qué está en el plan."), "Varios roles."
+            return ("Veo varios roles mencionados. Dime uno concreto (por ejemplo, QA o Tech Lead) y te explico su función."), "Varios roles."
 
     # Preguntas de dominio (sin 'por qué')
     if _asks_methodology(text) and not _asks_why(text):
@@ -3143,9 +3390,9 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             set_last_area(session_id, "metodologia")
         except Exception:
             pass
-        return (_catalog_text()), "Metodologías (catálogo)."
+        return _catalog_text(), "Metodologías (catálogo)."
 
-    # —— Presupuesto (detalle visible) ——
+    # Presupuesto (detalle visible)
     if (_asks_budget(text) or "presupuesto" in _norm(text)) and not _asks_why(text):
         if proposal:
             try:
@@ -3156,12 +3403,11 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
                 detail = _render_budget_detail(proposal)   # helper de detalle (roles + actividades)
                 return "\n".join(detail), "Presupuesto (detalle)."
             except Exception:
-                # Fallback al resumen si el helper no existe
-                return ("\n".join(_explain_budget(proposal))), "Presupuesto."
+                return "\n".join(_explain_budget(proposal)), "Presupuesto."
         return ("Para estimar presupuesto considero: alcance → equipo → semanas → tarifas por rol + % de contingencia.\n"
                 "Genera una propuesta con '/propuesta: ...' y te doy el detalle."), "Guía presupuesto."
 
-    # —— Alias de desglose → también muestra el detalle ——
+    # Alias de desglose → también muestra el detalle
     if _asks_budget_breakdown(text) or "desglose" in _norm(text) or "detalle" in _norm(text):
         if proposal:
             try:
@@ -3174,17 +3420,17 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             except Exception:
                 try:
                     breakdown = _explain_budget_breakdown(proposal)
-                    return ("Presupuesto — desglose por rol:\n" + "\n".join(breakdown)), "Desglose presupuesto."
+                    return "Presupuesto — desglose por rol:\n" + "\n".join(breakdown), "Desglose presupuesto."
                 except Exception:
-                    return ("\n".join(_explain_budget(proposal))), "Presupuesto."
+                    return "\n".join(_explain_budget(proposal)), "Presupuesto."
         else:
-            return ("Genera primero una propuesta con '/propuesta: ...' para poder desglosar el presupuesto por rol."), "Sin propuesta para desglose."
+            return "Genera primero una propuesta con '/propuesta: ...' para poder desglosar el presupuesto por rol.", "Sin propuesta para desglose."
 
     if _asks_team(text) and not _asks_why(text):
         set_last_area(session_id, "equipo")
         if proposal:
             reasons = _explain_team_general(proposal, req_text)
-            return ("Equipo propuesto — razones:\n- " + "\n".join(reasons)), "Equipo."
+            return "Equipo propuesto — razones:\n- " + "\n".join(reasons), "Equipo."
         return (
             "Perfiles típicos: PM, Tech Lead, Backend, Frontend, QA, UX. "
             "La cantidad depende de módulos: pagos, panel admin, mobile, IA… "
@@ -3212,7 +3458,7 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
                 evitar_other = METHODOLOGIES.get(other, {}).get("evitar_si", [])
 
                 msg = [
-                    f"He usado **{chosen}** en vez de **{other}** porque se ajusta mejor a tus requisitos.",
+                    f"He usado {chosen} en vez de {other} porque se ajusta mejor a tus requisitos.",
                     f"Puntuaciones: {chosen}={sc_chosen:.2f} vs {other}={sc_other:.2f}. Top3: {top3}."
                 ]
                 if reasons_hits_chosen:
@@ -3221,7 +3467,7 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
                     msg.append("A favor de la elegida:")
                     msg += [f"- {x}" for x in why_chosen]
                 if evitar_other:
-                    msg.append(f"Cuándo **no** conviene {other}: " + "; ".join(evitar_other))
+                    msg.append(f"Cuándo no conviene {other}: " + "; ".join(evitar_other))
                 return "\n".join(msg), "Comparativa de metodologías (justificada)."
             else:
                 lines = compare_methods(a, b)
@@ -3244,20 +3490,20 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
                 if target in score_map:
                     top3 = ", ".join([f"{name}({score:.2f})" for name, score, _ in scored[:3]])
                     rank_line = f"\nPuntuación {target}: {score_map[target]:.2f}. Top3: {top3}."
-            return f"¿Por qué **{target}**?\n- " + "\n".join(why_lines) + rank_line, "Explicación metodología."
+            return f"¿Por qué {target}?\n- " + "\n".join(why_lines) + rank_line, "Explicación metodología."
 
         # Otras 'por qué'
         if proposal and _asks_why_team_general(text):
             set_last_area(session_id, "equipo")
             reasons = _explain_team_general(proposal, req_text)
             team_lines = [f"- {t['role']} x{t['count']}" for t in proposal["team"]]
-            return ("Equipo — por qué:\n- " + "\n".join(reasons) + "\nDesglose: \n" + "\n".join(team_lines)), "Equipo por qué."
+            return "Equipo — por qué:\n- " + "\n".join(reasons) + "\nDesglose:\n" + "\n".join(team_lines), "Equipo por qué."
 
         rc = _asks_why_role_count(text)
         if proposal and rc:
             set_last_area(session_id, "equipo")
             role, count = rc
-            return (f"¿Por qué **{count:g} {role}**?\n- " + "\n".join(_explain_role_count(role, count, req_text))), "Cantidad por rol."
+            return f"¿Por qué {count:g} {role}?\n- " + "\n".join(_explain_role_count(role, count, req_text)), "Cantidad por rol."
 
         if proposal and _asks_why_phases(text):
             set_last_area(session_id, "phases")
@@ -3266,10 +3512,10 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             if m:
                 asked = int(m.group(1))
                 expl.insert(1, f"Se han propuesto {len(proposal['phases'])} fases (preguntas por {asked}).")
-            return ("Fases — por qué:\n" + "\n".join(expl)), "Fases por qué."
+            return "Fases — por qué:\n" + "\n".join(expl), "Fases por qué."
 
         if proposal and _asks_budget(text):
-            return ("Presupuesto — por qué:\n- " + "\n".join(_explain_budget(proposal))), "Presupuesto por qué."
+            return "Presupuesto — por qué:\n- " + "\n".join(_explain_budget(proposal)), "Presupuesto por qué."
 
         roles_why = _extract_roles_from_text(text)
         if proposal and roles_why:
@@ -3277,18 +3523,18 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             r = roles_why[0]
             cnt = _find_role_count_in_proposal(proposal, r)
             if cnt is not None:
-                return (f"¿Por qué **{r}** en el plan?\n- " + "\n".join(_explain_role_count(r, cnt, req_text))), "Rol por qué."
+                return f"¿Por qué {r} en el plan?\n- " + "\n".join(_explain_role_count(r, cnt, req_text)), "Rol por qué."
             else:
-                return (f"¿Por qué **{r}**?\n- " + "\n".join(_explain_role(r, req_text))), "Rol por qué."
+                return f"¿Por qué {r}?\n- " + "\n".join(_explain_role(r, req_text)), "Rol por qué."
 
         if proposal:
             generic = [
                 f"Metodología: {proposal['methodology']}",
                 "Equipo dimensionado por módulos detectados y equilibrio coste/velocidad.",
-                "Fases cubren descubrimiento→entrega; cada una reduce un riesgo.",
+                "Fases cubren descubrimiento a entrega; cada una reduce un riesgo.",
                 "Presupuesto = headcount × semanas × tarifa por rol + % de contingencia."
             ]
-            return ("Explicación general:\n- " + "\n".join(generic)), "Explicación general."
+            return "Explicación general:\n- " + "\n- ".join(generic), "Explicación general."
         else:
             return (
                 "Puedo justificar metodología, equipo, fases, presupuesto y riesgos. "
@@ -3311,7 +3557,7 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             pass
         return _pretty_proposal(p), "Propuesta a partir de requisitos."
 
-    # ——— GAPS & FORMACIÓN BAJO DEMANDA ———
+    # GAPS & FORMACIÓN BAJO DEMANDA
     if _asks_training_plan(text):
         staff = []
         try:
@@ -3319,9 +3565,9 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
         except Exception:
             staff = []
         if not staff:
-            return ("Pégame la **plantilla** (Nombre — Rol — Skills — Seniority — %) para analizar carencias y proponerte un plan de formación."), "Falta plantilla."
+            return "Pégame la plantilla (Nombre — Rol — Skills — Seniority — %) para analizar carencias y proponerte un plan de formación.", "Falta plantilla."
         training = _render_training_plan(proposal, staff) if proposal else ["Primero generemos una propuesta para conocer stack/metodología."]
-        return ("\n".join(training)), "Plan de formación."
+        return "\n".join(training), "Plan de formación."
 
     # Fallback
     return (
