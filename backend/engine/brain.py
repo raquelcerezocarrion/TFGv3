@@ -89,6 +89,25 @@ def _asks_methodology(text: str) -> bool:
 
 def _asks_budget(text: str) -> bool:
     return bool(re.search(r"\b(presupuesto|coste|costos|estimaci[oó]n|precio)\b", text, re.I))
+def _asks_comms(text: str) -> bool:
+    t = _norm(text)
+    keys = ["comunicación", "comunicacion", "reuniones", "feedback", "cadencia", "rituales", "canales", "standups", "retro"]
+    return any(k in t for k in keys)
+
+def _asks_standards(text: str) -> bool:
+    t = _norm(text)
+    keys = ["estándares", "estandares", "normativas", "iso", "owasp", "gdpr", "rgpd", "accesibilidad", "wcag", "asvs", "samm"]
+    return any(k in t for k in keys)
+
+def _asks_kpis(text: str) -> bool:
+    t = _norm(text)
+    keys = ["kpi", "kpis", "objetivos", "indicadores", "metas", "éxito", "exito", "dora", "slo", "sla"]
+    return any(k in t for k in keys)
+
+def _asks_deliverables(text: str) -> bool:
+    t = _norm(text)
+    keys = ["entregables", "artefactos", "documentación", "documentacion", "checklist de entrega", "sow"]
+    return any(k in t for k in keys)
 
 def _asks_team(text: str) -> bool:
     return bool(re.search(r"\b(equipo|roles|perfiles|staffing|personal|dimension)\b", text, re.I))
@@ -330,7 +349,43 @@ def _pretty_proposal(p: Dict[str, Any]) -> str:
             clean = re.sub(r"^\s*\[control\]\s*", "", str(c), flags=re.I)
             lines.append(f"- {clean}")
 
+    # 🗣️ Comunicación & feedback (si existe 'governance')
+    g = p.get("governance") or {}
+    if any(g.get(k) for k in ("channels", "cadence", "feedback_windows", "preferred_docs")):
+        lines.append("🗣️ Comunicación & feedback:")
+        if g.get("channels"):
+            lines.append("- Canales: " + ", ".join(g["channels"]))
+        if g.get("cadence"):
+            lines.append("- Cadencia: " + " • ".join(g["cadence"]))
+        if g.get("feedback_windows"):
+            lines.append("- Ventanas de feedback: " + " • ".join(g["feedback_windows"]))
+        if g.get("preferred_docs"):
+            lines.append("- Artefactos de coordinación: " + ", ".join(g["preferred_docs"]))
+
+    # 📏 Estándares / Normativas
+    stds = list(p.get("standards") or [])
+    if stds:
+        lines.append("📏 Estándares/Normativas recomendados:")
+        for s in stds:
+            lines.append(f"- {s}")
+
+    # 🎯 KPIs de éxito
+    kpis = p.get("kpis") or {}
+    if isinstance(kpis, dict) and kpis:
+        lines.append("🎯 KPIs de éxito:")
+        for grp, items in kpis.items():
+            if items:
+                lines.append(f"- {str(grp).title()}: " + " • ".join(items))
+
+    # 📦 Entregables
+    dels = list(p.get("deliverables") or [])
+    if dels:
+        lines.append("📦 Entregables:")
+        for d in dels:
+            lines.append(f"- {d}")
+
     return "\n".join(lines)
+
 
 
 
@@ -1683,11 +1738,69 @@ def _apply_patch(proposal: Dict[str, Any], patch: Dict[str, Any]) -> Dict[str, A
         if payload:
             p["timeline"] = payload
 
+    # —— NUEVOS TIPOS: comunicación/feedback, estándares, KPIs, entregables ——
+
+    elif t in ("governance", "comms", "communication"):
+        # ops: [{'op':'set','value': {channels, cadence, feedback_windows, preferred_docs}}]
+        payload = None
+        for op in (patch.get("ops") or []):
+            if op.get("op") == "set":
+                payload = op.get("value")
+        if payload:
+            p["governance"] = payload  # no afecta a presupuesto
+
+    elif t == "standards":
+        # ops: add/remove de cadenas; también acepta 'value' con lista completa para sustituir
+        cur = list(p.get("standards") or [])
+        if "ops" in patch:
+            for op in (patch.get("ops") or []):
+                val = op.get("value")
+                if not val:
+                    continue
+                if op.get("op") == "add":
+                    # evita duplicados (case-insensitive)
+                    if not any(_norm(val) == _norm(x) for x in cur):
+                        cur.append(val)
+                elif op.get("op") == "remove":
+                    cur = [x for x in cur if _norm(x) != _norm(val)]
+            p["standards"] = cur
+        elif isinstance(patch.get("value"), list):
+            # set directo
+            p["standards"] = list(patch.get("value") or [])
+
+    elif t == "kpis":
+        # ops: [{'op':'set','value': {grupo: [kpi1, kpi2]}}] o 'value' directo (dict)
+        payload = None
+        if "ops" in patch:
+            for op in (patch.get("ops") or []):
+                if op.get("op") == "set":
+                    payload = op.get("value")
+        elif isinstance(patch.get("value"), dict):
+            payload = patch.get("value")
+        if payload:
+            p["kpis"] = payload  # no afecta a presupuesto
+
+    elif t == "deliverables":
+        # Soporta: lista completa en 'value' o 'ops' add/remove
+        if "ops" in patch:
+            cur = list(p.get("deliverables") or [])
+            for op in (patch.get("ops") or []):
+                val = op.get("value")
+                if not val:
+                    continue
+                if op.get("op") == "add":
+                    if not any(_norm(val) == _norm(x) for x in cur):
+                        cur.append(val)
+                elif op.get("op") == "remove":
+                    cur = [x for x in cur if _norm(x) != _norm(val)]
+            p["deliverables"] = cur
+        elif isinstance(patch.get("value"), list):
+            p["deliverables"] = list(patch.get("value") or [])
+
     # mantenemos sources de metodología siempre
     info = METHODOLOGIES.get(p.get("methodology", ""), {})
     p["methodology_sources"] = info.get("sources", [])
     return p
-
 
 # ---------- Parsers de lenguaje natural → parches ----------
 
@@ -1909,6 +2022,82 @@ def _build_risk_controls_patch(p: Dict[str, Any]) -> Dict[str, Any]:
                 adds.append(c)
     return {"type": "risks", "add": adds, "remove": []}
 
+def _suggest_comms_for_method(method: str) -> Dict[str, Any]:
+    m = (method or "").strip()
+    if m == "Scrum":
+        return {
+            "channels": ["Slack/Teams", "Jira/YouTrack", "Email ejecutivo"],
+            "cadence": ["Daily 15’", "Refinamiento 1/sem", "Review + Retro cada 2 sem"],
+            "feedback_windows": ["Demo bisemanal (Review)", "Ventana de cambio al inicio de sprint"],
+            "preferred_docs": ["DoR/DoD visibles", "Roadmap trimestral", "Actas ligeras"]
+        }
+    if m == "Kanban":
+        return {
+            "channels": ["Slack/Teams", "Kanban board (WIP)", "Email ejecutivo"],
+            "cadence": ["Daily flow 10’", "Replenishment 1/sem", "Service review mensual"],
+            "feedback_windows": ["Pull continuo + weekly checkpoint", "Políticas WIP visibles"],
+            "preferred_docs": ["Políticas de flujo", "Definición de clases de servicio"]
+        }
+    return {
+        "channels": ["Slack/Teams", "Issue tracker", "Email ejecutivo"],
+        "cadence": ["Daily 15’", "Show & Tell semanal", "Retro/Review bisemanal"],
+        "feedback_windows": ["Demo semanal", "Checklist de aceptación por historia"],
+        "preferred_docs": ["ADR", "Backlog priorizado"]
+    }
+
+def _render_comms_plan(p: Dict[str, Any]) -> List[str]:
+    g = (p.get("governance") or {})
+    out = ["🗣️ **Comunicación & feedback**"]
+    if g.get("channels"): out.append("- Canales: " + ", ".join(g["channels"]))
+    if g.get("cadence"): out.append("- Cadencia: " + " • ".join(g["cadence"]))
+    if g.get("feedback_windows"): out.append("- Ventanas de feedback: " + " • ".join(g["feedback_windows"]))
+    if g.get("preferred_docs"): out.append("- Artefactos de coordinación: " + ", ".join(g["preferred_docs"]))
+    return out
+
+def _standards_for_context(p: Dict[str, Any]) -> List[str]:
+    t = _norm(" ".join(p.get("risks", [])))
+    out = ["ISO/IEC 25010 (calidad)", "OWASP ASVS (seguridad app)", "WCAG 2.2 AA (accesibilidad)"]
+    if "pci" in t or "pago" in t or "stripe" in t or "chargeback" in t:
+        out += ["PCI-DSS (pagos)", "ISO/IEC 27001/27002 (seguridad)", "ISO 31000 (riesgos)"]
+    if any(k in t for k in ["datos", "privacidad", "rgpd", "gdpr"]):
+        out += ["ISO/IEC 27701 (privacidad)", "GDPR (cumplimiento UE)"]
+    seen, uniq = set(), []
+    for s in out:
+        if s not in seen:
+            seen.add(s); uniq.append(s)
+    return uniq
+
+def _render_standards(p: Dict[str, Any]) -> List[str]:
+    stds = p.get("standards") or []
+    if not stds: stds = _standards_for_context(p)
+    return ["📏 **Estándares/Normativas recomendados**"] + [f"- {s}" for s in stds] + [
+        "_Nota_: recomendaciones; la **certificación** requeriría auditoría externa."
+    ]
+
+def _kpis_for_method(method: str) -> Dict[str, Any]:
+    if method == "Scrum":
+        return {"delivery": ["Velocidad estable (+/-15%)", "Defectos por sprint < 3"],
+                "devops": ["Lead Time < 7 días", "CFD estable"],
+                "calidad": ["Cobertura > 60%", "Fuga a prod < 1%"]}
+    if method == "Kanban":
+        return {"flow": ["Lead time p50 < 5 días", "WIP respetado"],
+                "calidad": ["Tasa de retrabajo < 10%"]}
+    return {"delivery": ["Release cada 2-4 semanas"], "calidad": ["Defectos críticos cerrados < 48h"]}
+
+def _render_kpis(p: Dict[str, Any]) -> List[str]:
+    k = p.get("kpis") or _kpis_for_method(p.get("methodology",""))
+    lines = ["🎯 **KPIs de éxito**"]
+    for group, items in k.items():
+        lines.append(f"- {group.title()}: " + " • ".join(items))
+    return lines
+
+def _deliverables_for_plan(p: Dict[str, Any]) -> List[str]:
+    base = ["Backlog priorizado", "ADR/Arquitectura", "CI/CD configurado", "Plan de pruebas", "Manual de usuario", "Runbooks"]
+    return base
+
+def _render_deliverables(p: Dict[str, Any]) -> List[str]:
+    lst = p.get("deliverables") or _deliverables_for_plan(p)
+    return ["📦 **Entregables**"] + [f"- {d}" for d in lst]
 
 def _render_risks_detail(p: Dict[str, Any]) -> List[str]:
     """Texto detallado de riesgos + plan de prevención, adaptado a metodología."""
@@ -2227,7 +2416,6 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
                 clear_pending_change(session_id)
                 return "Perfecto, mantengo la propuesta tal cual.", "Cambio cancelado por el usuario."
             else:
-                # Cuando hay duda, recordamos que hay evaluación previa en el mensaje anterior
                 return "Tengo un cambio **pendiente** con evaluación. ¿Lo aplico? **sí/no**", "Esperando confirmación de cambio."
         else:
             # flujo original de cambio de metodología
@@ -2416,6 +2604,7 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             total = s.get("budget", {}).get("total_eur")
             lines.append(f"• Caso #{s['id']} — Metodología {s['methodology']}, Equipo: {team}, Total: {total} €, similitud {s['similarity']:.2f}")
         return "Casos similares en mi memoria:\n" + "\n".join(lines), "Similares (k-NN TF-IDF)."
+
     # ★★★ CALENDARIO / PLAZOS → pide fecha, calcula y prepara confirmación ★★★
     if _looks_like_timeline_intent(text) or _parse_start_date_es(text) is not None:
         if not proposal:
@@ -2434,6 +2623,76 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             return "\n".join(preview_lines) + "\n\n" + eval_text, "Calendario (pendiente confirmación)."
         except Exception:
             return "\n".join(preview_lines), "Calendario (solo vista)."
+
+    # ★★★ COMUNICACIÓN & FEEDBACK (Gobernanza) → canales + cadencia + ventanas + confirmación ★★★
+    ntext = _norm(text)
+    if any(w in ntext for w in [
+        "feedback","retroaliment","comunicacion","comunicación","canal","reunion","reunión",
+        "ceremonia","cadencia","ritmo","status","demo","retro","governance","gobernanza"
+    ]):
+        if not proposal:
+            return ("Primero necesito una propuesta para adaptar **canales y cadencias** a metodología y fases. "
+                    "Usa '/propuesta: ...'."), "Gobernanza sin propuesta."
+
+        # 1) Calcular recomendaciones (independiente de helpers externos)
+        meth = (proposal.get("methodology") or "").lower()
+        tl = proposal.get("timeline") or {}
+        start_iso = tl.get("start_date")
+        start = None
+        try:
+            if start_iso:
+                start = datetime.fromisoformat(start_iso).date()
+        except Exception:
+            start = None
+
+        channels = ["Slack/Teams (canal #proyecto)", "Jira/Board Kanban", "Confluence/Docs", "Google Meet/Zoom para síncronas"]
+        cadence = []
+        if "scrum" in meth:
+            cadence = ["Daily 15m", "Planning cada 2 semanas", "Review + Retro cada 2 semanas"]
+        elif "kanban" in meth:
+            cadence = ["Daily 10m", "Revisión de flujo semanal", "Retro mensual"]
+        elif "waterfall" in meth or "cascada" in meth:
+            cadence = ["Status semanal 30m", "Comité de cambios quincenal", "Revisión de hito por fase"]
+        else:
+            cadence = ["Status semanal 30m", "Demostración quincenal", "Retro mensual"]
+
+        feedback_windows = []
+        events = tl.get("events") or []
+        if events:
+            for e in events:
+                try:
+                    s = datetime.fromisoformat(e["start"]).date()
+                    en = datetime.fromisoformat(e["end"]).date()
+                    feedback_windows.append(f"{e.get('phase','Fase')}: {_fmt_d(s)} → {_fmt_d(en)} (feedback al final de la fase)")
+                except Exception:
+                    feedback_windows.append(f"{e.get('phase','Fase')}: {e.get('start')} → {e.get('end')} (feedback al final de la fase)")
+        else:
+            feedback_windows = ["Definir ventanas de feedback al fijar calendario (demos quincenales y revisión al cierre de cada fase)."]
+
+        preferred_docs = ["Definition of Ready/Done", "ADR (Architecture Decision Records)", "Roadmap + Changelog", "Guía de PR y DoR/DoD"]
+
+        preview = [
+            f"🗣️ **Comunicación & feedback** (metodología: {proposal.get('methodology','')}):",
+            "- Canales: " + ", ".join(channels),
+            "- Cadencia: " + " • ".join(cadence),
+            "- Ventanas de feedback:",
+        ] + [f"  • {fw}" for fw in feedback_windows] + [
+            "- Artefactos: " + ", ".join(preferred_docs)
+        ]
+
+        # 2) Preparar patch para añadir a la propuesta
+        gov = {
+            "channels": channels,
+            "cadence": cadence,
+            "feedback_windows": feedback_windows,
+            "preferred_docs": preferred_docs
+        }
+        try:
+            patch = {"type": "governance", "ops": [{"op": "set", "value": gov}]}
+            eval_text, _ = _make_pending_patch(session_id, patch, proposal, req_text)
+            return "\n".join(preview) + "\n\n" + eval_text, "Gobernanza (pendiente confirmación)."
+        except Exception:
+            return "\n".join(preview), "Gobernanza (solo vista)."
 
     # ★★★ RIESGOS → detalle + plan + confirmación sí/no ★★★
     if _asks_risks_simple(text):
