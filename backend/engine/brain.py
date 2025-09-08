@@ -2386,6 +2386,290 @@ def _looks_like_timeline_intent(t: str) -> bool:
     keys = ["calendario","plazo","plazos","fechas","cronograma","timeline","plan de plazos","cuándo empez","cuando empez"]
     return any(k in z for k in keys)
 
+# ===================== FORMACIÓN: helpers, estado y contenido =====================
+
+_TRAINING_SESSIONS: Dict[str, Dict[str, Any]] = {}
+
+def _get_training_state(session_id: str) -> Dict[str, Any]:
+    return _TRAINING_SESSIONS.get(session_id, {"active": False, "level": None})
+
+def _set_training_state(session_id: str, st: Dict[str, Any]) -> None:
+    _TRAINING_SESSIONS[session_id] = {"active": bool(st.get("active")), "level": st.get("level")}
+
+def _enter_training(session_id: str) -> None:
+    _set_training_state(session_id, {"active": True, "level": None})
+
+def _exit_training(session_id: str) -> None:
+    _set_training_state(session_id, {"active": False, "level": None})
+
+def _wants_training(text: str) -> bool:
+    t = _norm(text)
+    keys = ["aprender", "formación", "formacion", "enseñame", "enséñame", "quiero formarme", "modo formación", "formarme"]
+    return any(k in t for k in keys)
+
+def _training_exit(text: str) -> bool:
+    t = _norm(text)
+    return ("salir de la formaci" in t) or (t.strip() in {"salir", "terminar formacion", "terminar formación"})
+
+_LEVEL_ALIASES = {
+    "principiante": "beginner", "inicio": "beginner", "novato": "beginner",
+    "intermedio": "intermediate", "medio": "intermediate",
+    "experto": "expert", "avanzado": "expert"
+}
+
+def _parse_level(text: str) -> Optional[str]:
+    t = _norm(text)
+    for k, v in _LEVEL_ALIASES.items():
+        if re.search(rf"\b{k}\b", t):
+            return v
+    return None
+
+def _one_liner_from_info(info: Dict[str, Any], name: str) -> str:
+    for k in ["resumen", "one_liner", "descripcion", "descripción", "description"]:
+        if info.get(k):
+            return str(info[k])
+    base = {
+        "Scrum": "Marco ágil con sprints cortos para entregar valor frecuente.",
+        "Kanban": "Flujo continuo con límites de trabajo en curso (WIP).",
+        "XP": "Prácticas técnicas (TDD, refactor, CI) e iteraciones cortas.",
+        "Lean": "Eliminar desperdicios y acelerar el flujo de valor.",
+        "Scrumban": "Híbrido Scrum + Kanban para planificar y controlar el flujo.",
+        "Crystal": "Método adaptable según tamaño y criticidad del equipo.",
+        "FDD": "Entrega por funcionalidades bien definidas.",
+        "DSDM": "Ágil de negocio con timeboxes y priorización MoSCoW.",
+        "SAFe": "Escalado ágil con trenes de release y PI Planning.",
+        "DevOps": "Dev + Ops: automatización, despliegue continuo y fiabilidad."
+    }
+    return base.get(normalize_method_name(name), f"Enfoque para organizar trabajo y entregar valor.")
+
+def _training_topic_and_method(text: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Detecta tema y método solicitado.
+    tema ∈ {'metodologias','fases','roles','metricas','quees','ventajas'} o None
+    """
+    t = _norm(text)
+    topic = None
+    if any(x in t for x in ["metodolog", "metodos", "métodos"]):
+        topic = "metodologias"
+    if any(x in t for x in ["fase", "fases", "ritual", "ceremonia"]):
+        topic = "fases"
+    if any(x in t for x in ["rol", "roles", "equipo", "perfiles"]):
+        topic = "roles"
+    if any(x in t for x in ["metrica", "métrica", "metricas", "métricas", "indicador", "kpi"]):
+        topic = "metricas"
+    if any(x in t for x in ["que es", "qué es", "definicion", "definición", "explica", "explicame", "explícame"]):
+        topic = "quees"
+    if any(x in t for x in ["ventaja", "beneficio", "cuando usar", "cuándo usar", "pros"]):
+        topic = "ventajas"
+
+    methods_mentioned = _mentioned_methods(text)
+    method = methods_mentioned[0] if methods_mentioned else None
+    return topic, method
+
+# Contenido por metodología (fases/rituales/roles/métricas/prácticas avanzadas)
+_TRAIN_METHOD = {
+    "Scrum": {
+        "rituales": ["Planning", "Daily", "Review", "Retrospective", "Refinement"],
+        "fases":    ["Incepción/Plan de releases", "Sprints de desarrollo (2 semanas)", "QA/Hardening", "Despliegue y transferencia"],
+        "roles":    ["Product Owner", "Scrum Master", "Equipo de desarrollo (Dev/QA/UX)"],
+        "metrics":  ["Velocidad", "Burndown/Burnup", "Lead time", "Cycle time"],
+        "avanzado": ["Definition of Ready/Done claros", "Descomposición de épicas", "Evitar mini-waterfalls"]
+    },
+    "Kanban": {
+        "rituales": ["Replenishment", "Revisión de flujo", "Retro de flujo"],
+        "fases":    ["Discovery y diseño", "Flujo continuo con WIP", "QA continuo", "Estabilización/operación"],
+        "roles":    ["Product/Project", "Tech Lead", "Equipo (Dev/QA/UX)"],
+        "metrics":  ["Lead time", "Throughput", "WIP", "Cumulative Flow"],
+        "avanzado": ["Políticas explícitas", "Clases de servicio/SLAs", "Gestión de bloqueos"]
+    },
+    "XP": {
+        "rituales": ["Iteraciones cortas", "Planning game", "Retro", "Integración continua"],
+        "fases":    ["Discovery + Historias", "Iteraciones con TDD/Refactor/CI", "Pruebas de aceptación", "Release y traspaso"],
+        "roles":    ["Cliente/PO", "Equipo de desarrollo", "Coach (opcional)"],
+        "metrics":  ["Cobertura de tests", "Frecuencia de despliegue", "Cambios fallidos"],
+        "avanzado": ["TDD/ATDD", "Pair/Mob programming", "Feature toggles"]
+    },
+    "Lean": {
+        "rituales": ["Kaizen", "Gemba", "Revisión del flujo de valor"],
+        "fases":    ["Mapa de valor", "Eliminar desperdicios", "Entregas por demanda"],
+        "roles":    ["Líder de producto", "Equipo multifuncional"],
+        "metrics":  ["Lead time", "Takt time", "WIP"],
+        "avanzado": ["JIT", "Poka-Yoke", "Teoría de colas"]
+    },
+    "Scrumban": {
+        "rituales": ["Daily", "Replenishment", "Retro"],
+        "fases":    ["Backlog a flujo con WIP", "Revisiones periódicas", "Release continuo"],
+        "roles":    ["PO/PM", "Scrum Master o Flow Manager", "Equipo"],
+        "metrics":  ["Velocidad y métricas de flujo"],
+        "avanzado": ["WIP dinámico", "Políticas híbridas sprint/flujo"]
+    },
+    "Crystal": {
+        "rituales": ["Entregas frecuentes", "Retro e inspección", "Revisión de trabajo"],
+        "fases":    ["Inicio ligero", "Iteraciones", "Release"],
+        "roles":    ["Usuarios clave", "Equipo polivalente"],
+        "metrics":  ["Frecuencia de entrega"],
+        "avanzado": ["Ajustar prácticas a tamaño/criticidad"]
+    },
+    "FDD": {
+        "rituales": ["Plan por funcionalidades", "Diseñar por funcionalidad", "Construir por funcionalidad"],
+        "fases":    ["Modelo de dominio", "Lista de funcionalidades", "Diseño y construcción iterativa"],
+        "roles":    ["Chief Programmer", "Class Owners", "Equipo"],
+        "metrics":  ["Progreso por funcionalidad"],
+        "avanzado": ["Feature teams y ownership claro"]
+    },
+    "DSDM": {
+        "rituales": ["Timeboxing", "MoSCoW", "Workshops"],
+        "fases":    ["Preproyecto", "Exploración", "Ingeniería", "Implementación"],
+        "roles":    ["Business Sponsor/Visionary", "Team Leader", "Solution Dev/Tester"],
+        "metrics":  ["Cumplimiento de timebox", "Valor entregado"],
+        "avanzado": ["Facilitación y MoSCoW estricta"]
+    },
+    "SAFe": {
+        "rituales": ["PI Planning", "System demo", "Inspect & Adapt"],
+        "fases":    ["ARTs por PI", "Cadencias sincronizadas", "Release train"],
+        "roles":    ["Product Manager/PO", "RTE", "System Architect"],
+        "metrics":  ["Predictabilidad", "Tiempo de flujo", "Objetivos de PI"],
+        "avanzado": ["Lean Portfolio y guardrails de inversión"]
+    },
+    "DevOps": {
+        "rituales": ["Postmortems sin culpa", "Revisión de pipeline", "Game days"],
+        "fases":    ["Integración continua", "Despliegue continuo", "Operación y observabilidad", "Mejora continua"],
+        "roles":    ["Dev", "Ops/SRE", "Security"],
+        "metrics":  ["DORA: frecuencia despliegue, tiempo de entrega, MTTR, tasa de fallos"],
+        "avanzado": ["Infraestructura como código", "Entrega progresiva", "SLO/SLA y error budgets"]
+    }
+}
+
+def _level_label(code: str) -> str:
+    return {"beginner": "principiante", "intermediate": "intermedio", "expert": "experto"}.get(code, "?")
+
+def _training_intro(level: str) -> str:
+    lv = _level_label(level)
+    return (
+        f"Nivel seleccionado: {lv}.\n\n"
+        "Temas disponibles: metodologías, fases, roles, métricas, ventajas.\n"
+        "Ejemplos:\n"
+        "- quiero aprender sobre Kanban\n"
+        "- fases de Scrum\n"
+        "- roles del equipo en XP\n"
+        "- métricas de DevOps\n"
+        "- ventajas de SAFe\n\n"
+        "Cuando quieras terminar, escribe: salir de la formación."
+    )
+
+def _training_catalog(level: str) -> str:
+    names = sorted(METHODOLOGIES.keys())
+    if level == "beginner":
+        bullets = [f"- {n}: {_one_liner_from_info(METHODOLOGIES.get(n, {}), n)}" for n in names]
+    elif level == "intermediate":
+        bullets = [f"- {n}: prácticas clave: " + ", ".join((METHODOLOGIES.get(n, {}).get("practicas_clave") or [])[:4]) for n in names]
+    else:
+        bullets = [f"- {n}: encaja si: " + "; ".join((METHODOLOGIES.get(n, {}).get("encaja_bien_si") or [])[:3]) for n in names]
+    return "Metodologías disponibles:\n" + "\n".join(bullets) + "\n\nPide: quiero aprender sobre <metodología>."
+
+def _training_method_card(method: str, level: str) -> str:
+    m = normalize_method_name(method)
+    info_m = _TRAIN_METHOD.get(m, {})
+    overview = _one_liner_from_info(METHODOLOGIES.get(m, {}), m)
+
+    lines: List[str] = [f"{m} — mini formación ({_level_label(level)})", f"Qué es: {overview}"]
+
+    if level == "beginner":
+        if info_m.get("rituales"):
+            lines.append("Rituales típicos: " + ", ".join(info_m["rituales"]))
+        if info_m.get("roles"):
+            lines.append("Roles recomendados: " + ", ".join(info_m["roles"]))
+        lines.append("Consejo: visualiza el trabajo y pide feedback frecuente.")
+    elif level == "intermediate":
+        if info_m.get("fases"):
+            lines.append("Fases típicas: " + " → ".join(info_m["fases"]))
+        if info_m.get("metrics"):
+            lines.append("Métricas útiles: " + ", ".join(info_m["metrics"]))
+    else:
+        if info_m.get("metrics"):
+            lines.append("Métricas clave: " + ", ".join(info_m["metrics"]))
+        if info_m.get("avanzado"):
+            lines.append("Prácticas avanzadas: " + ", ".join(info_m["avanzado"]))
+
+    lines.append('Pide “fases de <metodología>”, “roles de <metodología>”, “métricas de <metodología>” o escribe “salir de la formación”.')
+    return "\n".join(lines)
+
+def _training_phases_card(level: str, method: Optional[str] = None) -> str:
+    m = normalize_method_name(method) if method else None
+    data = _TRAIN_METHOD.get(m or "Scrum", _TRAIN_METHOD["Scrum"])
+    phases = data.get("fases") or ["Descubrimiento", "Desarrollo iterativo", "QA/Hardening", "Release"]
+
+    title = f"Fases en {m}" if m else "Fases típicas"
+    lines = [f"{title} — nivel {_level_label(level)}"]
+    if level == "beginner":
+        lines += [f"- {p}" for p in phases]
+        lines.append("Tip: cierra cada fase con una demo y una checklist de hecho.")
+    elif level == "intermediate":
+        lines += [f"- {p} (artefactos y salidas claras)" for p in phases]
+        lines.append("Mide tiempo de ciclo por fase y defectos detectados.")
+    else:
+        lines += [f"- {p} (riesgos a reducir y políticas de entrada/salida)" for p in phases]
+        lines.append("Optimiza WIP y colas con datos.")
+    lines.append('Para más contenido: “roles”, “métricas” o “salir de la formación”.')
+    return "\n".join(lines)
+
+def _training_roles_card(level: str, method: Optional[str] = None) -> str:
+    m = normalize_method_name(method) if method else None
+    roles = (_TRAIN_METHOD.get(m, {}) or _TRAIN_METHOD["Scrum"]).get("roles",
+            ["PO/PM", "Scrum Master/Facilitador", "Tech Lead", "Backend", "Frontend", "QA", "UX/UI", "DevOps"])
+    title = f"Roles en {m}" if m else "Roles del equipo"
+    lines = [f"{title} — nivel {_level_label(level)}"]
+    if level == "beginner":
+        lines += [f"- {r}: función en una frase" for r in roles]
+        lines.append("Asegura prioridades claras y poca multitarea.")
+    elif level == "intermediate":
+        lines += [f"- {r}: responsabilidades y artefactos asociados" for r in roles]
+        lines.append("Evita handoffs largos; pairing y Definition of Done compartido.")
+    else:
+        lines += [f"- {r}: responsabilidades, riesgos y anti-patrones comunes" for r in roles]
+        lines.append("Mide carga y throughput del equipo.")
+    lines.append('Puedes pedir “fases”, “métricas” o escribir “salir de la formación”.')
+    return "\n".join(lines)
+
+def _training_metrics_card(level: str, method: Optional[str] = None) -> str:
+    m = normalize_method_name(method) if method else None
+    metrics = (_TRAIN_METHOD.get(m, {}) or _TRAIN_METHOD["Scrum"]).get("metrics", ["Lead time", "Cycle time"])
+    title = f"Métricas en {m}" if m else "Métricas útiles"
+    lines = [f"{title} — nivel {_level_label(level)}"]
+    if level == "beginner":
+        lines.append("Para empezar, mira estas métricas y su tendencia:")
+        lines += [f"- {x}" for x in metrics[:3]]
+    elif level == "intermediate":
+        lines.append("Úsalas para ver cuellos de botella y predecir entregas:")
+        lines += [f"- {x}: qué mide y cómo mejora la entrega" for x in metrics]
+    else:
+        lines.append("Consejos avanzados:")
+        lines += [f"- {x}: define objetivos, revisa outliers y correlación con calidad" for x in metrics]
+    lines.append('Pide “fases”, “roles” o escribe “salir de la formación”.')
+    return "\n".join(lines)
+
+def _training_define_card(level: str, method: str) -> str:
+    m = normalize_method_name(method)
+    overview = _one_liner_from_info(METHODOLOGIES.get(m, {}), m)
+    extra = ""
+    if level == "intermediate":
+        extra = " Cómo se trabaja: ciclos cortos, trabajo visible y feedback constante."
+    elif level == "expert":
+        extra = " Enfócate en riesgos, flujo y decisiones basadas en datos."
+    return f"Qué es {m}: {overview}{extra}"
+
+def _training_benefits_card(level: str, method: str) -> str:
+    m = normalize_method_name(method)
+    fit = METHODOLOGIES.get(m, {}).get("encaja_bien_si") or []
+    avoid = METHODOLOGIES.get(m, {}).get("evitar_si") or []
+    lines = [f"Ventajas y cuándo usar {m} — nivel {_level_label(level)}"]
+    if fit:
+        lines.append("Va especialmente bien si: " + "; ".join(fit))
+    if level != "beginner" and avoid:
+        lines.append("Precauciones: " + "; ".join(avoid))
+    return "\n".join(lines)
+
+
 # ===================== generación de respuesta =====================
 
 def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
@@ -2438,6 +2722,66 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
                 return "Perfecto, mantengo la metodología actual.", "Cambio cancelado por el usuario."
             else:
                 return "Tengo un cambio de metodología **pendiente**. ¿Lo aplico? **sí/no**", "Esperando confirmación de cambio."
+        # === MODO FORMACIÓN: activar, guiar por nivel/temas y salir ===
+    if _wants_training(text):
+        _enter_training(session_id)
+        return (
+            "Modo formación activado.\n"
+            "¿Cuál es tu nivel? principiante, intermedio o experto.\n"
+            "Puedes salir cuando quieras diciendo: salir de la formación."
+        ), "Formación: activada"
+
+    tr = _get_training_state(session_id)
+    if tr.get("active"):
+        if _training_exit(text):
+            _exit_training(session_id)
+            return ("Salgo del modo formación. ¿Generamos una propuesta? Usa /propuesta: ..."), "Formación: salida"
+
+        if not tr.get("level"):
+            lv = _parse_level(text)
+            if not lv:
+                return ("Indícame tu nivel: principiante, intermedio o experto.\n"
+                        "Para terminar: salir de la formación."), "Formación: esperando nivel"
+            tr["level"] = lv
+            _set_training_state(session_id, tr)
+            return _training_intro(lv), "Formación: nivel fijado"
+
+        # Peticiones dentro de formación
+        topic, method_in_text = _training_topic_and_method(text)
+
+        # Preguntas específicas con método → responde SOLO a eso
+        if topic == "fases" and method_in_text:
+            return _training_phases_card(tr["level"], method_in_text), f"Formación: fases de {method_in_text}"
+        if topic == "roles" and method_in_text:
+            return _training_roles_card(tr["level"], method_in_text), f"Formación: roles de {method_in_text}"
+        if topic == "metricas" and method_in_text:
+            return _training_metrics_card(tr["level"], method_in_text), f"Formación: métricas de {method_in_text}"
+        if topic == "quees" and method_in_text:
+            return _training_define_card(tr["level"], method_in_text), f"Formación: qué es {method_in_text}"
+        if topic == "ventajas" and method_in_text:
+            return _training_benefits_card(tr["level"], method_in_text), f"Formación: ventajas {method_in_text}"
+
+        # Preguntas generales sin método
+        if topic == "metodologias":
+            return _training_catalog(tr["level"]), "Formación: catálogo"
+        if topic == "fases":
+            return _training_phases_card(tr["level"]), "Formación: fases"
+        if topic == "roles":
+            return _training_roles_card(tr["level"]), "Formación: roles"
+        if topic == "metricas":
+            return _training_metrics_card(tr["level"]), "Formación: métricas"
+
+        # “Quiero aprender sobre <método>”
+        if method_in_text:
+            return _training_method_card(method_in_text, tr["level"]), f"Formación: {method_in_text}"
+
+        # Ayuda contextual
+        return (
+            f"Estás en modo formación (nivel {_level_label(tr['level'])}).\n"
+            "Pídeme: metodologías, fases, roles, métricas o ‘quiero aprender sobre <metodología>’.\n"
+            "Para salir, escribe: salir de la formación."
+        ), "Formación: ayuda"
+
 
     # Intents (si hay modelo entrenado)
     intent, conf = ("other", 0.0)
