@@ -282,10 +282,21 @@ def _collect_sources_for_area(proposal: Optional[Dict[str, Any]], area: str) -> 
 # ===================== pretty =====================
 
 def _pretty_proposal(p: Dict[str, Any]) -> str:
-    team = ", ".join(f"{t['role']} x{t['count']}" for t in p.get("team", []))
-    phases = " → ".join(f"{ph['name']} ({ph['weeks']}s)" for ph in p.get("phases", []))
+    def eur(x) -> str:
+        try:
+            return f"{float(x):,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
+        except Exception:
+            return f"{x} €"
 
-    all_risks = (p.get("risks") or [])
+    team = ", ".join(f"{t.get('role','')} x{float(t.get('count',0)) :g}" for t in (p.get("team") or []))
+    phases = " → ".join(f"{ph.get('name','')} ({ph.get('weeks',0)}s)" for ph in (p.get("phases") or []))
+
+    budget = p.get("budget", {}) or {}
+    total = budget.get("total_eur", 0.0)
+    cont_pct = (budget.get("assumptions", {}) or {}).get("contingency_pct", 10)
+
+    # Riesgos y controles (mitigaciones)
+    all_risks = list(p.get("risks") or [])
     base_risks = [r for r in all_risks if not _norm(str(r)).startswith("[control]")]
     controls = [r for r in all_risks if _norm(str(r)).startswith("[control]")]
 
@@ -293,19 +304,34 @@ def _pretty_proposal(p: Dict[str, Any]) -> str:
         f"📌 Metodología: {p.get('methodology','')}",
         f"👥 Equipo: {team}" if team else "👥 Equipo: (sin definir)",
         f"🧩 Fases: {phases}" if phases else "🧩 Fases: (sin definir)",
-        f"💶 Presupuesto: {p.get('budget',{}).get('total_eur', 0.0)} € (incluye {p.get('budget',{}).get('assumptions',{}).get('contingency_pct', 10)}% contingencia)",
+        f"💶 Presupuesto: {eur(total)} (incluye {cont_pct}% contingencia)",
         "⚠️ Riesgos: " + ("; ".join(base_risks) if base_risks else "(no definidos)")
     ]
 
+    # 📅 Plazos / calendario (debajo de Fases)
+    tl = p.get("timeline") or {}
+    events = tl.get("events") or []
+    if events:
+        lines.append("📅 Plazos:")
+        try:
+            for e in events:
+                s = datetime.fromisoformat(e["start"]).date()
+                en = datetime.fromisoformat(e["end"]).date()
+                lines.append(f"- {e.get('phase','Fase')}: {_fmt_d(s)} → {_fmt_d(en)} ({float(e.get('weeks',0)):g}s)")
+        except Exception:
+            # Fallback si alguna fecha no parsea
+            for e in events:
+                lines.append(f"- {e.get('phase','Fase')}: {e.get('start')} → {e.get('end')} ({e.get('weeks','?')}s)")
+
+    # 🛡️ Plan de prevención (controles)
     if controls:
         lines.append("🛡️ Plan de prevención:")
         for c in controls:
-            clean = str(c)
-            if clean.lower().startswith("[control]"):
-                clean = clean[len("[Control]"):].strip()
+            clean = re.sub(r"^\s*\[control\]\s*", "", str(c), flags=re.I)
             lines.append(f"- {clean}")
 
     return "\n".join(lines)
+
 
 
 # ===================== explicabilidad =====================
@@ -1259,8 +1285,10 @@ def _evaluate_patch(proposal: Dict[str, Any], patch: Dict[str, Any], req_text: O
     b1 = float(after.get("budget", {}).get("total_eur", 0.0))
     labor0 = float(before.get("budget", {}).get("labor_estimate_eur", 0.0))
     labor1 = float(after.get("budget", {}).get("labor_estimate_eur", 0.0))
-    cont_pct = float(after.get("budget", {}).get("assumptions", {}).get("contingency_pct",
-                        before.get("budget", {}).get("assumptions", {}).get("contingency_pct", 10)))
+    cont_pct = float(after.get("budget", {}).get("assumptions", {}).get(
+        "contingency_pct",
+        before.get("budget", {}).get("assumptions", {}).get("contingency_pct", 10)
+    ))
 
     delta_w = w1 - w0
     delta_f = f1 - f0
@@ -1269,11 +1297,15 @@ def _evaluate_patch(proposal: Dict[str, Any], patch: Dict[str, Any], req_text: O
     lines: List[str] = []
     verdict = "neutra"
 
-    t = patch.get("type")
+    def eur(x: float) -> str:
+        return f"{float(x):,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
+
+    t = (patch.get("type") or "").lower()
+
+    # ---------------- EQUIPO ----------------
     if t == "team":
         add_line("📌 Evaluación del cambio de **equipo**:", lines)
 
-        # Cobertura de roles críticos y señales de calidad
         roles_before = {r["role"].lower(): float(r["count"]) for r in before.get("team", [])}
         roles_after  = {r["role"].lower(): float(r["count"]) for r in after.get("team", [])}
 
@@ -1289,13 +1321,11 @@ def _evaluate_patch(proposal: Dict[str, Any], patch: Dict[str, Any], req_text: O
         if critical_added:
             add_line(f"✅ Se incorpora rol crítico: {', '.join(critical_added)} → mejora gobernanza/calidad.", lines)
 
-        # Throughput / cuellos de botella
         if delta_f > 0 and delta_w == 0:
             add_line("➕ Más FTE con el mismo timeline → más throughput; potencialmente entregas antes dentro de las mismas semanas.", lines)
         if delta_f < 0 and delta_w == 0:
             add_line("➖ Menos FTE con igual timeline → riesgo de cuello de botella en desarrollo.", lines)
 
-        # Veredicto
         if critical_removed:
             verdict = "mala"
         elif delta_f > 0 and has("qa"):
@@ -1305,7 +1335,6 @@ def _evaluate_patch(proposal: Dict[str, Any], patch: Dict[str, Any], req_text: O
         else:
             verdict = "neutra"
 
-        # ——— Detalle por rol afectado ———
         add_line("", lines)
         add_line("**Detalle por rol propuesto:**", lines)
         changed_any = False
@@ -1323,10 +1352,6 @@ def _evaluate_patch(proposal: Dict[str, Any], patch: Dict[str, Any], req_text: O
         if not changed_any:
             add_line("-(No hay variaciones de FTE por rol respecto al plan anterior).", lines)
 
-        # ——— Impacto estimado numérico ———
-        def eur(x: float) -> str:
-            return f"{x:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
-
         add_line("", lines)
         add_line("📊 **Impacto estimado:**", lines)
         add_line(f"- Semanas totales: {w0} → {w1}  (Δ {delta_w:+})", lines)
@@ -1334,17 +1359,8 @@ def _evaluate_patch(proposal: Dict[str, Any], patch: Dict[str, Any], req_text: O
         add_line(f"- Labor: {eur(labor0)} → {eur(labor1)}  (Δ {eur(labor1 - labor0)})", lines)
         add_line(f"- Total con contingencia ({cont_pct:.0f}%): {eur(b0)} → {eur(b1)}  (Δ {eur(delta_cost)})", lines)
 
-        # ——— Conclusión ———
-        add_line("", lines)
-        idea = {"buena": "buena idea", "mala": "mala idea", "neutra": "impacto neutro"}[verdict]
-        add_line(f"✅ En general: **{idea}** para tu contexto, según heurísticas de calidad/gestión.", lines)
-
-        # Pregunta de confirmación
-        add_line("", lines)
-        add_line("¿Aplico estos cambios? **sí/no**", lines)
-
+    # ---------------- FASES ----------------
     elif t == "phases":
-        # (Sin cambios en esta rama; se mantiene tu lógica actual.)
         add_line("📌 Evaluación del cambio de **fases/timeline**:", lines)
         if delta_w < 0:
             pct = int(abs(delta_w) / (w0 or 1) * 100)
@@ -1358,10 +1374,91 @@ def _evaluate_patch(proposal: Dict[str, Any], patch: Dict[str, Any], req_text: O
             verdict = "neutra"
 
         add_line("", lines)
-        add_line("¿Aplico estos cambios? **sí/no**", lines)
+        add_line("📊 **Impacto estimado:**", lines)
+        add_line(f"- Semanas totales: {w0} → {w1}  (Δ {delta_w:+})", lines)
+        add_line(f"- Headcount equivalente (FTE): {f0:g} → {f1:g}  (Δ {delta_f:+g})", lines)
+        add_line(f"- Total con contingencia ({cont_pct:.0f}%): {eur(b0)} → {eur(b1)}  (Δ {eur(delta_cost)})", lines)
 
+    # ---------------- PRESUPUESTO ----------------
+    elif t in ("budget", "rates", "contingency"):
+        add_line("📌 Evaluación del cambio de **presupuesto**:", lines)
+
+        rr = patch.get("role_rates") or patch.get("rates") or {}
+        if rr:
+            add_line("Tarifas por rol propuestas:", lines)
+            current_rates = (before.get("budget", {}).get("assumptions", {}).get("role_rates_eur_pw", {}) or {})
+            for r, v in rr.items():
+                old = float(current_rates.get(_canonical_role(r), current_rates.get(r, 0.0)) or 0.0)
+                add_line(f"- {_canonical_role(r)}: {eur(old)} → {eur(float(v))} /semana", lines)
+
+        if "contingency_pct" in patch or (t == "contingency" and "pct" in patch):
+            oldc = float(before.get("budget", {}).get("assumptions", {}).get("contingency_pct", cont_pct))
+            newc = float(patch.get("contingency_pct", patch.get("pct", cont_pct)))
+            add_line(f"Contingencia: {oldc:.0f}% → {newc:.0f}%.", lines)
+
+        add_line("", lines)
+        add_line("📊 **Impacto estimado:**", lines)
+        add_line(f"- Labor: {eur(labor0)} → {eur(labor1)}  (Δ {eur(labor1 - labor0)})", lines)
+        add_line(f"- Total con contingencia: {eur(b0)} → {eur(b1)}  (Δ {eur(delta_cost)})", lines)
+
+        if delta_cost < 0:
+            verdict = "buena"
+        elif delta_cost > max(0.1 * (b0 or 1), 1):
+            verdict = "mala"
+        else:
+            verdict = "neutra"
+
+    # ---------------- RIESGOS ----------------
+    elif t == "risks":
+        add_line("📌 Evaluación del cambio de **riesgos/controles**:", lines)
+        adds, rems = 0, 0
+        if "ops" in patch:
+            for op in (patch.get("ops") or []):
+                if op.get("op") == "add": adds += 1
+                if op.get("op") == "remove": rems += 1
+        else:
+            adds = len(patch.get("add", []) or [])
+            rems = len(patch.get("remove", []) or [])
+        if adds:
+            add_line(f"✅ Se añaden {adds} controles/mitigaciones.", lines)
+        if rems:
+            add_line(f"⚠️ Se eliminan {rems} riesgos/controles.", lines)
+        verdict = "buena" if adds and not rems else "neutra"
+        add_line("", lines)
+        add_line("No afecta directamente al presupuesto; mejora la gobernanza del riesgo.", lines)
+
+    # ---------------- TIMELINE / CALENDARIO ----------------
+    elif t == "timeline":
+        add_line("📌 Evaluación del cambio de **plazos/calendario**:", lines)
+        payload = None
+        for op in (patch.get("ops") or []):
+            if op.get("op") == "set":
+                payload = op.get("value")
+        if not payload:
+            payload = after.get("timeline") or {}
+
+        start_iso = payload.get("start_date")
+        events = payload.get("events", [])
+        try:
+            sd = datetime.fromisoformat(start_iso).date() if start_iso else date.today()
+        except Exception:
+            sd = date.today()
+
+        add_line(f"📅 Calendario propuesto desde { _fmt_d(sd) }:", lines)
+        for e in events:
+            try:
+                s = datetime.fromisoformat(e["start"]).date()
+                en = datetime.fromisoformat(e["end"]).date()
+                add_line(f"- {e.get('phase','Fase')}: {_fmt_d(s)} → {_fmt_d(en)} ({float(e.get('weeks',0)):g}s)", lines)
+            except Exception:
+                add_line(f"- {e.get('phase','Fase')}: {e.get('start')} → {e.get('end')} ({e.get('weeks','?')}s)", lines)
+
+        add_line("", lines)
+        add_line("No cambia semanas ni presupuesto; solo documenta los plazos.", lines)
+        verdict = "neutra"
+
+    # ---------------- OTROS ----------------
     else:
-        # Tipos no contemplados
         add_line(f"(Evaluación no implementada para tipo '{t}')", lines)
         verdict = "neutra"
 
@@ -1483,7 +1580,7 @@ def _recompute_budget(p: Dict[str, Any]) -> Dict[str, Any]:
 def _apply_patch(proposal: Dict[str, Any], patch: Dict[str, Any]) -> Dict[str, Any]:
     """Aplica un parche estructurado a la propuesta y recalcula lo necesario."""
     p = copy.deepcopy(proposal)
-    t = patch.get("type")
+    t = (patch.get("type") or "").lower()
 
     if t == "team":
         ops = patch.get("ops", [])
@@ -1527,35 +1624,70 @@ def _apply_patch(proposal: Dict[str, Any], patch: Dict[str, Any]) -> Dict[str, A
                 p["phases"] = [ph for ph in p.get("phases", []) if _norm(ph["name"]) != _norm(op["name"])]
         p = _recompute_budget(p)
 
-    elif t == "budget":
-        # role_rates + contingency_pct
+    elif t in ("budget", "rates", "contingency"):
+        # role_rates + contingency_pct (acepta varias formas)
         budget = p.get("budget", {}) or {}
         ass = budget.get("assumptions", {}) or {}
         role_rates = ass.get("role_rates_eur_pw", {}) or {}
-        role_rates.update({ _canonical_role(k): float(v) for k, v in (patch.get("role_rates") or {}).items() })
-        p.setdefault("budget", {})  # ensure
+
+        # 1) tarifas por rol
+        rr = patch.get("role_rates") or patch.get("rates") or {}
+        if rr:
+            role_rates.update({_canonical_role(k): float(v) for k, v in rr.items()})
+
+        p.setdefault("budget", {})
         p["budget"].setdefault("assumptions", {})
         p["budget"]["assumptions"]["role_rates_eur_pw"] = role_rates
+
+        # 2) contingencia
         if "contingency_pct" in patch:
-            pct = float(patch["contingency_pct"])
-            p["budget"]["assumptions"]["contingency_pct"] = pct
+            p["budget"]["assumptions"]["contingency_pct"] = float(patch["contingency_pct"])
+        if "pct" in patch and t in ("contingency",):
+            p["budget"]["assumptions"]["contingency_pct"] = float(patch["pct"])
+
         p = _recompute_budget(p)
 
     elif t == "risks":
-        add = patch.get("add", []) or []
-        remove = patch.get("remove", []) or []
-        risks = p.get("risks", [])[:]
-        for r in add:
-            if r not in risks:
-                risks.append(r)
-        for r in remove:
-            risks = [x for x in risks if _norm(x) != _norm(r)]
+        # Soporta dos formatos:
+        # a) {'type':'risks','add':[...],'remove':[...]}
+        # b) {'type':'risks','ops':[{'op':'add','risk':'...'}, {'op':'remove','risk':'...'}]}
+        risks = list(p.get("risks", []) or [])
+
+        if "ops" in patch:
+            for op in (patch.get("ops") or []):
+                rtxt = op.get("risk") or op.get("value")
+                if not rtxt:
+                    continue
+                if op.get("op") == "add":
+                    if rtxt not in risks:
+                        risks.append(rtxt)
+                elif op.get("op") == "remove":
+                    risks = [x for x in risks if _norm(x) != _norm(rtxt)]
+        else:
+            add = patch.get("add", []) or []
+            remove = patch.get("remove", []) or []
+            for r in add:
+                if r not in risks:
+                    risks.append(r)
+            for r in remove:
+                risks = [x for x in risks if _norm(x) != _norm(r)]
+
         p["risks"] = risks
+
+    elif t == "timeline":
+        # Patch con ops = [{'op':'set','value': {start_date, events:[{phase,start,end,weeks}]}}]
+        payload = None
+        for op in (patch.get("ops") or []):
+            if op.get("op") == "set":
+                payload = op.get("value")
+        if payload:
+            p["timeline"] = payload
 
     # mantenemos sources de metodología siempre
     info = METHODOLOGIES.get(p.get("methodology", ""), {})
     p["methodology_sources"] = info.get("sources", [])
     return p
+
 
 # ---------- Parsers de lenguaje natural → parches ----------
 
@@ -1948,6 +2080,122 @@ def _render_budget_detail(p: Dict[str, Any]) -> List[str]:
     lines.append("- «contingencia a 15%»")
     lines.append("- «tarifa de Backend a 1200»  |  «tarifa de QA a 900»")
     return lines
+# ---------- Calendario / plazos: parseo fecha inicio + construcción de timeline ----------
+from datetime import date, datetime, timedelta
+import math
+from typing import Dict, Any, List, Tuple, Optional
+
+_MONTHS_ES = {
+    "enero":1,"febrero":2,"marzo":3,"abril":4,"mayo":5,"junio":6,"julio":7,"agosto":8,
+    "septiembre":9,"setiembre":9,"octubre":10,"noviembre":11,"diciembre":12,
+    "ene":1,"feb":2,"mar":3,"abr":4,"may":5,"jun":6,"jul":7,"ago":8,"sep":9,"oct":10,"nov":11,"dic":12
+}
+
+def _fmt_d(d: date) -> str:
+    return d.strftime("%d/%m/%Y")
+
+def _safe_float(x) -> float:
+    try: return float(x)
+    except Exception: return 0.0
+
+def _parse_start_date_es(text: str, today: Optional[date] = None) -> Optional[date]:
+    """Soporta: YYYY-MM-DD, DD/MM/YYYY, DD-MM-YYYY, 'hoy', 'mañana', 'en 10 días|semanas',
+       '1 de octubre (de 2025)', 'octubre 1 2025'."""
+    t = (text or "").lower().strip()
+    if not today: today = date.today()
+
+    # palabras
+    if "hoy" in t: return today
+    if "mañana" in t or "manana" in t: return today + timedelta(days=1)
+
+    # en X días/semanas
+    m = re.search(r"en\s+(\d+)\s*(dia|días|dias|semana|semanas)", t)
+    if m:
+        n = int(m.group(1))
+        unit = m.group(2)
+        return today + timedelta(days=n if "semana" not in unit else n * 7)
+
+    # ISO
+    m = re.search(r"\b(\d{4})-(\d{2})-(\d{2})\b", t)
+    if m:
+        y, mo, d = map(int, m.groups())
+        return date(y, mo, d)
+
+    # DD/MM/YYYY o DD-MM-YYYY
+    m = re.search(r"\b(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\b", t)
+    if m:
+        d, mo, y = m.groups()
+        y = int(y);  y = y + 2000 if y < 100 else y
+        return date(int(y), int(mo), int(d))
+
+    # '1 de octubre de 2025' / '1 de oct 2025' / '1 de octubre'
+    m = re.search(r"\b(\d{1,2})\s+de\s+([a-záéíóú]+)(?:\s+de\s+(\d{4}))?", t)
+    if m:
+        d = int(m.group(1)); mon = m.group(2).replace("á","a").replace("é","e").replace("í","i").replace("ó","o").replace("ú","u")
+        mon = _MONTHS_ES.get(mon, None)
+        if mon:
+            y = int(m.group(3)) if m.group(3) else today.year
+            return date(y, mon, d)
+
+    # 'octubre 1 2025'
+    m = re.search(r"\b([a-záéíóú]+)\s+(\d{1,2})(?:\s+(\d{4}))?", t)
+    if m:
+        mon = m.group(1).replace("á","a").replace("é","e").replace("í","i").replace("ó","o").replace("ú","u")
+        mon = _MONTHS_ES.get(mon, None)
+        if mon:
+            d = int(m.group(2))
+            y = int(m.group(3)) if m.group(3) else today.year
+            return date(y, mon, d)
+
+    return None
+
+def _build_timeline(proposal: Dict[str, Any], start: date) -> Dict[str, Any]:
+    """Construye events = [{phase,start,end,weeks}] avanzando por semanas."""
+    events: List[Dict[str, Any]] = []
+    current = start
+    for ph in (proposal.get("phases") or []):
+        w = _safe_float(ph.get("weeks", 0.0))
+        days = int(math.ceil(w * 7)) if w > 0 else 0
+        end = current + timedelta(days=days-1) if days > 0 else current
+        events.append({
+            "phase": ph.get("name", "Fase"),
+            "weeks": w,
+            "start": current.isoformat(),
+            "end": end.isoformat()
+        })
+        current = end + timedelta(days=1)
+    return {
+        "start_date": start.isoformat(),
+        "events": events
+    }
+
+def _render_timeline_text(proposal: Dict[str, Any], start: date) -> List[str]:
+    tl = _build_timeline(proposal, start)
+    evs = tl["events"]
+    out = [f"📅 **Plan de plazos** — inicio { _fmt_d(start) }"]
+    if not evs:
+        out.append("- (No hay fases definidas).")
+        return out
+    for e in evs:
+        s = datetime.fromisoformat(e["start"]).date()
+        en = datetime.fromisoformat(e["end"]).date()
+        out.append(f"- {e['phase']}: {_fmt_d(s)} → {_fmt_d(en)} ({e['weeks']:g}s)")
+    return out
+
+def _build_timeline_patch(proposal: Dict[str, Any], start: date) -> Dict[str, Any]:
+    """Patch que añade p['timeline'] con start_date + events."""
+    tl = _build_timeline(proposal, start)
+    return {
+        "type": "timeline",
+        "ops": [
+            {"op": "set", "value": tl}
+        ]
+    }
+
+def _looks_like_timeline_intent(t: str) -> bool:
+    z = _norm(t)
+    keys = ["calendario","plazo","plazos","fechas","cronograma","timeline","plan de plazos","cuándo empez","cuando empez"]
+    return any(k in z for k in keys)
 
 # ===================== generación de respuesta =====================
 
@@ -2168,6 +2416,24 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             total = s.get("budget", {}).get("total_eur")
             lines.append(f"• Caso #{s['id']} — Metodología {s['methodology']}, Equipo: {team}, Total: {total} €, similitud {s['similarity']:.2f}")
         return "Casos similares en mi memoria:\n" + "\n".join(lines), "Similares (k-NN TF-IDF)."
+    # ★★★ CALENDARIO / PLAZOS → pide fecha, calcula y prepara confirmación ★★★
+    if _looks_like_timeline_intent(text) or _parse_start_date_es(text) is not None:
+        if not proposal:
+            return ("Primero genero una propuesta para conocer fases/semana y así calcular los plazos. "
+                    "Usa '/propuesta: ...'."), "Calendario sin propuesta."
+
+        start = _parse_start_date_es(text)
+        if not start:
+            return ("¿Desde **cuándo** quieres empezar el proyecto? "
+                    "Dime una fecha (p. ej., '2025-10-01', '1/10/2025', '1 de octubre', 'en 2 semanas')."), "Pedir fecha inicio."
+
+        preview_lines = _render_timeline_text(proposal, start)
+        try:
+            patch = _build_timeline_patch(proposal, start)
+            eval_text, _ = _make_pending_patch(session_id, patch, proposal, req_text)
+            return "\n".join(preview_lines) + "\n\n" + eval_text, "Calendario (pendiente confirmación)."
+        except Exception:
+            return "\n".join(preview_lines), "Calendario (solo vista)."
 
     # ★★★ RIESGOS → detalle + plan + confirmación sí/no ★★★
     if _asks_risks_simple(text):
