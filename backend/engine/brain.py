@@ -1814,6 +1814,140 @@ def _render_risks_detail(p: Dict[str, Any]) -> List[str]:
 
     lines.append("\n¿Quieres **añadir este plan de prevención a la propuesta**? **sí/no**")
     return lines
+# ---------- Desglose avanzado de presupuesto (roles + actividades/fases) ----------
+from typing import Dict, Any, List, Tuple
+
+def _eur(x: float) -> str:
+    try:
+        return f"{x:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
+    except Exception:
+        return f"{x} €"
+
+def _total_weeks(p: Dict[str, Any]) -> float:
+    return float(sum(float(ph.get("weeks", 0)) for ph in (p.get("phases") or [])))
+
+def _canonical_phase_bucket(name: str) -> str:
+    n = (name or "").lower()
+    if any(k in n for k in ["discover", "historia", "crc", "backlog", "kickoff"]): return "discovery"
+    if any(k in n for k in ["iterac", "sprint", "desarroll", "build"]):            return "iterations"
+    if any(k in n for k in ["hardening", "acept", "stabil", "qa final", "endgame"]):return "hardening"
+    if any(k in n for k in ["release", "handover", "deploy", "entrega"]):          return "release"
+    return "iterations"
+
+def _role_profile(role: str) -> Dict[str, float]:
+    r = (role or "").lower()
+    if "pm" in r:                 return {"discovery": 0.30, "iterations": 0.30, "hardening": 0.20, "release": 0.20}
+    if "tech" in r and "lead" in r:return {"discovery": 0.30, "iterations": 0.40, "hardening": 0.20, "release": 0.10}
+    if "backend" in r:           return {"discovery": 0.05, "iterations": 0.70, "hardening": 0.20, "release": 0.05}
+    if "frontend" in r:          return {"discovery": 0.05, "iterations": 0.70, "hardening": 0.20, "release": 0.05}
+    if "qa" in r or "calidad" in r:return {"discovery": 0.05, "iterations": 0.40, "hardening": 0.40, "release": 0.15}
+    if "ux" in r or "ui" in r or "dise" in r: return {"discovery": 0.60, "iterations": 0.30, "hardening": 0.05, "release": 0.05}
+    return {"discovery": 0.20, "iterations": 0.50, "hardening": 0.20, "release": 0.10}
+
+def _avg(lst: List[float]) -> float:
+    return (sum(lst) / max(len(lst), 1)) if lst else 0.0
+
+def _rate_for_role(rates: Dict[str, float], role: str, fallback_rate: float) -> float:
+    if role in rates: return float(rates[role])
+    rl = role.lower()
+    for k, v in rates.items():
+        if k.lower() in rl or rl in k.lower():
+            return float(v)
+    aliases = {"backend dev": "backend","frontend dev": "frontend","ux/ui": "ux","tech lead": "tech lead","pm": "pm","qa": "qa"}
+    for ak, base in aliases.items():
+        if ak in rl:
+            for k, v in rates.items():
+                if base in k.lower():
+                    return float(v)
+    return float(fallback_rate)
+
+def _bucket_weeks(p: Dict[str, Any]) -> Dict[str, float]:
+    buckets = {"discovery": 0.0, "iterations": 0.0, "hardening": 0.0, "release": 0.0}
+    for ph in (p.get("phases") or []):
+        buckets[_canonical_phase_bucket(ph.get("name",""))] += float(ph.get("weeks", 0.0))
+    if sum(buckets.values()) == 0 and _total_weeks(p) > 0:
+        buckets["iterations"] = _total_weeks(p)
+    return buckets
+
+def _breakdown_by_role_and_activity(p: Dict[str, Any]) -> Tuple[Dict[str, float], Dict[str, float], List[Tuple[str, str, float]]]:
+    team = p.get("team") or []
+    rates = dict(p.get("rates") or {})
+    weeks_total = _total_weeks(p)
+    buckets_weeks = _bucket_weeks(p)
+
+    fte_total = sum(float(t.get("count", 0.0)) for t in team)
+    labor_est_known = float((p.get("budget") or {}).get("labor_estimate_eur", 0.0))
+    fallback_rate = (labor_est_known / (weeks_total * fte_total)) if (weeks_total>0 and fte_total>0 and labor_est_known>0) else _avg([float(v) for v in rates.values()]) or 0.0
+
+    cost_by_role: Dict[str, float] = {}
+    for t in team:
+        role = t["role"]; fte = float(t.get("count", 0.0))
+        rate = _rate_for_role(rates, role, fallback_rate)
+        cost_by_role[role] = fte * weeks_total * rate
+
+    denom_by_role: Dict[str, float] = {}
+    profiles_cache: Dict[str, Dict[str, float]] = {}
+    for role in cost_by_role:
+        prof = _role_profile(role); profiles_cache[role] = prof
+        denom_by_role[role] = sum(prof[b] * buckets_weeks.get(b, 0.0) for b in ("discovery","iterations","hardening","release")) or 1.0
+
+    activities: List[Tuple[str, str, float]] = []
+    cost_by_activity = {"discovery": 0.0, "iterations": 0.0, "hardening": 0.0, "release": 0.0}
+    for role, role_total in cost_by_role.items():
+        prof = profiles_cache[role]; denom = denom_by_role[role]
+        for b in ("discovery","iterations","hardening","release"):
+            share = (prof[b] * buckets_weeks.get(b, 0.0)) / denom
+            euros = role_total * share
+            if euros <= 0: continue
+            activities.append((b, role, euros)); cost_by_activity[b] += euros
+
+    activities.sort(key=lambda x: x[2], reverse=True)
+    return cost_by_role, cost_by_activity, activities
+
+def _render_budget_detail(p: Dict[str, Any]) -> List[str]:
+    weeks_total = _total_weeks(p)
+    budget = p.get("budget") or {}
+    cont_pct = float(((budget.get("assumptions") or {}).get("contingency_pct", 10)))
+    labor0 = float(budget.get("labor_estimate_eur", 0.0))
+    total0 = float(budget.get("total_eur", labor0 * (1 + cont_pct / 100)))
+
+    cost_by_role, cost_by_activity, activities = _breakdown_by_role_and_activity(p)
+
+    lines: List[str] = []
+    lines.append("💶 **Presupuesto — detalle**")
+    lines.append(f"- Semanas totales: {weeks_total:g}")
+    bw = _bucket_weeks(p)
+    lines.append(f"- Semanas por fase/actividad: Discovery {bw['discovery']:g}s • Iteraciones {bw['iterations']:g}s • Hardening {bw['hardening']:g}s • Release {bw['release']:g}s")
+
+    if cost_by_role:
+        lines.append("\n📊 Coste por rol:")
+        for role, euros in sorted(cost_by_role.items(), key=lambda x: x[1], reverse=True):
+            lines.append(f"- {role}: {_eur(euros)}")
+    else:
+        lines.append("\n(No encuentro equipo/tarifas para desglosar por rol.)")
+
+    if any(cost_by_activity.values()):
+        lines.append("\n🔎 Coste por actividad/fase:")
+        names = {"discovery":"Discovery / Historias","iterations":"Iteraciones (build)","hardening":"Hardening & Aceptación","release":"Release & Handover"}
+        for b in ("iterations","discovery","hardening","release"):
+            lines.append(f"- {names[b]}: {_eur(cost_by_activity.get(b, 0.0))}")
+    else:
+        lines.append("\n(No pude mapear fases; enséñame las fases para intentar de nuevo.)")
+
+    if activities:
+        lines.append("\n🏷️ **Top actividades (dónde se va más dinero):**")
+        names = {"discovery":"Discovery / Historias","iterations":"Iteraciones","hardening":"Hardening & Aceptación","release":"Release & Handover"}
+        for (b, role, euros) in activities[:5]:
+            lines.append(f"- {names[b]} — {role}: {_eur(euros)}")
+
+    lines.append(f"\nContingencia: {cont_pct:.0f}%")
+    lines.append(f"Total mano de obra (estimado): {_eur(labor0) if labor0 > 0 else '—'}")
+    lines.append(f"**Total con contingencia: {_eur(total0)}**")
+
+    lines.append("\n¿Quieres ajustar el presupuesto? Prueba:")
+    lines.append("- «contingencia a 15%»")
+    lines.append("- «tarifa de Backend a 1200»  |  «tarifa de QA a 900»")
+    return lines
 
 # ===================== generación de respuesta =====================
 
@@ -1883,6 +2017,7 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             return "¡Hasta luego! Si quieres, deja aquí los requisitos y seguiré trabajando en la propuesta.", "Despedida (intent)."
         if intent == "thanks":
             return "¡A ti! Si necesitas presupuesto o plan de equipo, dime los requisitos.", "Agradecimiento (intent)."
+
     # ——— Aceptación de propuesta → pedir plantilla del equipo para asignar personas
     if proposal and _accepts_proposal(text):
         try:
@@ -1899,11 +2034,11 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
         )
         return prompt, "Solicitud de plantilla."
 
-       # ——— Si el usuario pega su plantilla: parsear, asignar y analizar formación
+    # ——— Si el usuario pega su plantilla: parsear, asignar y analizar formación
     if proposal and _looks_like_staff_list(text):
         staff = _parse_staff_list(text)
         if not staff:
-            return ("No pude reconocer la plantilla. Usa: 'Nombre — Rol — Skills — Seniority — %'.",), "Formato staff no válido."
+            return "No pude reconocer la plantilla. Usa: 'Nombre — Rol — Skills — Seniority — %'.", "Formato staff no válido."
         asign = _suggest_staffing(proposal, staff)
         training = _render_training_plan(proposal, staff)
         try:
@@ -1933,7 +2068,7 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             pass
         return _pretty_proposal(p), "Propuesta generada."
 
-    # Comando explícito: /cambiar:   (se mantiene para método y se amplía con parches)
+    # Comando explícito: /cambiar:
     if text.lower().startswith("/cambiar:"):
         arg = text.split(":", 1)[1].strip()
         # si coincide con una metodología conocida → cambio directo
@@ -1949,7 +2084,7 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             except Exception:
                 pass
             return _pretty_proposal(new_plan), f"Plan reajustado a {target}."
-        # si no, intento parsear como parche general y pido confirmación con evaluación
+        # si no, intentar parsear como parche general (equipo, fases, presupuesto, riesgos, …)
         patch = _parse_any_patch(arg)
         if patch:
             if not proposal:
@@ -1999,7 +2134,6 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             if evitar_target:
                 msg.append(f"Riesgos si cambiamos a {target}: " + "; ".join(evitar_target))
 
-        # aquí guardamos un pending_change clásico (solo método)
         set_pending_change(session_id, target)
         msg.append(f"¿Quieres que **cambie el plan a {target}** ahora? **sí/no**")
         return "\n".join(msg), "Consejo de cambio con confirmación."
@@ -2034,7 +2168,8 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             total = s.get("budget", {}).get("total_eur")
             lines.append(f"• Caso #{s['id']} — Metodología {s['methodology']}, Equipo: {team}, Total: {total} €, similitud {s['similarity']:.2f}")
         return "Casos similares en mi memoria:\n" + "\n".join(lines), "Similares (k-NN TF-IDF)."
-    # ★★★ Intent “riesgos” → detalle + plan y preparar confirmación ★★★
+
+    # ★★★ RIESGOS → detalle + plan + confirmación sí/no ★★★
     if _asks_risks_simple(text):
         try:
             set_last_area(session_id, "riesgos")
@@ -2045,17 +2180,21 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             return ("Aún no tengo una propuesta para analizar riesgos. "
                     "Genera una con '/propuesta: ...' y luego te detallo riesgos y plan de prevención."), "Riesgos sin propuesta."
 
-        # 1) Texto detallado + plan adaptado a la metodología
-        detailed_lines = _render_risks_detail(proposal)
-        text_out = "\n".join(detailed_lines)
+        # 1) Texto detallado (con fallback seguro si el helper no está)
+        try:
+            detailed_lines = _render_risks_detail(proposal)
+            text_out = "\n".join(detailed_lines)
+        except Exception:
+            lst = _expand_risks(req_text, proposal.get("methodology"))
+            extra = f"\n\nPuedo añadir un **plan de prevención** adaptado a **{proposal.get('methodology','')}**." if proposal.get("methodology") else ""
+            text_out = "⚠️ **Riesgos**:\n- " + "\n- ".join(lst) + extra
 
         # 2) Preparar parche para añadir los controles a la propuesta
         try:
-            patch = _build_risk_controls_patch(proposal)  # {'type':'risks','add':[...]}
+            patch = _build_risk_controls_patch(proposal)  # {'type':'risks','ops':[...]}
             eval_text, _ = _make_pending_patch(session_id, patch, proposal, req_text)
             return text_out + "\n\n" + eval_text, "Riesgos + plan (pendiente de confirmación)."
         except Exception:
-            # Si no se pudo preparar/parchear, al menos devolvemos el texto
             return text_out, "Riesgos (detalle sin patch)."
 
     # -------- catálogo y definiciones de metodologías --------
@@ -2088,6 +2227,7 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             "2) explicar por qué tomo cada decisión (con citas), 3) evaluar y **aplicar cambios** en metodología **y en toda la propuesta** (equipo, fases, presupuesto, riesgos) con confirmación **sí/no**.\n"
             "Ejemplos: 'añade 0.5 QA', 'tarifa de Backend a 1200', 'contingencia a 15%', \"cambia 'Sprints de Desarrollo (2w)' a 8 semanas\", 'quita fase \"QA\"', 'añade riesgo: cumplimiento RGPD'."
         ), "Ayuda."
+
     # NUEVO: si preguntan por una fase concreta → explicarla en detalle
     phase_detail = _match_phase_name(text, proposal)
     if phase_detail and (any(k in _norm(text) for k in [
@@ -2135,15 +2275,42 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
         except Exception:
             pass
         return (_catalog_text()), "Metodologías (catálogo)."
-    if _asks_budget(text) and not _asks_why(text):
+
+    # —— Presupuesto (detalle visible) ——
+    if (_asks_budget(text) or "presupuesto" in _norm(text)) and not _asks_why(text):
         if proposal:
-            return ("\n".join(_explain_budget(proposal))), "Presupuesto."
-        return ("Para estimar presupuesto considero: alcance → equipo → semanas → tarifas por rol + 10% de contingencia."), "Guía presupuesto."
-    if _asks_budget_breakdown(text):
+            try:
+                set_last_area(session_id, "presupuesto")
+            except Exception:
+                pass
+            try:
+                detail = _render_budget_detail(proposal)   # helper de detalle (roles + actividades)
+                return "\n".join(detail), "Presupuesto (detalle)."
+            except Exception:
+                # Fallback al resumen si el helper no existe
+                return ("\n".join(_explain_budget(proposal))), "Presupuesto."
+        return ("Para estimar presupuesto considero: alcance → equipo → semanas → tarifas por rol + % de contingencia.\n"
+                "Genera una propuesta con '/propuesta: ...' y te doy el detalle."), "Guía presupuesto."
+
+    # —— Alias de desglose → también muestra el detalle ——
+    if _asks_budget_breakdown(text) or "desglose" in _norm(text) or "detalle" in _norm(text):
         if proposal:
-            return ("Presupuesto — desglose por rol:\n" + "\n".join(_explain_budget_breakdown(proposal))), "Desglose presupuesto."
+            try:
+                set_last_area(session_id, "presupuesto")
+            except Exception:
+                pass
+            try:
+                detail = _render_budget_detail(proposal)
+                return "\n".join(detail), "Presupuesto (detalle)."
+            except Exception:
+                try:
+                    breakdown = _explain_budget_breakdown(proposal)
+                    return ("Presupuesto — desglose por rol:\n" + "\n".join(breakdown)), "Desglose presupuesto."
+                except Exception:
+                    return ("\n".join(_explain_budget(proposal))), "Presupuesto."
         else:
             return ("Genera primero una propuesta con '/propuesta: ...' para poder desglosar el presupuesto por rol."), "Sin propuesta para desglose."
+
     if _asks_team(text) and not _asks_why(text):
         set_last_area(session_id, "equipo")
         if proposal:
@@ -2274,12 +2441,12 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
         except Exception:
             pass
         return _pretty_proposal(p), "Propuesta a partir de requisitos."
+
     # ——— GAPS & FORMACIÓN BAJO DEMANDA ———
     if _asks_training_plan(text):
-        # Si tienes un store de plantilla en memoria, recógelo; si no, pedimos que pegue la plantilla
         staff = []
         try:
-            staff = get_staff_roster(session_id)  # si implementaste el store opcional
+            staff = get_staff_roster(session_id)
         except Exception:
             staff = []
         if not staff:
