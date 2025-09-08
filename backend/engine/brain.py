@@ -282,15 +282,30 @@ def _collect_sources_for_area(proposal: Optional[Dict[str, Any]], area: str) -> 
 # ===================== pretty =====================
 
 def _pretty_proposal(p: Dict[str, Any]) -> str:
-    team = ", ".join(f"{t['role']} x{t['count']}" for t in p["team"])
-    phases = " → ".join(f"{ph['name']} ({ph['weeks']}s)" for ph in p["phases"])
-    return (
-        f"📌 Metodología: {p['methodology']}\n"
-        f"👥 Equipo: {team}\n"
-        f"🧩 Fases: {phases}\n"
-        f"💶 Presupuesto: {p['budget']['total_eur']} € (incluye 10% contingencia)\n"
-        f"⚠️ Riesgos: " + "; ".join(p["risks"])
-    )
+    team = ", ".join(f"{t['role']} x{t['count']}" for t in p.get("team", []))
+    phases = " → ".join(f"{ph['name']} ({ph['weeks']}s)" for ph in p.get("phases", []))
+
+    all_risks = (p.get("risks") or [])
+    base_risks = [r for r in all_risks if not _norm(str(r)).startswith("[control]")]
+    controls = [r for r in all_risks if _norm(str(r)).startswith("[control]")]
+
+    lines = [
+        f"📌 Metodología: {p.get('methodology','')}",
+        f"👥 Equipo: {team}" if team else "👥 Equipo: (sin definir)",
+        f"🧩 Fases: {phases}" if phases else "🧩 Fases: (sin definir)",
+        f"💶 Presupuesto: {p.get('budget',{}).get('total_eur', 0.0)} € (incluye {p.get('budget',{}).get('assumptions',{}).get('contingency_pct', 10)}% contingencia)",
+        "⚠️ Riesgos: " + ("; ".join(base_risks) if base_risks else "(no definidos)")
+    ]
+
+    if controls:
+        lines.append("🛡️ Plan de prevención:")
+        for c in controls:
+            clean = str(c)
+            if clean.lower().startswith("[control]"):
+                clean = clean[len("[Control]"):].strip()
+            lines.append(f"- {clean}")
+
+    return "\n".join(lines)
 
 
 # ===================== explicabilidad =====================
@@ -1649,6 +1664,156 @@ def _parse_any_patch(text: str) -> Optional[Dict[str, Any]]:
             return patch
     return None
 
+# ---------- NUEVO: helpers de riesgos (detalle + plan de prevención) ----------
+
+def _risk_controls_for_item(item: str, methodology: str) -> List[str]:
+    """Devuelve controles de prevención para un riesgo, adaptados a la metodología."""
+    t = _norm(item)
+    m = (methodology or "").strip()
+    controls: List[str] = []
+
+    # Scope / cambios de alcance
+    if "cambio" in t or "alcance" in t or "scope" in t:
+        controls += [
+            "[Control] Cambios de alcance sin prioridad — Backlog priorizado y refinamiento regular",
+            "[Control] Cambios de alcance sin prioridad — Definition of Ready/Done visibles",
+            "[Control] Cambios de alcance sin prioridad — Roadmap con hitos y criterios de aceptación por épica",
+        ]
+        if m in ("Scrum", "XP"):
+            controls.append("[Control] Cambios de alcance sin prioridad — Sprint Planning / Review efectivas")
+        if m == "Kanban":
+            controls.append("[Control] Cambios de alcance sin prioridad — Políticas explícitas de WIP y clases de servicio")
+
+    # Dependencias externas / APIs / terceros
+    if "dependenc" in t or "api" in t or "tercer" in t:
+        controls += [
+            "[Control] Dependencias de terceros — Pact tests / contratos",
+            "[Control] Dependencias de terceros — Timeouts y retries con backoff (circuit breaker)",
+            "[Control] Dependencias de terceros — Feature flags para isolar integraciones",
+        ]
+        if m == "Kanban":
+            controls.append("[Control] Dependencias de terceros — Visualización de bloqueos (Blocked) y SLAs en tablero")
+
+    # Datos/rendimiento/escalado
+    if "datos insuficientes" in t or "rendimiento" in t or "escal" in t or "performance" in t:
+        controls += [
+            "[Control] Datos insuficientes para pruebas de rendimiento/escalado — Datasets sintéticos + anonimización",
+            "[Control] Datos insuficientes para pruebas de rendimiento/escalado — Pruebas de carga + APM",
+            "[Control] Datos insuficientes para pruebas de rendimiento/escalado — CI con tests automáticos",
+            "[Control] Datos insuficientes para pruebas de rendimiento/escalado — Métricas de defectos y cobertura",
+        ]
+        if m == "XP":
+            controls += [
+                "[Control] Datos insuficientes para pruebas de rendimiento/escalado — TDD sistemático",
+                "[Control] Datos insuficientes para pruebas de rendimiento/escalado — Pair programming",
+                "[Control] Datos insuficientes para pruebas de rendimiento/escalado — Refactor continuo",
+            ]
+
+    # PCI / fraude / cobros / idempotencia
+    if "pci" in t or "fraude" in t or "chargeback" in t or "cobro" in t or "pago" in t:
+        controls += [
+            "[Control] Cumplimiento PCI-DSS y fraude/chargebacks — Threat modeling ligero",
+            "[Control] Cumplimiento PCI-DSS y fraude/chargebacks — Escaneo SAST/DAST en pipeline",
+            "[Control] Cumplimiento PCI-DSS y fraude/chargebacks — Separación de datos sensibles y tokenización",
+            "[Control] Cumplimiento PCI-DSS y fraude/chargebacks — 3DS / Radar antifraude y revisión de contracargos",
+            "[Control] Idempotencia y reintentos en cobros — Idempotency-Key por operación",
+            "[Control] Idempotencia y reintentos en cobros — Colas/reintentos con backoff",
+        ]
+        if m in ("XP", "Scrum"):
+            controls.append("[Control] Idempotencia y reintentos en cobros — Design reviews (ADR)")
+
+    # Aprobación en tiendas / compatibilidad dispositivos
+    if "tienda" in t or "store" in t or "dispositivo" in t or "compatib" in t:
+        controls += [
+            "[Control] Aprobación en tiendas y compatibilidad de dispositivos — Matriz de compatibilidad + dispositivos reales",
+            "[Control] Aprobación en tiendas y compatibilidad de dispositivos — Observabilidad (logs, métricas, trazas)",
+            "[Control] Aprobación en tiendas y compatibilidad de dispositivos — Feature flags y despliegues graduales",
+        ]
+
+    # IA / sesgo / drift
+    if "sesgo" in t or "drift" in t or "modelo" in t:
+        controls += [
+            "[Control] Calidad de datos, sesgo y drift de modelos — Datasets de validación + monitor de drift",
+            "[Control] Calidad de datos, sesgo y drift de modelos — Retraining plan y alertas de performance",
+        ]
+
+    # Genérico por metodología si no casó nada
+    if not controls:
+        if m == "Scrum":
+            controls = [
+                "[Control] Gestión de riesgos — Revisión por sprint + retro para riesgos emergentes",
+                "[Control] Gestión de riesgos — DoD con criterios de calidad y QA temprano",
+            ]
+        elif m == "Kanban":
+            controls = [
+                "[Control] Gestión de riesgos — Políticas explícitas, límites WIP y visualización de bloqueos",
+                "[Control] Gestión de riesgos — Métricas de flujo (CFD, lead time) con alertas",
+            ]
+        else:  # XP u otros
+            controls = [
+                "[Control] Gestión de riesgos — TDD/CI, revisiones de código y feature toggles",
+                "[Control] Gestión de riesgos — Despliegues pequeños y reversibles (trunk-based)",
+            ]
+
+    seen: set = set()
+    out: List[str] = []
+    for c in controls:
+        if c not in seen:
+            out.append(c)
+            seen.add(c)
+    return out
+
+
+def _build_risk_controls_patch(p: Dict[str, Any]) -> Dict[str, Any]:
+    """Construye un patch {'type':'risks','add':[...]} con controles para cada riesgo base."""
+    methodology = p.get("methodology", "")
+    all_risks = (p.get("risks") or [])
+    base = [r for r in all_risks if not _norm(str(r)).startswith("[control]")]
+    current = set(all_risks)
+    adds: List[str] = []
+    for r in base:
+        for c in _risk_controls_for_item(r, methodology):
+            if c not in current and c not in adds:
+                adds.append(c)
+    return {"type": "risks", "add": adds, "remove": []}
+
+
+def _render_risks_detail(p: Dict[str, Any]) -> List[str]:
+    """Texto detallado de riesgos + plan de prevención, adaptado a metodología."""
+    methodology = p.get("methodology", "")
+    risks = [r for r in (p.get("risks") or []) if not _norm(str(r)).startswith("[control]")]
+    lines: List[str] = [f"⚠️ **Riesgos principales** (metodología {methodology}):"]
+    if not risks:
+        lines.append("- (No hay riesgos definidos aún)")
+        return lines
+
+    for r in risks:
+        t = _norm(r)
+        # Mini-explicación heurística
+        if "alcance" in t or "scope" in t:
+            expl = "El alcance tiende a crecer; sin priorización puede bloquear fechas y aumentar coste."
+        elif "dependenc" in t or "api" in t or "tercer" in t:
+            expl = "Los terceros pueden fallar o cambiar contratos; impacta en plazos y calidad."
+        elif "rendimiento" in t or "escal" in t or "datos insuficientes" in t:
+            expl = "Sin datos y pruebas adecuadas es fácil no cumplir SLAs de rendimiento/escala."
+        elif "pci" in t or "fraude" in t or "cobro" in t or "pago" in t:
+            expl = "Pagos requieren cumplimiento y antifraude; fallos implican multas o pérdidas."
+        elif "tiend" in t or "dispositivo" in t or "compatib" in t:
+            expl = "Stores y fragmentación de dispositivos elevan la probabilidad de rechazo o bugs."
+        elif "sesgo" in t or "drift" in t:
+            expl = "Los modelos degradan con el tiempo; sesgo o drift afectan KPIs y experiencia."
+        else:
+            expl = "Riesgo relevante identificado para este contexto."
+
+        lines.append(f"- **{r}** — {expl}")
+        ctrls = _risk_controls_for_item(r, methodology)
+        if ctrls:
+            lines.append("  Prevención:")
+            for c in ctrls:
+                lines.append(f"  - {c.replace('[Control]', '').strip()}")
+
+    lines.append("\n¿Quieres **añadir este plan de prevención a la propuesta**? **sí/no**")
+    return lines
 
 # ===================== generación de respuesta =====================
 
@@ -1869,6 +2034,29 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             total = s.get("budget", {}).get("total_eur")
             lines.append(f"• Caso #{s['id']} — Metodología {s['methodology']}, Equipo: {team}, Total: {total} €, similitud {s['similarity']:.2f}")
         return "Casos similares en mi memoria:\n" + "\n".join(lines), "Similares (k-NN TF-IDF)."
+    # ★★★ Intent “riesgos” → detalle + plan y preparar confirmación ★★★
+    if _asks_risks_simple(text):
+        try:
+            set_last_area(session_id, "riesgos")
+        except Exception:
+            pass
+
+        if not proposal:
+            return ("Aún no tengo una propuesta para analizar riesgos. "
+                    "Genera una con '/propuesta: ...' y luego te detallo riesgos y plan de prevención."), "Riesgos sin propuesta."
+
+        # 1) Texto detallado + plan adaptado a la metodología
+        detailed_lines = _render_risks_detail(proposal)
+        text_out = "\n".join(detailed_lines)
+
+        # 2) Preparar parche para añadir los controles a la propuesta
+        try:
+            patch = _build_risk_controls_patch(proposal)  # {'type':'risks','add':[...]}
+            eval_text, _ = _make_pending_patch(session_id, patch, proposal, req_text)
+            return text_out + "\n\n" + eval_text, "Riesgos + plan (pendiente de confirmación)."
+        except Exception:
+            # Si no se pudo preparar/parchear, al menos devolvemos el texto
+            return text_out, "Riesgos (detalle sin patch)."
 
     # -------- catálogo y definiciones de metodologías --------
     if _asks_method_list(text):
