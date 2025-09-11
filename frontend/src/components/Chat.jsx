@@ -22,7 +22,7 @@ export default function Chat() {
   const [apiBase, setApiBase] = useState(null)
   const [sessionId] = useState(() => 'demo-' + Math.random().toString(36).slice(2, 8))
   const [messages, setMessages] = useState([
-    { role: 'assistant', content: '👋 Hola, soy el asistente (Parte 1). Pídeme una propuesta o escribe cualquier cosa.' }
+    { role: 'assistant', content: '👋 Hola, soy el asistente (Parte 1). Pídeme una propuesta o escribe cualquier cosa.', ts: new Date().toISOString() }
   ])
   const [input, setInput] = useState('')
   const wsRef = useRef(null)
@@ -33,7 +33,7 @@ export default function Chat() {
     (async () => {
       const base = await detectApiBase()
       if (!base) {
-        setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ No encuentro el backend en :8000. Asegúrate de arrancar: uvicorn backend.app:app --reload --host 0.0.0.0 --port 8000' }])
+        setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ No encuentro el backend en :8000. Asegúrate de arrancar: uvicorn backend.app:app --reload --host 0.0.0.0 --port 8000', ts: new Date().toISOString() }])
         return
       }
       setApiBase(base)
@@ -44,10 +44,12 @@ export default function Chat() {
         const wsUrl = `${proto}://${u.host}/chat/ws?session_id=${sessionId}`
         const ws = new WebSocket(wsUrl)
         wsRef.current = ws
-        ws.onmessage = (evt) => setMessages(prev => [...prev, { role: 'assistant', content: evt.data }])
-        ws.onerror = () => setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ No se pudo conectar por WebSocket. Usaré HTTP.' }])
+        ws.onmessage = (evt) =>
+          setMessages(prev => [...prev, { role: 'assistant', content: evt.data, ts: new Date().toISOString() }])
+        ws.onerror = () =>
+          setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ No se pudo conectar por WebSocket. Usaré HTTP.', ts: new Date().toISOString() }])
       } catch {
-        setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ No se pudo conectar por WebSocket. Usaré HTTP.' }])
+        setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ No se pudo conectar por WebSocket. Usaré HTTP.', ts: new Date().toISOString() }])
       }
     })()
   }, [sessionId])
@@ -59,11 +61,11 @@ export default function Chat() {
   const send = async () => {
     const text = input.trim()
     if (!text) return
-    setMessages(prev => [...prev, { role: 'user', content: text }])
+    setMessages(prev => [...prev, { role: 'user', content: text, ts: new Date().toISOString() }])
     setInput('')
 
     if (!apiBase) {
-      setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ Backend no detectado. ¿Arrancaste uvicorn en :8000?' }])
+      setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ Backend no detectado. ¿Arrancaste uvicorn en :8000?', ts: new Date().toISOString() }])
       return
     }
 
@@ -82,10 +84,10 @@ export default function Chat() {
           `💶 Presupuesto: ${data.budget.total_eur} €`,
           `⚠️ Riesgos: ${data.risks.join('; ')}`,
         ].join('\n')
-        setMessages(prev => [...prev, { role: 'assistant', content: pretty }])
+        setMessages(prev => [...prev, { role: 'assistant', content: pretty, ts: new Date().toISOString() }])
       } catch (e) {
         const msg = e?.response?.data?.detail || e?.message || 'Error obteniendo la propuesta.'
-        setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${msg}` }])
+        setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${msg}`, ts: new Date().toISOString() }])
       }
       return
     }
@@ -99,11 +101,48 @@ export default function Chat() {
           session_id: sessionId,
           message: text
         }, { headers: { 'Content-Type': 'application/json' }, timeout: 5000 })
-        setMessages(prev => [...prev, { role: 'assistant', content: data.reply }])
+        setMessages(prev => [...prev, { role: 'assistant', content: data.reply, ts: new Date().toISOString() }])
       } catch (e) {
         const msg = e?.response?.data?.detail || e?.message || 'Error enviando mensaje.'
-        setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${msg}` }])
+        setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${msg}`, ts: new Date().toISOString() }])
       }
+    }
+  }
+
+  // === NUEVO: exportar PDF ===
+  const exportPdf = async () => {
+    if (!apiBase) {
+      setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ Backend no detectado. No puedo exportar el PDF.', ts: new Date().toISOString() }])
+      return
+    }
+    try {
+      const payload = {
+        title: 'Conversación',
+        messages: messages.map(m => ({
+          role: m.role,
+          content: m.content,
+          ts: m.ts,       // el backend lo mostrará si viene
+          // name: opcional si lo usas
+        }))
+      }
+      const res = await axios.post(`${apiBase}/export/chat.pdf`, payload, {
+        headers: { 'Content-Type': 'application/json' },
+        responseType: 'blob',
+        timeout: 15000
+      })
+      const blob = new Blob([res.data], { type: 'application/pdf' })
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      const ts = new Date().toISOString().replace(/[:.]/g, '-')
+      a.href = url
+      a.download = `chat_${ts}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.URL.revokeObjectURL(url)
+    } catch (e) {
+      const msg = e?.response?.data?.detail || e?.message || 'Error exportando PDF.'
+      setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${msg}`, ts: new Date().toISOString() }])
     }
   }
 
@@ -116,6 +155,7 @@ export default function Chat() {
           </div>
         ))}
       </div>
+
       <div className="flex gap-2">
         <input
           className="flex-1 border rounded-lg px-3 py-2"
@@ -125,7 +165,12 @@ export default function Chat() {
           onKeyDown={(e) => (e.key === 'Enter' ? send() : null)}
         />
         <button className="px-4 py-2 rounded-lg bg-blue-600 text-white" onClick={send}>Enviar</button>
+        {/* Botón nuevo: Exportar PDF */}
+        <button className="px-4 py-2 rounded-lg bg-emerald-600 text-white" onClick={exportPdf}>
+          Descargar PDF
+        </button>
       </div>
+
       <p className="text-xs text-gray-500">
         Comando: <code>/propuesta: App móvil de reservas con pagos</code>
       </p>
