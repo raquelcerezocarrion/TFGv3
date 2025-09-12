@@ -28,6 +28,26 @@ export default function Chat() {
   const wsRef = useRef(null)
   const listRef = useRef(null)
 
+  // -------- NUEVO: estado del diálogo de exportación --------
+  const [showExport, setShowExport] = useState(false)
+  const [loadingExport, setLoadingExport] = useState(false)
+  const [title, setTitle] = useState('Informe de la conversación')
+  const [reportMeta, setReportMeta] = useState({
+    project: '',
+    client: '',
+    author: '',
+    session_id: '',
+    subtitle: 'Chat + decisiones + propuesta final'
+  })
+  const [reportOptions, setReportOptions] = useState({
+    include_cover: true,
+    include_transcript: true,
+    include_analysis: true,
+    include_final_proposal: true,
+    analysis_depth: 'deep',        // 'brief' | 'standard' | 'deep'
+    font_name: 'Helvetica'         // 'Helvetica' | 'Times New Roman' | 'Courier'
+  })
+
   // Descubre el backend y abre WebSocket si es posible
   useEffect(() => {
     (async () => {
@@ -78,11 +98,12 @@ export default function Chat() {
           requirements: req
         }, { headers: { 'Content-Type': 'application/json' }, timeout: 5000 })
         const pretty = [
-          `📌 Metodología: ${data.methodology}`,
-          `👥 Equipo: ${data.team.map(t => `${t.role} x${t.count}`).join(', ')}`,
-          `🧩 Fases: ${data.phases.map(p => `${p.name} (${p.weeks} semanas)`).join(' → ')}`,
-          `💶 Presupuesto: ${data.budget.total_eur} €`,
-          `⚠️ Riesgos: ${data.risks.join('; ')}`,
+          `■ Metodología: ${data.methodology}`,
+          `■ Equipo: ${data.team.map(t => `${t.role} x${t.count}`).join(', ')}`,
+          `■ Fases: ${data.phases.map(p => `${p.name} (${p.weeks} semanas)`).join(' → ')}`,
+          `■ Presupuesto: ${data.budget.total_eur} € (incluye ${data.budget.contingency_pct}% contingencia)`,
+          `■■ Riesgos: ${data.risks.join('; ')}`,
+          `Semanas totales: ${data.phases.reduce((a,b)=>a+b.weeks,0)}`
         ].join('\n')
         setMessages(prev => [...prev, { role: 'assistant', content: pretty, ts: new Date().toISOString() }])
       } catch (e) {
@@ -109,40 +130,52 @@ export default function Chat() {
     }
   }
 
-  // === NUEVO: exportar PDF ===
-  const exportPdf = async () => {
+  // --- Exportación: abrir diálogo ---
+  const openExport = () => {
+    setReportMeta(m => ({ ...m, session_id: sessionId }))
+    setShowExport(true)
+  }
+
+  // --- Exportación: enviar al backend ---
+  const doExport = async () => {
     if (!apiBase) {
       setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ Backend no detectado. No puedo exportar el PDF.', ts: new Date().toISOString() }])
       return
     }
+    setLoadingExport(true)
     try {
       const payload = {
-        title: 'Conversación',
+        title,
+        report_meta: reportMeta,
+        report_options: reportOptions,
         messages: messages.map(m => ({
           role: m.role,
           content: m.content,
-          ts: m.ts,       // el backend lo mostrará si viene
-          // name: opcional si lo usas
+          ts: m.ts || new Date().toISOString(),
+          name: m.name || undefined
         }))
       }
       const res = await axios.post(`${apiBase}/export/chat.pdf`, payload, {
         headers: { 'Content-Type': 'application/json' },
         responseType: 'blob',
-        timeout: 15000
+        timeout: 20000
       })
       const blob = new Blob([res.data], { type: 'application/pdf' })
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       const ts = new Date().toISOString().replace(/[:.]/g, '-')
       a.href = url
-      a.download = `chat_${ts}.pdf`
+      a.download = `informe_${ts}.pdf`
       document.body.appendChild(a)
       a.click()
       a.remove()
       window.URL.revokeObjectURL(url)
+      setShowExport(false)
     } catch (e) {
       const msg = e?.response?.data?.detail || e?.message || 'Error exportando PDF.'
       setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${msg}`, ts: new Date().toISOString() }])
+    } finally {
+      setLoadingExport(false)
     }
   }
 
@@ -152,6 +185,7 @@ export default function Chat() {
         {messages.map((m, i) => (
           <div key={i} className={`max-w-[85%] rounded-xl px-3 py-2 ${m.role === 'user' ? 'ml-auto bg-blue-600 text-white' : 'bg-white border'}`}>
             <pre className="whitespace-pre-wrap font-sans text-sm">{m.content}</pre>
+            {m.ts && <div className="text-[10px] text-gray-400 mt-1">{new Date(m.ts).toLocaleString()}</div>}
           </div>
         ))}
       </div>
@@ -165,15 +199,109 @@ export default function Chat() {
           onKeyDown={(e) => (e.key === 'Enter' ? send() : null)}
         />
         <button className="px-4 py-2 rounded-lg bg-blue-600 text-white" onClick={send}>Enviar</button>
-        {/* Botón nuevo: Exportar PDF */}
-        <button className="px-4 py-2 rounded-lg bg-emerald-600 text-white" onClick={exportPdf}>
-          Descargar PDF
+        <button className="px-4 py-2 rounded-lg bg-emerald-600 text-white" onClick={openExport}>
+          Exportar PDF
         </button>
       </div>
 
       <p className="text-xs text-gray-500">
         Comando: <code>/propuesta: App móvil de reservas con pagos</code>
       </p>
+
+      {/* -------- Modal de opciones de exportación -------- */}
+      {showExport && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white w-full max-w-2xl rounded-xl shadow-lg p-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Opciones de exportación</h2>
+              <button className="text-gray-500 hover:text-gray-700" onClick={() => setShowExport(false)}>✕</button>
+            </div>
+
+            {/* Título y portada */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm text-gray-600">Título del informe</label>
+                <input className="w-full border rounded px-2 py-1" value={title} onChange={e => setTitle(e.target.value)} />
+              </div>
+              <div>
+                <label className="text-sm text-gray-600">Subtítulo</label>
+                <input className="w-full border rounded px-2 py-1" value={reportMeta.subtitle} onChange={e => setReportMeta(m => ({...m, subtitle: e.target.value}))} />
+              </div>
+              <div>
+                <label className="text-sm text-gray-600">Proyecto</label>
+                <input className="w-full border rounded px-2 py-1" value={reportMeta.project} onChange={e => setReportMeta(m => ({...m, project: e.target.value}))} />
+              </div>
+              <div>
+                <label className="text-sm text-gray-600">Cliente</label>
+                <input className="w-full border rounded px-2 py-1" value={reportMeta.client} onChange={e => setReportMeta(m => ({...m, client: e.target.value}))} />
+              </div>
+              <div>
+                <label className="text-sm text-gray-600">Autor</label>
+                <input className="w-full border rounded px-2 py-1" value={reportMeta.author} onChange={e => setReportMeta(m => ({...m, author: e.target.value}))} />
+              </div>
+              <div>
+                <label className="text-sm text-gray-600">ID de sesión</label>
+                <input className="w-full border rounded px-2 py-1" value={reportMeta.session_id} onChange={e => setReportMeta(m => ({...m, session_id: e.target.value}))} />
+              </div>
+            </div>
+
+            {/* Secciones y profundidad */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <label className="block text-sm text-gray-600">Secciones a incluir</label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={reportOptions.include_cover} onChange={e => setReportOptions(o => ({...o, include_cover: e.target.checked}))} />
+                  Portada
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={reportOptions.include_transcript} onChange={e => setReportOptions(o => ({...o, include_transcript: e.target.checked}))} />
+                  Transcripción completa (Parte A)
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={reportOptions.include_analysis} onChange={e => setReportOptions(o => ({...o, include_analysis: e.target.checked}))} />
+                  Análisis narrativo (Parte B)
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={reportOptions.include_final_proposal} onChange={e => setReportOptions(o => ({...o, include_final_proposal: e.target.checked}))} />
+                  Propuesta final completa (Parte C)
+                </label>
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-sm text-gray-600">Profundidad del análisis</label>
+                <select className="w-full border rounded px-2 py-1"
+                        value={reportOptions.analysis_depth}
+                        onChange={e => setReportOptions(o => ({...o, analysis_depth: e.target.value}))}>
+                  <option value="brief">Breve</option>
+                  <option value="standard">Estándar</option>
+                  <option value="deep">Profundo</option>
+                </select>
+
+                <label className="block text-sm text-gray-600 mt-2">Tipografía</label>
+                <select className="w-full border rounded px-2 py-1"
+                        value={reportOptions.font_name}
+                        onChange={e => setReportOptions(o => ({...o, font_name: e.target.value}))}>
+                  <option value="Helvetica">Helvetica (corporativo)</option>
+                  <option value="Times New Roman">Times New Roman</option>
+                  <option value="Courier">Courier (monoespaciada)</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Acciones */}
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button className="px-3 py-2 rounded-lg border" onClick={() => setShowExport(false)}>Cancelar</button>
+              <button
+                className="px-4 py-2 rounded-lg bg-emerald-600 text-white disabled:opacity-50"
+                onClick={doExport}
+                disabled={loadingExport}
+              >
+                {loadingExport ? 'Generando…' : 'Generar PDF'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
