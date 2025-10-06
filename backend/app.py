@@ -620,6 +620,11 @@ app.add_middleware(
 # --- Rutas existentes ---
 app.include_router(chat.router,     prefix="/chat",     tags=["chat"])
 app.include_router(projects.router, prefix="/projects", tags=["projects"])
+try:
+    from backend.routers import auth
+    app.include_router(auth.router, prefix="/auth", tags=["auth"])
+except Exception:
+    pass
 if feedback:
     app.include_router(feedback.router, prefix="/projects", tags=["feedback"])
 

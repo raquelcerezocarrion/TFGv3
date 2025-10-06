@@ -47,6 +47,16 @@ class ProposalFeedback(Base):
 
     proposal = relationship("ProposalLog", back_populates="feedbacks")
 
+# --- Usuario / Auth (simple)
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    email = Column(String, unique=True, index=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    full_name = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 Base.metadata.create_all(engine)
 
 # --- Conversación (compatibilidad con tu código) ---
@@ -87,3 +97,14 @@ def save_feedback(session_id: str, accepted: bool, score: Optional[int] = None, 
         )
         db.add(fb); db.commit(); db.refresh(fb)
         return int(fb.id)
+
+# --- Users helpers
+def get_user_by_email(email: str) -> Optional[User]:
+    with SessionLocal() as db:
+        return db.query(User).filter(User.email == email).first()
+
+def create_user(email: str, hashed_password: str, full_name: Optional[str] = None) -> User:
+    with SessionLocal() as db:
+        user = User(email=email, hashed_password=hashed_password, full_name=full_name)
+        db.add(user); db.commit(); db.refresh(user)
+        return user
