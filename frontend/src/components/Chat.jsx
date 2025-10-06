@@ -18,15 +18,17 @@ async function detectApiBase() {
   return null
 }
 
-export default function Chat() {
+export default function Chat({ token, loadedMessages = null, onSaveCurrentChat = null, sessionId: externalSessionId = null }) {
   const [apiBase, setApiBase] = useState(null)
-  const [sessionId] = useState(() => 'demo-' + Math.random().toString(36).slice(2, 8))
+  const [sessionId, setSessionId] = useState(() => 'demo-' + Math.random().toString(36).slice(2, 8))
   const [messages, setMessages] = useState([
     { role: 'assistant', content: '👋 Hola, soy el asistente (Parte 1). Pídeme una propuesta o escribe cualquier cosa.', ts: new Date().toISOString() }
   ])
   const [input, setInput] = useState('')
   const wsRef = useRef(null)
   const listRef = useRef(null)
+  const [showSaveDialog, setShowSaveDialog] = useState(false)
+  const [saveTitle, setSaveTitle] = useState('')
 
   // -------- NUEVO: estado del diálogo de exportación --------
   const [showExport, setShowExport] = useState(false)
@@ -74,9 +76,20 @@ export default function Chat() {
     })()
   }, [sessionId])
 
+  useEffect(()=>{
+    if(externalSessionId){ setSessionId(externalSessionId) }
+  }, [externalSessionId])
+
   useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight
   }, [messages])
+
+  // replace messages if loadedMessages provided
+  useEffect(()=>{
+    if(Array.isArray(loadedMessages) && loadedMessages.length){
+      setMessages(loadedMessages.map(m => ({ role: m.role, content: m.content, ts: m.ts || new Date().toISOString() })))
+    }
+  }, [loadedMessages])
 
   const send = async () => {
     const text = input.trim()
@@ -90,13 +103,13 @@ export default function Chat() {
     }
 
     // Comando de propuesta
-    if (text.toLowerCase().startsWith('/propuesta:')) {
+  if (text.toLowerCase().startsWith('/propuesta:')) {
       const req = text.split(':').slice(1).join(':').trim() || 'Proyecto genérico'
       try {
         const { data } = await axios.post(`${apiBase}/projects/proposal`, {
           session_id: sessionId,
           requirements: req
-        }, { headers: { 'Content-Type': 'application/json' }, timeout: 5000 })
+        }, { headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, timeout: 5000 })
         const pretty = [
           `■ Metodología: ${data.methodology}`,
           `■ Equipo: ${data.team.map(t => `${t.role} x${t.count}`).join(', ')}`,
@@ -121,7 +134,7 @@ export default function Chat() {
         const { data } = await axios.post(`${apiBase}/chat/message`, {
           session_id: sessionId,
           message: text
-        }, { headers: { 'Content-Type': 'application/json' }, timeout: 5000 })
+        }, { headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, timeout: 5000 })
         setMessages(prev => [...prev, { role: 'assistant', content: data.reply, ts: new Date().toISOString() }])
       } catch (e) {
         const msg = e?.response?.data?.detail || e?.message || 'Error enviando mensaje.'
@@ -181,6 +194,25 @@ export default function Chat() {
 
   return (
     <div className="flex flex-col gap-3">
+      <div className="flex justify-end gap-2">
+        {onSaveCurrentChat && (
+          <div>
+            <button className="px-2 py-1 border rounded" onClick={()=>setShowSaveDialog(true)}>Guardar chat</button>
+
+            {/** Simple inline dialog for title */}
+            {showSaveDialog && (
+              <div className="mt-2 p-2 bg-white border rounded shadow-md w-80">
+                <div className="mb-2 font-medium">Título del chat</div>
+                <input className="w-full border rounded px-2 py-1 mb-2" value={saveTitle} onChange={(e)=>setSaveTitle(e.target.value)} placeholder="Título (opcional)" />
+                <div className="flex justify-end gap-2">
+                  <button className="px-2 py-1 border rounded" onClick={()=>{ setShowSaveDialog(false); setSaveTitle('') }}>Cancelar</button>
+                  <button className="px-2 py-1 bg-emerald-600 text-white rounded" onClick={()=>{ onSaveCurrentChat(messages, saveTitle || null); setShowSaveDialog(false); setSaveTitle('') }}>Guardar</button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
       <div ref={listRef} className="h-96 overflow-y-auto space-y-2 border rounded-lg p-3 bg-gray-50">
         {messages.map((m, i) => (
           <div key={i} className={`max-w-[85%] rounded-xl px-3 py-2 ${m.role === 'user' ? 'ml-auto bg-blue-600 text-white' : 'bg-white border'}`}>

@@ -57,6 +57,17 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
+# --- Saved chats per user
+class SavedChat(Base):
+    __tablename__ = "saved_chats"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, index=True, nullable=False)
+    title = Column(String, nullable=True)
+    content = Column(Text, nullable=False)   # JSON or plain text representing the chat
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 Base.metadata.create_all(engine)
 
 # --- Conversación (compatibilidad con tu código) ---
@@ -108,3 +119,38 @@ def create_user(email: str, hashed_password: str, full_name: Optional[str] = Non
         user = User(email=email, hashed_password=hashed_password, full_name=full_name)
         db.add(user); db.commit(); db.refresh(user)
         return user
+
+# --- SavedChat helpers
+def create_saved_chat(user_id: int, title: Optional[str], content: str) -> SavedChat:
+    with SessionLocal() as db:
+        sc = SavedChat(user_id=user_id, title=title, content=content)
+        db.add(sc); db.commit(); db.refresh(sc)
+        return sc
+
+def list_saved_chats(user_id: int, limit: int = 50):
+    with SessionLocal() as db:
+        rows = db.query(SavedChat).filter(SavedChat.user_id == user_id).order_by(SavedChat.created_at.desc()).limit(limit).all()
+        return rows
+
+def get_saved_chat(user_id: int, chat_id: int) -> Optional[SavedChat]:
+    with SessionLocal() as db:
+        return db.query(SavedChat).filter(SavedChat.user_id == user_id, SavedChat.id == chat_id).first()
+
+def update_saved_chat(user_id: int, chat_id: int, title: Optional[str], content: Optional[str]) -> Optional[SavedChat]:
+    with SessionLocal() as db:
+        row = db.query(SavedChat).filter(SavedChat.user_id == user_id, SavedChat.id == chat_id).first()
+        if not row:
+            return None
+        if title is not None: row.title = title
+        if content is not None: row.content = content
+        row.updated_at = datetime.utcnow()
+        db.add(row); db.commit(); db.refresh(row)
+        return row
+
+    def delete_saved_chat(user_id: int, chat_id: int) -> bool:
+        with SessionLocal() as db:
+            row = db.query(SavedChat).filter(SavedChat.user_id == user_id, SavedChat.id == chat_id).first()
+            if not row:
+                return False
+            db.delete(row); db.commit()
+            return True

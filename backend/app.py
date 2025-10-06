@@ -625,6 +625,11 @@ try:
     app.include_router(auth.router, prefix="/auth", tags=["auth"])
 except Exception:
     pass
+try:
+    from backend.routers import user
+    app.include_router(user.router, prefix="/user", tags=["user"])
+except Exception:
+    pass
 if feedback:
     app.include_router(feedback.router, prefix="/projects", tags=["feedback"])
 
