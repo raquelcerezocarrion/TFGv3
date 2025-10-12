@@ -512,7 +512,7 @@ def _explain_phases_method_aware(proposal: Dict[str, Any]) -> List[str]:
     """Explica cada fase según la metodología actual."""
     method = proposal.get("methodology", "")
     lines: List[str] = []
-    header = f"Fases justificadas según la metodología **{method}**:"
+    header = f"Fases justificadas según la metodología {method}:"
     lines.append(header)
 
     for ph in proposal.get("phases", []):
@@ -633,12 +633,12 @@ def _explain_specific_phase(asked: str, proposal: Optional[Dict[str, Any]]) -> s
     n = _norm_simple(name)
 
     def block(title: str, bullets: List[str]) -> str:
-        return f"**{title}:**\n- " + "\n- ".join(bullets)
+        return f"{title}:\n- " + "\n- ".join(bullets)
 
     # Incepción / Plan de releases / Discovery
     if any(k in n for k in ['incepcion','inception','discovery','plan','inicio','kickoff']):
-        return "\n\n".join([
-            f"**{name}** — descripción detallada",
+            return "\n\n".join([
+            f"{name} — descripción detallada",
             block("Objetivo", [
                 "Alinear visión, alcance y riesgos.",
                 "Definir roadmap y criterios de éxito (DoR/DoD).",
@@ -659,14 +659,14 @@ def _explain_specific_phase(asked: str, proposal: Optional[Dict[str, Any]]) -> s
                 "Riesgos y supuestos registrados.",
                 "Aprobación de stakeholders."
             ]),
-            f"Metodología actual: **{method}**."
+            f"Metodología actual: {method}."
         ])
 
     # Sprints / Iteraciones / Desarrollo
     if any(k in n for k in ['sprint','iteracion','desarrollo']):
         cad = "2 semanas" if method in ("Scrum", "XP", "Scrumban") else "flujo continuo"
         return "\n\n".join([
-            f"**{name}** — descripción detallada",
+            f"{name} — descripción detallada",
             block("Objetivo", [
                 "Entregar valor incremental con feedback frecuente.",
                 "Mantener calidad interna alta."
@@ -686,13 +686,13 @@ def _explain_specific_phase(asked: str, proposal: Optional[Dict[str, Any]]) -> s
                 "Velocidad estable.",
                 "Baja tasa de defectos por iteración."
             ]),
-            f"Metodología actual: **{method}**."
+            f"Metodología actual: {method}."
         ])
 
     # QA / Hardening / Estabilización
     if any(k in n for k in ['qa','hardening','stabiliz','aceptacion','testing']):
         return "\n\n".join([
-            f"**{name}** — descripción detallada",
+            f"{name} — descripción detallada",
             block("Objetivo", [
                 "Reducir defectos y riesgo operativo antes del release.",
                 "Validar criterios de aceptación, performance y seguridad."
@@ -712,13 +712,13 @@ def _explain_specific_phase(asked: str, proposal: Optional[Dict[str, Any]]) -> s
                 "Cobertura de pruebas.",
                 "Resultados de performance."
             ]),
-            f"Metodología actual: **{method}**."
+            f"Metodología actual: {method}."
         ])
 
     # Despliegue / Release / Handover
     if any(k in n for k in ['despliegue','release','produccion','handover','transferencia','go-live','salida']):
         return "\n\n".join([
-            f"**{name}** — descripción detallada",
+            f"{name} — descripción detallada",
             block("Objetivo", [
                 "Poner el incremento en producción de forma segura.",
                 "Transferir conocimiento a Operaciones/cliente."
@@ -738,12 +738,12 @@ def _explain_specific_phase(asked: str, proposal: Optional[Dict[str, Any]]) -> s
                 "Incidentes post-release.",
                 "Adopción del usuario final."
             ]),
-            f"Metodología actual: **{method}**."
+            f"Metodología actual: {method}."
         ])
 
     # Genérico
     return "\n\n".join([
-        f"**{name}** — descripción detallada",
+        f"{name} — descripción detallada",
         block("Objetivo", [
             "Contribuir al resultado del proyecto bajo el enfoque seleccionado."
         ]),
@@ -755,7 +755,7 @@ def _explain_specific_phase(asked: str, proposal: Optional[Dict[str, Any]]) -> s
             "Definir criterios de entrada/salida.",
             "Visibilidad del trabajo y deudas."
         ]),
-        f"Metodología actual: **{method}**."
+        f"Metodología actual: {method}."
     ])
 
 def _explain_budget(proposal: Dict[str, Any]) -> List[str]:
@@ -956,7 +956,7 @@ def _suggest_staffing(proposal: Dict[str, Any], staff: List[Dict[str, Any]]) -> 
     lines: List[str] = []
 
     # — Por rol
-    lines.append("**Asignación por rol (mejor persona y por qué)**")
+    lines.append("Asignación por rol (mejor persona y por qué)")
     if not roles_needed:
         lines.append("- (La propuesta no tiene equipo definido todavía).")
     for role in roles_needed:
@@ -977,7 +977,7 @@ def _suggest_staffing(proposal: Dict[str, Any], staff: List[Dict[str, Any]]) -> 
 
     # — Por fase
     lines.append("")
-    lines.append("**Asignación sugerida por fase/tareas**")
+    lines.append("Asignación sugerida por fase/tareas")
     for ph in proposal.get("phases", []):
         pk = _phase_key(ph.get("name", ""))
         expected = [r for r in _PHASE_ROLES.get(pk, []) if r in roles_needed]
@@ -1098,18 +1098,18 @@ def _render_training_plan(proposal: Dict[str, Any], staff: List[Dict[str, Any]])
     lines: List[str] = []
     if not report["topics"]:
         return ["(No detecto temas críticos a partir del stack/metodología actual.)"]
-    lines.append("**Gaps detectados & plan de formación**")
+    lines.append("Gaps detectados & plan de formación")
     if not report["gaps"]:
         lines.append("- ✔︎ No hay carencias relevantes respecto al stack/metodología.")
         return lines
     for g in report["gaps"]:
-        lines.append(f"- **{g['topic']}** — {g['why']}")
-        if g["upskill_candidates"]:
-            who = ", ".join(f"{c['name']} ({c['role']} {c['availability_pct']}%)" for c in g["upskill_candidates"])
+        lines.append(f"- {g['topic']} — {g['why']}")
+        if g.get("upskill_candidates"):
+            who = ", ".join(f"{c.get('name')} ({c.get('role','')} {c.get('availability_pct',100)}%)" for c in g.get("upskill_candidates", []))
             lines.append(f"  • Upskilling recomendado: {who}")
-        if g["resources"]:
-            lines.append(f"  • Recursos: " + " | ".join(g["resources"]))
-        lines.append(f"  • Alternativa: {g['external_hint']}")
+        if g.get("resources"):
+            lines.append(f"  • Recursos: " + " | ".join(g.get("resources", [])))
+        lines.append(f"  • Alternativa: {g.get('external_hint','')}")
     return lines
 
     def _pct(x: float, base: float) -> float:
@@ -1400,13 +1400,13 @@ def _render_phase_task_breakdown(proposal: dict, staff: list) -> list:
     }
 
     lines: List[str] = []
-    lines.append("Presupuesto — **desglose máximo**")
+    lines.append("Presupuesto — desglose máximo")
     lines.append("")
     lines.append(f"Labor: {_eur(labor)}   •   Contingencia ({contingency_pct:.1f}%): {_eur(contingency_eur)}   •   Total: {_eur(total)}")
     lines.append("")
 
     # 1) Por roles
-    lines.append("**Distribución por roles**:")
+    lines.append("Distribución por roles:")
     if per_role:
         for role, amount in sorted(per_role.items(), key=lambda kv: kv[1], reverse=True):
             fte = role_to_fte.get(role, 0.0)
@@ -1417,14 +1417,14 @@ def _render_phase_task_breakdown(proposal: dict, staff: list) -> list:
 
     # 2) Por fases
     lines.append("")
-    lines.append("**Distribución por fases**:")
+    lines.append("Distribución por fases:")
     for ph_name, amount in sorted(per_phase.items(), key=lambda kv: kv[1], reverse=True):
         w = next((int(ph.get("weeks", 0)) for ph in phases if ph["name"] == ph_name), 0)
         lines.append(f"- {ph_name} ({w}s): {_eur(amount)} ({_pct(amount, labor):.1f}%)")
 
     # 3) Matriz rol × fase
     lines.append("")
-    lines.append("**Matriz rol × fase**:")
+    lines.append("Matriz rol × fase:")
     any_cell = False
     for role, cells in matrix.items():
         parts = [f"{ph['name']}: {_eur(cells.get(ph['name'], 0.0))}" for ph in phases if cells.get(ph['name'], 0.0) > 0.0]
@@ -1436,7 +1436,7 @@ def _render_phase_task_breakdown(proposal: dict, staff: list) -> list:
 
     # 4) Contingencia asignada
     lines.append("")
-    lines.append(f"**Contingencia** {contingency_pct:.1f}% → {_eur(contingency_eur)} (asignación proporcional):")
+    lines.append(f"Contingencia {contingency_pct:.1f}% → {_eur(contingency_eur)} (asignación proporcional):")
     if labor > 0:
         lines.append("• Por **rol**: " + ", ".join(f"{r} {_eur(contingency_eur * (v/labor))}" for r, v in sorted(per_role.items(), key=lambda kv: kv[1], reverse=True)))
         lines.append("• Por **fase**: " + ", ".join(f"{ph} {_eur(contingency_eur * (v/labor))}" for ph, v in sorted(per_phase.items(), key=lambda kv: kv[1], reverse=True)))
@@ -1445,7 +1445,7 @@ def _render_phase_task_breakdown(proposal: dict, staff: list) -> list:
 
     # 5) Tareas, personal y recursos por fase
     lines.append("")
-    lines.append("**Tareas, personal y recursos por fase**:")
+    lines.append("Tareas, personal y recursos por fase:")
     for ph in phases:
         ph_name = ph.get("name", "")
         ph_cost = per_phase.get(ph_name, 0.0)
@@ -1525,20 +1525,20 @@ def _one_liner_from_info(info: Dict[str, Any], default_name: str) -> str:
 def _method_overview_text(method: str) -> str:
     """Ficha resumida de una metodología + fuentes."""
     info = METHODOLOGIES.get(method, {})
-    lines = [f"**{method}** — ¿qué es y cuándo usarla?"]
+    lines = [f"{method} — ¿qué es y cuándo usarla?"]
     lines.append(_one_liner_from_info(info, method))
     pract = info.get("practicas_clave") or info.get("practicas") or []
     if pract:
-        lines.append("**Prácticas clave:** " + ", ".join(pract))
+        lines.append("Prácticas clave: " + ", ".join(pract))
     fit = info.get("encaja_bien_si") or info.get("fit") or []
     if fit:
-        lines.append("**Encaja bien si:** " + "; ".join(fit))
+        lines.append("Encaja bien si: " + "; ".join(fit))
     avoid = info.get("evitar_si") or info.get("avoid") or []
     if avoid:
-        lines.append("**Evitar si:** " + "; ".join(avoid))
+        lines.append("Evitar si: " + "; ".join(avoid))
     src = info.get("sources") or []
     if src:
-        lines.append("**Fuentes:**\n" + _format_sources(src))
+        lines.append("Fuentes:\n" + _format_sources(src))
     return "\n".join(lines)
 
 def _catalog_text() -> str:
@@ -1546,7 +1546,7 @@ def _catalog_text() -> str:
     names = sorted(METHODOLOGIES.keys())
     bullets = []
     for name in names:
-        bullets.append(f"- **{name}** — {_one_liner_from_info(METHODOLOGIES.get(name, {}), name)}")
+        bullets.append(f"- {name} — {_one_liner_from_info(METHODOLOGIES.get(name, {}), name)}")
     return "Metodologías que manejo:\n" + "\n".join(bullets) + "\n\n¿Quieres que te explique alguna en detalle o que recomiende la mejor para tu caso?"
 
 
@@ -1662,17 +1662,20 @@ def _evaluate_patch(proposal: Dict[str, Any], patch: Dict[str, Any], req_text: O
 
     # ---------------- EQUIPO ----------------
     if t == "team":
-        add_line("📌 Evaluación del cambio de **equipo**:", lines)
+        add_line("📌 Evaluación del cambio de equipo:", lines)
 
         roles_before = {r["role"].lower(): float(r["count"]) for r in before.get("team", [])}
-        roles_after  = {r["role"].lower(): float(r["count"]) for r in after.get("team", [])}
+        roles_after = {r["role"].lower(): float(r["count"]) for r in after.get("team", [])}
 
-        def had(role): return roles_before.get(role.lower(), 0.0) > 0.0
-        def has(role): return roles_after.get(role.lower(), 0.0) > 0.0
+        def had(role):
+            return roles_before.get(role.lower(), 0.0) > 0.0
+
+        def has(role):
+            return roles_after.get(role.lower(), 0.0) > 0.0
 
         critical = {"pm": "PM", "tech lead": "Tech Lead", "qa": "QA"}
         critical_removed = [name for key, name in critical.items() if had(key) and not has(key)]
-        critical_added   = [name for key, name in critical.items() if not had(key) and has(key)]
+        critical_added = [name for key, name in critical.items() if not had(key) and has(key)]
 
         if critical_removed:
             add_line(f"⚠️ Se elimina un rol crítico: {', '.join(critical_removed)} → riesgo de coordinación/calidad.", lines)
@@ -1694,7 +1697,7 @@ def _evaluate_patch(proposal: Dict[str, Any], patch: Dict[str, Any], req_text: O
             verdict = "neutra"
 
         add_line("", lines)
-        add_line("**Detalle por rol propuesto:**", lines)
+        add_line("Detalle por rol propuesto:", lines)
         changed_any = False
         for rkey in sorted(set(list(roles_before.keys()) + list(roles_after.keys()))):
             old = float(roles_before.get(rkey, 0.0))
@@ -1704,14 +1707,14 @@ def _evaluate_patch(proposal: Dict[str, Any], patch: Dict[str, Any], req_text: O
             changed_any = True
             role_name = _canonical_role(rkey)
             reasons = _explain_role_count(role_name, new, req_text)
-            add_line(f"🔹 Propuesta para **{role_name}**: {old:g} → {new:g} FTE", lines)
+            add_line(f"🔹 Propuesta para {role_name}: {old:g} → {new:g} FTE", lines)
             for rs in reasons:
                 add_line(f"   • {rs}", lines)
         if not changed_any:
             add_line("-(No hay variaciones de FTE por rol respecto al plan anterior).", lines)
 
         add_line("", lines)
-        add_line("📊 **Impacto estimado:**", lines)
+        add_line("📊 Impacto estimado:", lines)
         add_line(f"- Semanas totales: {w0} → {w1}  (Δ {delta_w:+})", lines)
         add_line(f"- Headcount equivalente (FTE): {f0:g} → {f1:g}  (Δ {delta_f:+g})", lines)
         add_line(f"- Labor: {eur(labor0)} → {eur(labor1)}  (Δ {eur(labor1 - labor0)})", lines)
@@ -1719,7 +1722,7 @@ def _evaluate_patch(proposal: Dict[str, Any], patch: Dict[str, Any], req_text: O
 
     # ---------------- FASES ----------------
     elif t == "phases":
-        add_line("📌 Evaluación del cambio de **fases/timeline**:", lines)
+        add_line("📌 Evaluación del cambio de fases/timeline:", lines)
         if delta_w < 0:
             pct = int(abs(delta_w) / (w0 or 1) * 100)
             add_line(f"⚠️ Reduces el timeline en {abs(delta_w)} semanas (~{pct}%). Riesgo de calidad/alcance si no se compensa con más equipo.", lines)
@@ -1732,14 +1735,14 @@ def _evaluate_patch(proposal: Dict[str, Any], patch: Dict[str, Any], req_text: O
             verdict = "neutra"
 
         add_line("", lines)
-        add_line("📊 **Impacto estimado:**", lines)
+        add_line("📊 Impacto estimado:", lines)
         add_line(f"- Semanas totales: {w0} → {w1}  (Δ {delta_w:+})", lines)
         add_line(f"- Headcount equivalente (FTE): {f0:g} → {f1:g}  (Δ {delta_f:+g})", lines)
         add_line(f"- Total con contingencia ({cont_pct:.0f}%): {eur(b0)} → {eur(b1)}  (Δ {eur(delta_cost)})", lines)
 
     # ---------------- PRESUPUESTO ----------------
     elif t in ("budget", "rates", "contingency"):
-        add_line("📌 Evaluación del cambio de **presupuesto**:", lines)
+        add_line("📌 Evaluación del cambio de presupuesto:", lines)
 
         rr = patch.get("role_rates") or patch.get("rates") or {}
         if rr:
@@ -1755,7 +1758,7 @@ def _evaluate_patch(proposal: Dict[str, Any], patch: Dict[str, Any], req_text: O
             add_line(f"Contingencia: {oldc:.0f}% → {newc:.0f}%.", lines)
 
         add_line("", lines)
-        add_line("📊 **Impacto estimado:**", lines)
+        add_line("📊 Impacto estimado:", lines)
         add_line(f"- Labor: {eur(labor0)} → {eur(labor1)}  (Δ {eur(labor1 - labor0)})", lines)
         add_line(f"- Total con contingencia: {eur(b0)} → {eur(b1)}  (Δ {eur(delta_cost)})", lines)
 
@@ -1768,12 +1771,14 @@ def _evaluate_patch(proposal: Dict[str, Any], patch: Dict[str, Any], req_text: O
 
     # ---------------- RIESGOS ----------------
     elif t == "risks":
-        add_line("📌 Evaluación del cambio de **riesgos/controles**:", lines)
+        add_line("📌 Evaluación del cambio de riesgos/controles:", lines)
         adds, rems = 0, 0
         if "ops" in patch:
             for op in (patch.get("ops") or []):
-                if op.get("op") == "add": adds += 1
-                if op.get("op") == "remove": rems += 1
+                if op.get("op") == "add":
+                    adds += 1
+                if op.get("op") == "remove":
+                    rems += 1
         else:
             adds = len(patch.get("add", []) or [])
             rems = len(patch.get("remove", []) or [])
@@ -1787,7 +1792,7 @@ def _evaluate_patch(proposal: Dict[str, Any], patch: Dict[str, Any], req_text: O
 
     # ---------------- TIMELINE / CALENDARIO ----------------
     elif t == "timeline":
-        add_line("📌 Evaluación del cambio de **plazos/calendario**:", lines)
+        add_line("📌 Evaluación del cambio de plazos/calendario:", lines)
         payload = None
         for op in (patch.get("ops") or []):
             if op.get("op") == "set":
@@ -1802,7 +1807,7 @@ def _evaluate_patch(proposal: Dict[str, Any], patch: Dict[str, Any], req_text: O
         except Exception:
             sd = date.today()
 
-        add_line(f"📅 Calendario propuesto desde { _fmt_d(sd) }:", lines)
+        add_line(f"📅 Calendario propuesto desde {_fmt_d(sd)}:", lines)
         for e in events:
             try:
                 s = datetime.fromisoformat(e["start"]).date()
