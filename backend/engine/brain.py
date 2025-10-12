@@ -6,6 +6,7 @@
 import re
 import json
 import copy
+import unicodedata
 from typing import Tuple, Dict, Any, List, Optional
 
 # Memoria de usuario (preferencias; opcional según tu state_store)
@@ -61,20 +62,53 @@ except Exception:  # pragma: no cover
 
 # ===================== utilidades =====================
 
-def _norm(text: str) -> str:
-    # Normalizo a minúsculas para comparaciones sencillas.
-    return text.lower()
+def _norm(text: Optional[str]) -> str:
+    """
+    Normaliza texto para comparaciones: None -> '', pasa a minúsculas,
+    quita acentos y colapsa espacios y puntuación razonable.
+    Diseñado para ser defensiva ante entradas raras del usuario.
+    """
+    if not text:
+        return ""
+    # Asegurarnos que sea str
+    t = str(text).strip().lower()
+    # Quitar marcas de acento/componer a forma ASCII simple
+    t = unicodedata.normalize('NFKD', t)
+    t = ''.join(ch for ch in t if not unicodedata.combining(ch))
+    # Reemplazar puntuación por espacios y colapsar múltiples espacios
+    # Use a simple regex to remove common punctuation; keep alphanum and percent/decimal
+    t = re.sub(r"[^\w\s%.,]", ' ', t)
+    t = re.sub(r"\s+", ' ', t).strip()
+    return t
 
-def _is_yes(text: str) -> bool:
-    # Detecto afirmaciones comunes pilla la mayoría.
-    t = _norm(text).strip()
-    return t in {"si", "sí", "s", "ok", "vale", "dale", "confirmo", "correcto"} or "adelante" in t
+def _is_yes(text: Optional[str]) -> bool:
+    """Detecta respuestas afirmativas en variantes comunes.
+    Es tolerante con espacios, acentos y frases cortas.
+    """
+    t = _norm(text)
+    if not t:
+        return False
+    yes_set = {"si", "sí", "s", "ok", "vale", "dale", "confirmo", "correcto", "claro", "perfecto", "adelante"}
+    if t in yes_set:
+        return True
+    # Buscar frases o verbos que indiquen confirmación
+    if any(tok in t for tok in ("adelante", "aplicar", "aplico", "aplica", "de acuerdo", "confirmar", "confirmo", "sigue", "sí aplica", "si aplica")):
+        return True
+    return False
 
-def _is_no(text: str) -> bool:
-    # Detecto rechazos sencillos. Igual que con _is_yes, no cubre todo el lenguaje
-    # natural, pero sirve para el flujo básico de la app.
-    t = _norm(text).strip()
-    return t in {"no", "n", "mejor no"} or "cancel" in t or "cancela" in t
+def _is_no(text: Optional[str]) -> bool:
+    """Detecta respuestas negativas / cancelaciones.
+    Maneja 'no', 'mejor no', 'cancelar', 'cancela', y variantes.
+    """
+    t = _norm(text)
+    if not t:
+        return False
+    no_set = {"no", "n", "mejor no", "nop", "negativo"}
+    if t in no_set:
+        return True
+    if any(tok in t for tok in ("cancel", "cancela", "anula", "nunca", "no lo hagas", "no aplicar")):
+        return True
+    return False
 
 
 # ===================== detectores =====================
@@ -2084,44 +2118,71 @@ def _parse_team_patch(text: str) -> Optional[Dict[str, Any]]:
     """
     t = _norm(text)
 
-    # Verbos
-    add_verbs = r"(?:añade|agrega|suma|incluye|mete)"
-    set_verbs = r"(?:deja|ajusta|pon|pone|establece|setea|sube|baja|pasa|cambia)"
-    rem_verbs = r"(?:quita|elimina|borra|saca)"
+    # Verbos comunes (simplificados)
+    add_verbs = r"(?:anade|añade|agrega|suma|incluye|mete|añadir|agregar)"
+    set_verbs = r"(?:deja|ajusta|pon|pone|establece|setea|sube|baja|pasa|cambia|poner|poner a)"
+    rem_verbs = r"(?:quita|elimina|borra|saca|quitar|eliminar)"
 
-    # Patrones
-    #   add      : 'añade 0.5 qa'
-    add_pat = re.findall(fr"{add_verbs}\s+(\d+(?:[.,]\d+)?)\s+([a-zA-Z\s/]+)", t)
-
-    #   set A    : 'pon 2 backend'  / 'sube a 1 qa'
-    set_pat_a = re.findall(fr"{set_verbs}\s+(?:a\s+)?(\d+(?:[.,]\d+)?)\s+([a-zA-Z\s/]+)", t)
-
-    #   set B    : 'pon pm a 1' / 'quiero poner qa en 0,5' / 'baja backend a 2'
-    set_pat_b = re.findall(fr"{set_verbs}\s+([a-zA-Z\s/]+)\s+(?:a|en)\s+(\d+(?:[.,]\d+)?)", t)
-
-    #   remove   : 'quita ux'
-    rem_pat = re.findall(fr"{rem_verbs}\s+([a-zA-Z\s/]+)", t)
-
+    # Helper para convertir tokens numericos y palabras como 'medio'->0.5
     def _to_float(num: str) -> float:
-        return float(num.replace(",", "."))
+        if not num:
+            return 1.0
+        s = num.strip().lower()
+        if s in ("medio", "0.5", "0,5", "media"):
+            return 0.5
+        # manejar 'uno'/'dos' simples opcionalmente
+        words = {"uno": 1.0, "dos": 2.0, "tres": 3.0, "cuatro": 4.0}
+        if s in words:
+            return float(words[s])
+        try:
+            return float(s.replace(",", "."))
+        except Exception:
+            return 1.0
 
     ops: List[Dict[str, Any]] = []
 
-    for num, role in add_pat:
+    # Buscar patrones 'añade 0.5 qa' o 'añade qa' (sin número -> 1)
+    for m in re.finditer(fr"{add_verbs}\s+(?:(\d+[.,]?\d*)\s+)?([a-zA-Z\s/]+)", t):
+        num, role = m.groups()
         ops.append({"op": "add", "role": role.strip(), "count": _to_float(num)})
 
-    for num, role in set_pat_a:
+    # Patrones de set tipo 'pon 2 backend' o 'pon backend a 2'
+    for m in re.finditer(fr"{set_verbs}\s+(?:(\d+[.,]?\d*)\s+)?([a-zA-Z\s/]+)", t):
+        num, role = m.groups()
+    # si el match capturó el rol y el num está en la otra forma, intentar otro regex
+        if role and re.search(r"\d", role) and not num:
+            # intentar invertir grupos
+            inv = re.search(fr"{set_verbs}\s+([a-zA-Z\s/]+)\s+(?:a|en)\s+(\d+[.,]?\d*)", t)
+            if inv:
+                role = inv.group(1); num = inv.group(2)
         ops.append({"op": "set", "role": role.strip(), "count": _to_float(num)})
 
-    for role, num in set_pat_b:
+    # Patrones 'pon pm a 1' / 'baja backend a 2'
+    for m in re.finditer(fr"{set_verbs}\s+([a-zA-Z\s/]+)\s+(?:a|en)\s+(\d+[.,]?\d*)", t):
+        role, num = m.groups()
         ops.append({"op": "set", "role": role.strip(), "count": _to_float(num)})
 
-    role_tokens = ("pm","lead","arquitect","backend","frontend","qa","ux","ui","ml","data","tester","quality","devops")
-    for role in rem_pat:
-        if any(k in _norm(role) for k in role_tokens):
-            ops.append({"op": "remove", "role": role.strip()})
+    # Remover roles: 'quita ux' etc.
+    for m in re.finditer(fr"{rem_verbs}\s+([a-zA-Z\s/]+)", t):
+        role = m.group(1)
+        ops.append({"op": "remove", "role": role.strip()})
 
-    return {"type": "team", "ops": ops} if ops else None
+    # Filtrar ops vacas o mal formadas
+    cleaned: List[Dict[str, Any]] = []
+    for op in ops:
+        r = op.get("role") or ""
+        if not r:
+            continue
+        # normalizar espacios
+        op["role"] = re.sub(r"\s+", " ", r).strip()
+        if op.get("op") in ("add", "set"):
+            try:
+                op["count"] = float(op.get("count", 1.0))
+            except Exception:
+                op["count"] = 1.0
+        cleaned.append(op)
+
+    return {"type": "team", "ops": cleaned} if cleaned else None
 
 
 def _parse_phases_patch(text: str) -> Optional[Dict[str, Any]]:
