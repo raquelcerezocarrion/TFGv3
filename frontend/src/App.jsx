@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import Chat from './components/Chat.jsx'
 import Auth from './components/Auth.jsx'
 import Profile from './components/Profile.jsx'
+import Employees from './components/Employees.jsx'   // ← nuevo
 import Sidebar from './components/Sidebar.jsx'
 import axios from 'axios'
 
@@ -11,7 +12,7 @@ export default function App() {
   const onLogin = (t) => { localStorage.setItem('tfg_token', t); setToken(t) }
 
   const [chats, setChats] = useState([])
-  const [showProfile, setShowProfile] = useState(false)
+  const [view, setView] = useState('chat') // 'chat' | 'profile' | 'employees'
   const [loadedMessages, setLoadedMessages] = useState(null)
   const [sessionIdForChat, setSessionIdForChat] = useState(null)
 
@@ -28,10 +29,11 @@ export default function App() {
   const onSelectChat = (c) => {
     try { setLoadedMessages(JSON.parse(c.content)) }
     catch { setLoadedMessages([{ role: 'assistant', content: c.content, ts: c.updated_at }]) }
-    setShowProfile(false)
+    setView('chat')
   }
-  const onNew = () => { setLoadedMessages(null); setShowProfile(false) }
-  const onProfile = () => setShowProfile(true)
+  const onNew       = () => { setLoadedMessages(null); setView('chat') }
+  const onProfile   = () => setView('profile')
+  const onEmployees = () => setView('employees')
 
   const onSaveCurrentChat = async (messages, title = null) => {
     try {
@@ -65,20 +67,24 @@ export default function App() {
       const sid = r.data.session_id
       try { setLoadedMessages(JSON.parse(chat.content)) }
       catch { setLoadedMessages([{ role: 'assistant', content: chat.content, ts: chat.updated_at }]) }
-      setShowProfile(false)
       setSessionIdForChat(sid)
+      setView('chat')
     } catch (e) { console.error('continue', e) }
   }
 
+  const showBackToChat = token && (view === 'profile' || view === 'employees')
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-emerald-50">
-      {/* Topbar minimalista */}
       <header className="border-b bg-white/80 backdrop-blur sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="font-semibold">Assistant · Propuestas</div>
           {token && (
-            <button className="text-sm text-gray-600 hover:text-gray-800" onClick={() => setShowProfile(v => !v)}>
-              {showProfile ? 'Volver al chat' : 'Mi perfil'}
+            <button
+              className="text-sm text-gray-600 hover:text-gray-800"
+              onClick={() => setView(v => (v === 'chat' ? 'profile' : 'chat'))}
+            >
+              {showBackToChat ? 'Volver al chat' : 'Mi perfil'}
             </button>
           )}
         </div>
@@ -98,14 +104,18 @@ export default function App() {
                   onSelect={onSelectChat}
                   onNew={onNew}
                   onProfile={onProfile}
+                  onEmployees={onEmployees}     // ← nuevo
                   onRename={onRename}
                   onDelete={onDelete}
                   onContinue={onContinue}
                 />
               </div>
+
               <div className="flex-1">
-                {showProfile ? (
-                  <Profile token={token} onOpenChat={(c) => { onSelectChat(c); setShowProfile(false) }} logout={logout} />
+                {view === 'profile' ? (
+                  <Profile token={token} onOpenChat={(c) => { onSelectChat(c) }} logout={logout} />
+                ) : view === 'employees' ? (
+                  <Employees token={token} />
                 ) : (
                   <Chat token={token} loadedMessages={loadedMessages} onSaveCurrentChat={onSaveCurrentChat} sessionId={sessionIdForChat} />
                 )}
