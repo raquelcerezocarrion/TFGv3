@@ -1,4 +1,8 @@
 # backend/engine/brain.py
+# Este archivo contiene la parte «pensante» del asistente. Está escrito de forma
+# práctica y directa — como lo haría un estudiante en su proyecto final: claro,
+# con atajos útiles y comentarios fáciles de leer. Si algo te chirría, dilo y lo
+# ajustamos; la prioridad aquí es que haga lo que esperamos.
 import re
 import json
 import copy
@@ -47,7 +51,7 @@ try:
 except Exception:  # pragma: no cover
     _INTENTS = None
 
-# Recuperación de casos similares (TF-IDF k-NN) opcional
+# Recuperación de casos similares 
 try:
     from backend.retrieval.similarity import get_retriever
     _SIM = get_retriever()
@@ -58,13 +62,17 @@ except Exception:  # pragma: no cover
 # ===================== utilidades =====================
 
 def _norm(text: str) -> str:
+    # Normalizo a minúsculas para comparaciones sencillas.
     return text.lower()
 
 def _is_yes(text: str) -> bool:
+    # Detecto afirmaciones comunes pilla la mayoría.
     t = _norm(text).strip()
     return t in {"si", "sí", "s", "ok", "vale", "dale", "confirmo", "correcto"} or "adelante" in t
 
 def _is_no(text: str) -> bool:
+    # Detecto rechazos sencillos. Igual que con _is_yes, no cubre todo el lenguaje
+    # natural, pero sirve para el flujo básico de la app.
     t = _norm(text).strip()
     return t in {"no", "n", "mejor no"} or "cancel" in t or "cancela" in t
 
@@ -72,20 +80,38 @@ def _is_no(text: str) -> bool:
 # ===================== detectores =====================
 
 def _is_greeting(text: str) -> bool:
-    return bool(re.search(r"\b(hola|buenas|hey|hello|qué tal|que tal)\b", text, re.I))
+    # detección sencilla por tokens comunes
+    t = _norm(text)
+    for k in ("hola", "buenas", "hey", "hello", "qué tal", "que tal"):
+        if k in t:
+            return True
+    return False
 
 def _is_farewell(text: str) -> bool:
-    return bool(re.search(r"\b(ad[ií]os|hasta luego|nos vemos|chao)\b", text, re.I))
+    t = _norm(text)
+    for k in ("adios", "adiós", "hasta luego", "nos vemos", "chao"):
+        if k in t:
+            return True
+    return False
 
 def _is_thanks(text: str) -> bool:
-    return bool(re.search(r"\b(gracias|thank[s]?|mil gracias)\b", text, re.I))
+    t = _norm(text)
+    for k in ("gracias", "mil gracias", "thank", "thanks"):
+        if k in t:
+            return True
+    return False
 
 def _is_help(text: str) -> bool:
     t = _norm(text)
     return "ayuda" in t or "qué puedes hacer" in t or "que puedes hacer" in t
 
 def _asks_methodology(text: str) -> bool:
-    return bool(re.search(r"\b(scrum|kanban|scrumban|xp|lean|crystal|fdd|dsdm|safe|devops|metodolog[ií]a)\b", text, re.I))
+    # versión simple: buscar tokens comunes en el texto
+    t = _norm(text)
+    for k in ["scrum", "kanban", "scrumban", "xp", "lean", "devops", "metodologia", "metodología"]:
+        if k in t:
+            return True
+    return False
 
 def _asks_budget(text: str) -> bool:
     return bool(re.search(r"\b(presupuesto|coste|costos|estimaci[oó]n|precio)\b", text, re.I))
@@ -184,8 +210,9 @@ def _looks_like_requirements(text: str) -> bool:
     return score >= 2 or len(text.split()) >= 12
 
 def _asks_similar(text: str) -> bool:
+    # palabras clave sencillas
     t = _norm(text)
-    return ("proyectos similares" in t or "proyectos parecidos" in t or "casos similares" in t or "algo parecido" in t or "parecido" in t)
+    return any(k in t for k in ["similar", "similares", "parecido", "parecidos", "casos parecidos", "proyectos similares"]) 
 
 def _asks_budget_breakdown(text: str) -> bool:
     t = _norm(text)
@@ -504,7 +531,7 @@ def _explain_phases_method_aware(proposal: Dict[str, Any]) -> List[str]:
             else:
                 lines.append(f"- {ph['name']}: entregables que reducen riesgos específicos.")
     return lines
-# === NUEVO: detección y explicación de fase concreta ===
+# === Detección y explicación de fase concreta ===
 
 _PHASE_CANON = {
     'incepcion': {
@@ -721,7 +748,7 @@ def _explain_budget_breakdown(proposal: Dict[str, Any]) -> List[str]:
     team: List[Dict[str, Any]] = p.get("team", []) or []
     phases: List[Dict[str, Any]] = p.get("phases", []) or []
 
-    # Semanas totales: assumptions.project_weeks o suma de fases (fallback 1)
+    # Semanas totales: assumptions.project_weeks o suma de fases
     weeks_total = int(ass.get("project_weeks") or sum(int(ph.get("weeks", 0)) for ph in phases) or 1)
     if not phases:
         phases = [{"name": "Proyecto", "weeks": weeks_total}]
@@ -790,7 +817,7 @@ def _parse_staff_list(text: str) -> List[Dict[str, Any]]:
     for raw in raw_lines:
         ln = raw.strip().lstrip("•*- ").strip()
         if not ln or "—" not in ln:
-            # Acepta otros separadores si no vino '—'
+            # Acepta otros separadores si no hay '—'
             ln = re.sub(r"\s[-|:]\s", " — ", ln)
             if "—" not in ln:
                 continue
@@ -819,20 +846,29 @@ def _parse_staff_list(text: str) -> List[Dict[str, Any]]:
 
 
 def _score_staff_for_role(role: str, person: Dict[str, Any]) -> float:
+    # heurística: puntuación 0-10
     score = 0.0
     if _canonical_role(person.get("role", "")) == role:
-        score += 4.0
-    kws = _ROLE_KEYWORDS.get(role, [])
+        score += 5.0
+    # puntos por keywords
     hay = _norm(" ".join(person.get("skills", [])) + " " + (person.get("seniority") or ""))
-    for kw in kws:
+    for kw in (_ROLE_KEYWORDS.get(role, []) or [])[:6]:
         if _norm(kw) in hay:
-            score += 0.5
+            score += 1.0
     s = _norm(person.get("seniority") or "")
-    if "principal" in s or "lead" in s: score += 2.0
-    elif "senior" in s or "sr" in s:     score += 1.2
-    elif "junior" in s or "jr" in s:     score += 0.2
-    avail = max(0.5, min(1.2, float(person.get("availability_pct", 100)) / 100.0))
-    return score * avail
+    if "lead" in s or "principal" in s:
+        score += 1.5
+    elif "senior" in s or "sr" in s:
+        score += 0.8
+    elif "junior" in s or "jr" in s:
+        score += 0.1
+    try:
+        avail = float(person.get("availability_pct", 100)) / 100.0
+    except Exception:
+        avail = 1.0
+    if avail < 0.5:
+        score *= 0.7
+    return score
 def _matched_keywords(role: str, person: Dict[str, Any]) -> List[str]:
     kws = _ROLE_KEYWORDS.get(role, [])
     hay = _norm((" ".join(person.get("skills", [])) + " " + (person.get("seniority") or "")).strip())
@@ -900,7 +936,7 @@ def _suggest_staffing(proposal: Dict[str, Any], staff: List[Dict[str, Any]]) -> 
         a = best.get("availability_pct", 100)
         extra = f" ({s}, {a}%)" if s or a != 100 else ""
         lines.append(f"- {role}: {best['name']}{extra} → {why}")
-        # alternativas rápidas (sin explicación para no saturar)
+        # alternativas rápidas
         alt = [c["name"] for c in cands[1:3]]
         if alt:
             lines.append(f"  · Alternativas: {', '.join(alt)}")
@@ -975,7 +1011,7 @@ def _infer_required_topics(proposal: Dict[str, Any]) -> List[str]:
     # QA y seguridad siempre aparecen en hardening
     if any("qa" in _norm(ph.get("name", "")) or "hardening" in _norm(ph.get("name", "")) for ph in proposal.get("phases", [])):
         req.update(["cypress", "playwright", "owasp", "performance"])
-    # XP/Scrum → calidad interna
+    # XP/Scrum: calidad interna
     if "xp" in meth or "scrum" in meth:
         req.add("tdd")
     return sorted(req)
@@ -985,7 +1021,7 @@ def _person_has_topic(person: Dict[str, Any], topic: str) -> bool:
     return _norm(topic) in blob
 
 def _closest_upskilling_candidates(staff: List[Dict[str, Any]], topic: str) -> List[Dict[str, Any]]:
-    # heurística simple: rol más cercano + seniority + disponibilidad
+    # heurística: rol más cercano + seniority + disponibilidad
     def proximity(p: Dict[str, Any]) -> float:
         r = _canonical_role(p.get("role", ""))
         s = _norm(p.get("seniority") or "")
@@ -1135,7 +1171,7 @@ def _phase_tasks_for_archetype(archetype: str, methodology: str) -> list:
         ]
 
     elif archetype == "development":
-        # Ajustes sutiles por metodología
+        # Ajustes por metodología
         if "scrum" in m:
             planning_explain = "Planificar el trabajo del sprint con estimaciones y capacidad del equipo."
         elif "kanban" in m:
@@ -1281,7 +1317,7 @@ def _render_phase_task_breakdown(proposal: dict, staff: list) -> list:
 
     return lines
 
-    # Arquetipos de fase → tareas/recursos (por nombre)
+    # Arquetipos de fase: tareas/recursos
     def phase_key(n: str) -> str:
         t = n.lower()
         if any(k in t for k in ["discover", "dise", "crc", "inception", "inicio", "kickoff"]): return "discovery"
@@ -1541,7 +1577,7 @@ def _retune_plan_for_method(p: Dict[str, Any], method: str) -> Dict[str, Any]:
     return p
 
 
-# ===================== NUEVO: cambios sobre toda la propuesta =====================
+# ===================== Cambios sobre toda la propuesta =====================
 
 _PATCH_PREFIX = "__PATCH__:"
 
@@ -1755,7 +1791,7 @@ def _evaluate_patch(proposal: Dict[str, Any], patch: Dict[str, Any], req_text: O
 
 def _make_pending_patch(session_id: str, patch: Dict[str, Any], proposal: Optional[Dict[str, Any]] = None, req_text: Optional[str] = None) -> Tuple[str, str]:
     """Guarda un parche pendiente con evaluación y confirmación sí/no usando el mismo canal pending_change."""
-    # Guardamos el parche en pending_change (compat: string con prefijo)
+    # Guardamos el parche en pending_change
     try:
         set_pending_change(session_id, _PATCH_PREFIX + json.dumps(patch, ensure_ascii=False))
     except Exception:
@@ -1971,7 +2007,7 @@ def _apply_patch(proposal: Dict[str, Any], patch: Dict[str, Any]) -> Dict[str, A
         if payload:
             p["timeline"] = payload
 
-    # —— NUEVOS TIPOS: comunicación/feedback, estándares, KPIs, entregables ——
+    # —— Comunicación/feedback, estándares, KPIs, entregables ——
 
     elif t in ("governance", "comms", "communication"):
         # ops: [{'op':'set','value': {channels, cadence, feedback_windows, preferred_docs}}]
@@ -2035,7 +2071,7 @@ def _apply_patch(proposal: Dict[str, Any], patch: Dict[str, Any]) -> Dict[str, A
     p["methodology_sources"] = info.get("sources", [])
     return p
 
-# ---------- Parsers de lenguaje natural → parches ----------
+# ---------- Parsers de lenguaje natural: Parches ----------
 
 def _parse_team_patch(text: str) -> Optional[Dict[str, Any]]:
     """
@@ -2142,7 +2178,7 @@ def _parse_any_patch(text: str) -> Optional[Dict[str, Any]]:
             return patch
     return None
 
-# ---------- NUEVO: helpers de riesgos (detalle + plan de prevención) ----------
+# ---------- Helpers de riesgos (detalle + plan de prevención) ----------
 
 def _risk_controls_for_item(item: str, methodology: str) -> List[str]:
     """Devuelve controles de prevención para un riesgo, adaptados a la metodología."""
@@ -3016,7 +3052,7 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             "Para salir, escribe: salir de la formación."
         ), "Formación: ayuda"
 
-    # Intents (si hay modelo entrenado)
+    # Intents 
     intent, conf = ("other", 0.0)
     if _INTENTS is not None:
         try:
@@ -3031,7 +3067,7 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
         if intent == "thanks":
             return "¡A ti! Si necesitas presupuesto o plan de equipo, dime los requisitos.", "Agradecimiento (intent)."
 
-    # ——— Aceptación de propuesta → pedir plantilla del equipo para asignar personas
+    # ——— Aceptación de propuesta: pedir plantilla del equipo para asignar personas
     if proposal and _accepts_proposal(text):
         try:
             set_last_area(session_id, "staffing")
@@ -3129,7 +3165,7 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             return _make_pending_patch(session_id, patch, proposal, req_text)
         return "No entendí qué cambiar. Puedes usar ejemplos: '/cambiar: añade 0.5 QA', '/cambiar: contingencia a 15%'", "Cambiar: sin parseo."
 
-    # Cambio natural de metodología → consejo + confirmación
+    # Cambio natural de metodología: consejo + confirmación
     change_req = _parse_change_request(text)
     if change_req:
         target, alternative = change_req
@@ -3175,7 +3211,7 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
         msg.append(f"¿Quieres que cambie el plan a {target} ahora? sí/no")
         return "\n".join(msg), "Consejo de cambio con confirmación."
 
-    # NUEVO: Cambios naturales a otras áreas → confirmación con parche + evaluación
+    # Cambios naturales a otras áreas → confirmación con parche + evaluación
     if proposal:
         patch = _parse_any_patch(text)
         if patch:
@@ -3206,7 +3242,7 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             lines.append(f"• Caso #{s['id']} — Metodología {s['methodology']}, Equipo: {team}, Total: {total} €, similitud {s['similarity']:.2f}")
         return "Casos similares en mi memoria:\n" + "\n".join(lines), "Similares (k-NN TF-IDF)."
 
-    # CALENDARIO / PLAZOS → pide fecha, calcula y prepara confirmación
+    # CALENDARIO / PLAZOS: pide fecha, calcula y prepara confirmación
     if _looks_like_timeline_intent(text) or _parse_start_date_es(text) is not None:
         if not proposal:
             return ("Primero genero una propuesta para conocer fases/semana y así calcular los plazos. "
@@ -3285,7 +3321,7 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
         except Exception:
             return "\n".join(preview), "Gobernanza (solo vista)."
 
-    # RIESGOS → detalle + plan + confirmación
+    # RIESGOS: detalle + plan + confirmación
     if _asks_risks_simple(text):
         try:
             set_last_area(session_id, "riesgos")
@@ -3344,7 +3380,7 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             "'quita fase QA', 'añade riesgo: cumplimiento RGPD', 'quiero formarme'."
         ), "Ayuda."
 
-    # si preguntan por una fase concreta → explicarla en detalle
+    # si preguntan por una fase concreta: explicarla en detalle
     phase_detail = _match_phase_name(text, proposal)
     if phase_detail and (any(k in _norm(text) for k in [
         "qué es","que es","explica","explícame","explicame",
@@ -3407,7 +3443,7 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
         return ("Para estimar presupuesto considero: alcance → equipo → semanas → tarifas por rol + % de contingencia.\n"
                 "Genera una propuesta con '/propuesta: ...' y te doy el detalle."), "Guía presupuesto."
 
-    # Alias de desglose → también muestra el detalle
+    # Alias de desglose: también muestra el detalle
     if _asks_budget_breakdown(text) or "desglose" in _norm(text) or "detalle" in _norm(text):
         if proposal:
             try:
@@ -3541,7 +3577,7 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
                 "Genera una propuesta con '/propuesta: ...' y la explico punto por punto."
             ), "Sin propuesta."
 
-    # Interpretar requisitos → propuesta
+    # Interpretar requisitos: propuesta
     if _looks_like_requirements(text):
         p = generate_proposal(text)
         info = METHODOLOGIES.get(p.get("methodology", ""), {})

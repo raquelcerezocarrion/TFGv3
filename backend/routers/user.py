@@ -17,6 +17,14 @@ class SavedChatIn(BaseModel):
     title: Optional[str]
     content: str = Field(..., min_length=1)
 
+
+class SavedChatUpdate(BaseModel):
+    """Model used for updating a saved chat: fields optional so the frontend can
+    send only the title when renaming (it used to send content: '' which failed
+    validation)."""
+    title: Optional[str] = None
+    content: Optional[str] = None
+
 class SavedChatOut(BaseModel):
     id: int
     title: Optional[str]
@@ -25,12 +33,16 @@ class SavedChatOut(BaseModel):
     updated_at: str
 
 def _decode_token(token: str):
+    # Intento decodificar el JWT con la clave de la app. Si algo falla, devuelvo None
+    # para que el flujo de autenticación lo capture y responda con 401.
     try:
         return jwt.decode(token, settings.APP_NAME, algorithms=["HS256"])
     except Exception:
         return None
 
 def get_current_user(authorization: Optional[str] = Header(None)):
+    # Header Authorization simple: esperamos 'Bearer <token>'. Si no está bien
+    # formado, devolvemos 401.
     if not authorization:
         raise HTTPException(status_code=401, detail="Missing Authorization header")
     parts = authorization.split()
@@ -40,6 +52,7 @@ def get_current_user(authorization: Optional[str] = Header(None)):
     payload = _decode_token(token)
     if not payload or 'user_id' not in payload:
         raise HTTPException(status_code=401, detail="Invalid token")
+    # Buscamos el usuario por email (lo guardamos en 'sub' al crear el token).
     user = state_store.get_user_by_email(payload.get('sub'))
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
@@ -53,18 +66,21 @@ def me(current_user = Depends(get_current_user)):
 
 @router.get('/chats', response_model=List[SavedChatOut])
 def list_chats(current_user = Depends(get_current_user)):
+    # Devuelvo los chats guardados del usuario en un formato fácil de consumir
     rows = state_store.list_saved_chats(current_user.id)
     return [{ 'id': r.id, 'title': r.title, 'content': r.content, 'created_at': r.created_at.isoformat(), 'updated_at': r.updated_at.isoformat() } for r in rows]
 
 
 @router.post('/chats', response_model=SavedChatOut)
 def create_chat(payload: SavedChatIn, current_user = Depends(get_current_user)):
+    # Creo un chat guardado con el contenido que me mandes (puede ser JSON o texto)
     sc = state_store.create_saved_chat(current_user.id, payload.title, payload.content)
     return { 'id': sc.id, 'title': sc.title, 'content': sc.content, 'created_at': sc.created_at.isoformat(), 'updated_at': sc.updated_at.isoformat() }
 
 
 @router.get('/chats/{chat_id}', response_model=SavedChatOut)
 def get_chat(chat_id: int, current_user = Depends(get_current_user)):
+    # Recupero un chat guardado por id; si no existe, 404.
     sc = state_store.get_saved_chat(current_user.id, chat_id)
     if not sc:
         raise HTTPException(status_code=404, detail='Chat not found')
@@ -72,7 +88,9 @@ def get_chat(chat_id: int, current_user = Depends(get_current_user)):
 
 
 @router.put('/chats/{chat_id}', response_model=SavedChatOut)
-def update_chat(chat_id: int, payload: SavedChatIn, current_user = Depends(get_current_user)):
+def update_chat(chat_id: int, payload: SavedChatUpdate, current_user = Depends(get_current_user)):
+    # Actualizo solo lo que venga en el payload (título y/o contenido). El
+    # state_store hace la mayor parte del trabajo; aquí solo controlamos errores.
     sc = state_store.update_saved_chat(current_user.id, chat_id, payload.title, payload.content)
     if not sc:
         raise HTTPException(status_code=404, detail='Chat not found')
@@ -81,6 +99,7 @@ def update_chat(chat_id: int, payload: SavedChatIn, current_user = Depends(get_c
 
 @router.delete('/chats/{chat_id}')
 def delete_chat(chat_id: int, current_user = Depends(get_current_user)):
+    # Borro el chat del usuario. Devuelvo un pequeño objeto indicando éxito.
     ok = state_store.delete_saved_chat(current_user.id, chat_id)
     if not ok:
         raise HTTPException(status_code=404, detail='Chat not found')
