@@ -381,6 +381,67 @@ def _build_dafo(final_state: Dict[str, Any], messages: List[Dict[str, Any]]) -> 
         if len(k) > 6:
             del k[6:]
 
+    # Mejor heurística para Debilidades: buscar menciones de falta/insuficiencia, prioridades no claras,
+    # dependencias o datos insuficientes en assistant messages y estado final.
+    weak_tokens = ["insuficiente", "sin datos", "no definido", "no definida", "sin definir", "falta", "poca", "limitado", "escaso", "baja", "impreciso", "sin prioridad", "sin prioridad clara", "dependencia", "dependencias", "datos insuficientes", "deuda técnica", "sin pruebas", "no probado"]
+    # From final_state: missing phases or equipo small
+    if not final_state.get("fases"):
+        if "Fases" not in weaknesses and "Fases no definidas" not in weaknesses:
+            weaknesses.append("Fases del proyecto no definidas")
+    # inferir FTE total pequeño si equipo string contiene x0 or total < 1
+    try:
+        if final_state.get("equipo"):
+            # buscar patrones x0.5, x0.25, etc. y sumar
+            parts = re.findall(r"x(0(?:\.[0-9]+)?)|x([0-9]+(?:\.[0-9]+)?)", final_state["equipo"])
+            vals = []
+            for a,b in parts:
+                if a:
+                    try: vals.append(float(a))
+                    except: pass
+                elif b:
+                    try: vals.append(float(b))
+                    except: pass
+            total_fte = sum(vals) if vals else None
+            if total_fte is not None and total_fte < 1.5:
+                weaknesses.append(f"Capacidad reducida: equipo total estimado {total_fte} FTE (posible cuello de botella)")
+    except Exception:
+        pass
+
+    # scan assistant messages for weakness tokens and dependency mentions
+    for m in messages:
+        if m.get("role") != "assistant":
+            continue
+        txt = (m.get("content") or "").lower()
+        # tokens
+        for tok in weak_tokens:
+            if tok in txt:
+                # extract the line that contains the token
+                for line in m.get("content", "").splitlines():
+                    if tok in line.lower():
+                        cand = line.strip(" -•■")
+                        if cand and cand not in weaknesses:
+                            weaknesses.append(cand)
+        # specific: dependencias, APIs, terceros
+        if "api" in txt or "tercer" in txt or "dependencia" in txt:
+            for line in m.get("content", "").splitlines():
+                if "api" in line.lower() or "tercer" in line.lower() or "dependencia" in line.lower():
+                    cand = line.strip(" -•■")
+                    if cand and cand not in weaknesses:
+                        weaknesses.append(cand)
+
+    # eliminar duplicados manteniendo orden
+    def _uniq(seq):
+        seen = set(); out = []
+        for x in seq:
+            if x not in seen:
+                seen.add(x); out.append(x)
+        return out
+
+    strengths = _uniq(strengths)
+    weaknesses = _uniq(weaknesses)
+    opportunities = _uniq(opportunities)
+    threats = _uniq(threats)
+
     return {
         "strengths": strengths,
         "weaknesses": weaknesses,
