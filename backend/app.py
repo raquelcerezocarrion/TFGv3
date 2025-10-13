@@ -9,6 +9,7 @@ from io import BytesIO
 import importlib
 import re
 import math
+import os
 
 # ---------------- REPORT inline: portada + transcripción + análisis profundo + propuesta final ----------------
 from reportlab.lib.pagesizes import A4
@@ -774,6 +775,29 @@ def render_chat_report_inline(
 
             story.append(outer)
             story.append(Spacer(1, 3*mm))
+            # Añadir gráfico de desglose del presupuesto justo después del DAFO, si existe
+            try:
+                from reportlab.platypus import Image as RLImage
+                img_path = os.path.join(os.getcwd(), "budget_pie.png")
+                if os.path.exists(img_path):
+                    # ajustar ancho para que quepa en la página con márgenes
+                    max_width = doc.width
+                    img = RLImage(img_path)
+                    iw, ih = img.wrap(0, 0)
+                    if iw > max_width:
+                        # escalar manteniendo aspecto
+                        scale = max_width / float(iw)
+                        img.drawWidth = iw * scale
+                        img.drawHeight = ih * scale
+                    # añadir un pequeño espacio antes y después
+                    story.append(Spacer(1, 3*mm))
+                    story.append(Paragraph("Desglose del presupuesto", st["h3"]))
+                    story.append(Spacer(1, 1*mm))
+                    story.append(img)
+                    story.append(Spacer(1, 3*mm))
+            except Exception:
+                # no romper la generación del PDF si algo sale mal al insertar la imagen
+                pass
     except Exception:
         # si algo falla, no rompemos la generación del informe
         pass
