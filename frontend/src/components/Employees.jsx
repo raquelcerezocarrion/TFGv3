@@ -151,21 +151,23 @@ export default function Employees({ token }) {
         {/* Alta */}
         <div className="rounded-2xl border bg-white p-4 shadow-sm">
           <div className="text-sm font-medium mb-3">Registrar empleado</div>
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-            <input className="border rounded-xl px-3 py-2" placeholder="Nombre"
-                   value={form.name} onChange={e=>setForm(f=>({...f, name:e.target.value}))}/>
-            <input className="border rounded-xl px-3 py-2" placeholder="Rol (Backend, QA, PM...)"
-                   value={form.role} onChange={e=>setForm(f=>({...f, role:e.target.value}))}/>
-            <input className="border rounded-xl px-3 py-2" placeholder="Habilidades (csv: react,sql,...)"
-                   value={form.skills} onChange={e=>setForm(f=>({...f, skills:e.target.value}))}/>
-            <input type="number" min={0} max={100} className="border rounded-xl px-3 py-2"
-                   placeholder="% disponibilidad" value={form.availability_pct}
-                   onChange={e=>setForm(f=>({...f, availability_pct: parseInt(e.target.value||'0')}))}/>
-            <button className="px-3 py-2 rounded-xl bg-emerald-600 text-white hover:opacity-90"
-                    onClick={createEmployee}>
-              Añadir
-            </button>
-          </div>
+     <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+       <input className="border rounded-xl px-3 py-2 min-w-0" placeholder="Nombre"
+         value={form.name} onChange={e=>setForm(f=>({...f, name:e.target.value}))}/>
+       <input className="border rounded-xl px-3 py-2 min-w-0" placeholder="Rol (Backend, QA, PM...)"
+         value={form.role} onChange={e=>setForm(f=>({...f, role:e.target.value}))}/>
+       <input className="border rounded-xl px-3 py-2 min-w-0" placeholder="Habilidades (csv: react,sql,...)"
+         value={form.skills} onChange={e=>setForm(f=>({...f, skills:e.target.value}))}/>
+       <input type="number" min={0} max={100} className="border rounded-xl px-3 py-2 w-full max-w-[120px]"
+         placeholder="% disponibilidad" value={form.availability_pct}
+         onChange={e=>setForm(f=>({...f, availability_pct: parseInt(e.target.value||'0')}))}/>
+       <div className="flex items-center">
+    <button className="w-full px-3 py-2 rounded-xl bg-emerald-600 text-white hover:opacity-90"
+       onClick={createEmployee}>
+      Añadir
+    </button>
+       </div>
+     </div>
         </div>
 
         {/* Errores */}
@@ -191,11 +193,11 @@ export default function Employees({ token }) {
                     {!isEditing ? (
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex-1">
-                          <div className="font-medium">{emp.name}</div>
-                          <div className="text-[12px] text-gray-600">
-                            {emp.role} · {emp.availability_pct ?? 100}% disp.
-                          </div>
-                          {skillsText && <div className="mt-1 text-[12px] text-gray-500">Skills: {skillsText}</div>}
+                              <div className="font-medium break-words">{emp.name}</div>
+                              <div className="text-[12px] text-gray-600 truncate">
+                                {emp.role} · {emp.availability_pct ?? 100}% disp.
+                              </div>
+                              {skillsText && <div className="mt-1 text-[12px] text-gray-500 break-words">Skills: {skillsText}</div>}
                         </div>
                         <div className="flex items-center gap-2">
                           <button className="px-2 py-1 text-xs rounded-lg border"
@@ -210,22 +212,22 @@ export default function Employees({ token }) {
                       </div>
                     ) : (
                       <div className="space-y-2">
-                        <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
-                          <input className="border rounded px-2 py-1 text-sm" value={editRow.name}
+                        <div className="grid grid-cols-1 md:grid-cols-5 gap-2 items-end">
+                          <input className="border rounded px-2 py-1 text-sm min-w-0" value={editRow.name}
                                  onChange={e=>setEditRow(r=>({...r, name:e.target.value}))}/>
-                          <input className="border rounded px-2 py-1 text-sm" value={editRow.role}
+                          <input className="border rounded px-2 py-1 text-sm min-w-0" value={editRow.role}
                                  onChange={e=>setEditRow(r=>({...r, role:e.target.value}))}/>
-                          <input className="border rounded px-2 py-1 text-sm" value={editRow.skills}
+                          <input className="border rounded px-2 py-1 text-sm min-w-0" value={editRow.skills}
                                  onChange={e=>setEditRow(r=>({...r, skills:e.target.value}))}/>
                           <input type="number" min={0} max={100}
-                                 className="border rounded px-2 py-1 text-sm" value={editRow.availability_pct ?? 100}
+                                 className="border rounded px-2 py-1 text-sm w-full max-w-[120px]" value={editRow.availability_pct ?? 100}
                                  onChange={e=>setEditRow(r=>({...r, availability_pct: parseInt(e.target.value||'0')}))}/>
-                          <div className="flex items-center justify-end gap-2">
-                            <button className="px-2 py-1 text-xs rounded-lg border"
+                          <div className="flex items-center justify-end gap-2 flex-wrap md:flex-nowrap">
+                            <button className="px-2 py-1 text-xs rounded-lg border w-full md:w-auto"
                                     onClick={() => { setEditingId(null); setEditRow(null) }}>
                               Cancelar
                             </button>
-                            <button className="px-2 py-1 text-xs rounded-lg bg-emerald-600 text-white"
+                            <button className="px-2 py-1 text-xs rounded-lg bg-emerald-600 text-white w-full md:w-auto"
                                     onClick={async () => {
                                       await updateEmployee(emp.id, {
                                         name: editRow.name,

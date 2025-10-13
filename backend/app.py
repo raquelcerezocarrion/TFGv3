@@ -12,7 +12,7 @@ import math
 
 # ---------------- REPORT inline: portada + transcripción + análisis profundo + propuesta final ----------------
 from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, ListFlowable, ListItem
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, ListFlowable, ListItem, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_LEFT, TA_RIGHT, TA_CENTER
 from reportlab.lib import colors
@@ -312,6 +312,82 @@ def extract_final_state(messages: List[Dict[str, Any]]):
         final["riesgos"] = last.get("riesgos")
     return final
 
+
+def _build_dafo(final_state: Dict[str, Any], messages: List[Dict[str, Any]]) -> Dict[str, List[str]]:
+    """Construye un DAFO (SWOT) simple a partir del estado final y de heurísticas sobre los mensajes.
+    Devuelve dict con keys: strengths, weaknesses, opportunities, threats (listas de strings).
+    """
+    strengths = []
+    weaknesses = []
+    opportunities = []
+    threats = []
+
+    # Fortalezas: elementos bien definidos en el estado final
+    if final_state.get("metodologia"):
+        strengths.append(f"Metodología definida: {final_state['metodologia']}")
+    if final_state.get("equipo"):
+        strengths.append(f"Equipo: {final_state['equipo']}")
+    if final_state.get("presupuesto"):
+        strengths.append(f"Presupuesto estimado: {final_state['presupuesto']}")
+
+    # Debilidades: campos no definidos o vacíos
+    if not final_state.get("metodologia"):
+        weaknesses.append("Metodología no definida o insuficiente detalle")
+    if not final_state.get("equipo"):
+        weaknesses.append("Asignación de equipo no definida")
+    if not final_state.get("presupuesto"):
+        weaknesses.append("Presupuesto sin cuantificar")
+
+    # Amenazas: riesgos explícitos en final_state o menciones en mensajes
+    if final_state.get("riesgos"):
+        # separar por ; o , o nuevas líneas
+        raw = final_state["riesgos"]
+        parts = [p.strip() for p in re.split(r"[;\n,]", raw) if p.strip()]
+        for p in parts:
+            threats.append(p)
+    # buscar menciones a 'riesgo' en mensajes
+    for m in messages:
+        if (m.get("role") == "assistant") and isinstance(m.get("content"), str):
+            txt = m["content"].lower()
+            if "riesgo" in txt or "amenaza" in txt:
+                # extraer la línea con riesgo
+                for line in m["content"].splitlines():
+                    if "riesgo" in line.lower() or "amenaza" in line.lower():
+                        cand = line.strip(" -•■")
+                        if cand and cand not in threats:
+                            threats.append(cand)
+
+    # Oportunidades: buscar 'oportunidad' o palabras positivas en assistant messages
+    for m in messages:
+        if (m.get("role") == "assistant") and isinstance(m.get("content"), str):
+            txt = m["content"].lower()
+            if "oportunidad" in txt or "oportunidades" in txt:
+                for line in m["content"].splitlines():
+                    if "oportunidad" in line.lower() or "oportunidades" in line.lower():
+                        cand = line.strip(" -•■")
+                        if cand and cand not in opportunities:
+                            opportunities.append(cand)
+            # heurística simple: frases que contienen 'ventaja', 'mejor', 'oportuno'
+            for token in ("ventaja", "oportuno", "mejor", "potencial"):
+                if token in txt:
+                    for line in m["content"].splitlines():
+                        if token in line.lower():
+                            cand = line.strip(" -•■")
+                            if cand and cand not in opportunities:
+                                opportunities.append(cand)
+
+    # Limitar longitud
+    for k in (strengths, weaknesses, opportunities, threats):
+        if len(k) > 6:
+            del k[6:]
+
+    return {
+        "strengths": strengths,
+        "weaknesses": weaknesses,
+        "opportunities": opportunities,
+        "threats": threats,
+    }
+
 def _explain_impacts(delta: Dict[str, Any]) -> List[str]:
     out = []
     ft_b, ft_a = delta["fte_total"]
@@ -586,10 +662,66 @@ def render_chat_report_inline(
                 story.append(Paragraph(_escape(para).replace("\n", "<br/>"), st["p"]))
                 story.append(Spacer(1, 1*mm))
 
+    # ---------------- Parte D — DAFO / SWOT ----------------
+    # Construimos el DAFO a partir del estado final y mensajes si hay datos
+    try:
+        dafo = _build_dafo(final, messages)
+        # solo añadir si hay algún elemento
+        if any(dafo.get(k) for k in ("strengths","weaknesses","opportunities","threats")):
+            story.append(PageBreak())
+            story.append(Paragraph("PARTE D — DAFO (Análisis FODA / SWOT)", st["h2"]))
+            story.append(Paragraph("Síntesis de Fortalezas, Debilidades, Oportunidades y Amenazas basadas en la conversación.", st["meta"]))
+            story.append(Spacer(1, 2*mm))
+
+            # Construimos una tabla 2x2 con cabeceras coloreadas y contenido en cada cuadrante,
+            # usando tablas anidadas para controlar header+contenido por celda.
+            def _cell_table(title: str, items: list):
+                # header paragraph
+                hdr_style = ParagraphStyle("DAFOHeader", parent=st["h3"], alignment=TA_CENTER, textColor=colors.white, fontSize=12)
+                hdr = Paragraph(_escape(title), hdr_style)
+                # content as bullets (puede ser vacío)
+                if items:
+                    bullets = "<br/>".join([f"• {_escape(x)}" for x in items])
+                else:
+                    bullets = "—"
+                content = Paragraph(bullets, st["p"])
+                # nested table: header row + content row
+                nested = Table([[hdr], [content]], colWidths=[(doc.width / 2.0)])
+                nested.setStyle(TableStyle([
+                    ("BACKGROUND", (0,0), (0,0), colors.HexColor("#f8a8a8")),
+                    ("ALIGN", (0,0), (0,0), "CENTER"),
+                    ("VALIGN", (0,0), (-1,-1), "TOP"),
+                    ("LEFTPADDING", (0,0), (-1,-1), 6),
+                    ("RIGHTPADDING", (0,0), (-1,-1), 6),
+                    ("TOPPADDING", (0,0), (-1,-1), 6),
+                    ("BOTTOMPADDING", (0,0), (-1,-1), 6),
+                ]))
+                return nested
+
+            # preparar las cuatro celdas
+            c_fort = _cell_table("Fortalezas", dafo.get("strengths") or [])
+            c_opp  = _cell_table("Oportunidades", dafo.get("opportunities") or [])
+            c_weak = _cell_table("Debilidades", dafo.get("weaknesses") or [])
+            c_thrt = _cell_table("Amenazas", dafo.get("threats") or [])
+
+            outer = Table([[c_fort, c_opp], [c_weak, c_thrt]], colWidths=[doc.width / 2.0, doc.width / 2.0], rowHeights=None)
+            outer.setStyle(TableStyle([
+                ("BOX", (0,0), (-1,-1), 6, colors.HexColor("#211146")),
+                ("INNERGRID", (0,0), (-1,-1), 0.5, colors.HexColor("#211146")),
+                ("VALIGN", (0,0), (-1,-1), "TOP"),
+            ]))
+
+            story.append(outer)
+            story.append(Spacer(1, 3*mm))
+    except Exception:
+        # si algo falla, no rompemos la generación del informe
+        pass
+
     doc.build(story)
     pdf = buf.getvalue()
     buf.close()
     return pdf
+    
 # -------------------------------------------------------------------------------
 
 # Routers principales existentes
