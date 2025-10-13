@@ -85,12 +85,12 @@ def _parse_team_list(team_str: str) -> Dict[str, float]:
     return team
 
 # “Fichas” del asistente:
-_re_final_method = re.compile(r"^\s*[■•-]\s*Metodolog[ií]a:\s*(.+)$", re.I)
-_re_final_budget = re.compile(r"^\s*[■•-]\s*Presupuesto:\s*(.+)$", re.I)
-_re_final_team   = re.compile(r"^\s*[■•-]\s*Equipo:\s*(.+)$", re.I)
-_re_final_phases = re.compile(r"^\s*[■•-]\s*Fases:\s*(.+)$", re.I)
-_re_final_risks  = re.compile(r"^\s*[■•-]{1,2}\s*Riesgos:\s*(.+)$", re.I)
-_re_weeks_total  = re.compile(r"^\s*[■•-]?\s*Semanas totales:\s*([0-9]+(?:\.[0-9]+)?)", re.I)
+_re_final_method = re.compile(r"^[^\n]*?\bMetodolog[ií]a:\s*(.+)$", re.I)
+_re_final_budget = re.compile(r"^[^\n]*?\bPresupuesto:\s*(.+)$", re.I)
+_re_final_team   = re.compile(r"^[^\n]*?\bEquipo:\s*(.+)$", re.I)
+_re_final_phases = re.compile(r"^[^\n]*?\bFases:\s*(.+)$", re.I)
+_re_final_risks  = re.compile(r"^[^\n]*?\bRiesgos:\s*(.+)$", re.I)
+_re_weeks_total  = re.compile(r"^[^\n]*?\bSemanas totales:\s*([0-9]+(?:\.[0-9]+)?)", re.I)
 
 def parse_snapshot_from_text(txt: str) -> Optional[Dict[str, Any]]:
     snap = {"metodologia": None, "equipo": None, "fases": None, "presupuesto_total": None,
@@ -719,6 +719,43 @@ def render_chat_report_inline(
             story.append(PageBreak())
             story.append(Paragraph("PARTE C — Propuesta final completa", st["h2"]))
             story.append(Paragraph("Reproducción íntegra del último bloque de propuesta del asistente.", st["meta"]))
+            # Si se especifica metodología en el estado final o en report_meta, generar gráfico específico
+            try:
+                meth = None
+                if final.get("metodologia"):
+                    meth = final.get("metodologia")
+                elif (report_meta or {}).get("methodology"):
+                    meth = (report_meta or {}).get("methodology")
+                elif (report_meta or {}).get("metodologia"):
+                    meth = (report_meta or {}).get("metodologia")
+                if meth:
+                    # prepara data extraída de final o report_meta
+                    data = {}
+                    # preferir final['fases'] si existe
+                    if final.get("fases"):
+                        data["phases"] = final.get("fases")
+                    elif (report_meta or {}).get("fases"):
+                        data["phases"] = (report_meta or {}).get("fases")
+                    # semanas totales
+                    if final.get("weeks_total"):
+                        data["weeks_total"] = final.get("weeks_total")
+                    elif (report_meta or {}).get("weeks_total"):
+                        data["weeks_total"] = (report_meta or {}).get("weeks_total")
+                    try:
+                        from scripts.methodology_chart import generate_methodology_chart
+                        chart_path = os.path.join(os.getcwd(), "methodology_chart.png")
+                        generate_methodology_chart(meth, chart_path, data=data)
+                        from reportlab.platypus import Image as RLImage
+                        if os.path.exists(chart_path):
+                            story.append(Spacer(1, 2*mm))
+                            story.append(Paragraph(f"Gráfico de planificación — {meth}", st["h3"]))
+                            story.append(Spacer(1, 1*mm))
+                            story.append(RLImage(chart_path, width=doc.width, height=doc.width * 0.25))
+                            story.append(Spacer(1, 3*mm))
+                    except Exception:
+                        pass
+            except Exception:
+                pass
             story.append(Spacer(1, 2*mm))
             for para in (last_block or "").split("\n\n"):
                 story.append(Paragraph(_escape(para).replace("\n", "<br/>"), st["p"]))
@@ -791,10 +828,55 @@ def render_chat_report_inline(
                         img.drawHeight = ih * scale
                     # añadir un pequeño espacio antes y después
                     story.append(Spacer(1, 3*mm))
-                    story.append(Paragraph("Desglose del presupuesto", st["h3"]))
-                    story.append(Spacer(1, 1*mm))
-                    story.append(img)
+                    from reportlab.platypus import KeepTogether
+                    budget_block = [Paragraph("Desglose del presupuesto", st["h3"]), Spacer(1, 1*mm), img]
+                    story.append(KeepTogether(budget_block))
                     story.append(Spacer(1, 3*mm))
+                    # Inserta también el gráfico metodológico justo después del desglose del presupuesto
+                    try:
+                        # determinar metodología y datos como antes
+                        meth = None
+                        if final.get("metodologia"):
+                            meth = final.get("metodologia")
+                        elif (report_meta or {}).get("methodology"):
+                            meth = (report_meta or {}).get("methodology")
+                        elif (report_meta or {}).get("metodologia"):
+                            meth = (report_meta or {}).get("metodologia")
+                        if meth:
+                            data = {}
+                            if final.get("fases"):
+                                data["phases"] = final.get("fases")
+                            elif (report_meta or {}).get("fases"):
+                                data["phases"] = (report_meta or {}).get("fases")
+                            if final.get("weeks_total"):
+                                data["weeks_total"] = final.get("weeks_total")
+                            elif (report_meta or {}).get("weeks_total"):
+                                data["weeks_total"] = (report_meta or {}).get("weeks_total")
+                            # prefer diagram if phase contents provided
+                            from scripts.methodology_chart import generate_methodology_chart, generate_methodology_diagram
+                            meth_path = os.path.join(os.getcwd(), "methodology_chart.png")
+                            # detect phase contents
+                            phase_contents = None
+                            if final.get("phase_contents"):
+                                phase_contents = final.get("phase_contents")
+                            elif (report_meta or {}).get("phase_contents"):
+                                phase_contents = (report_meta or {}).get("phase_contents")
+                            if phase_contents:
+                                data["phase_contents"] = phase_contents
+                                # generate diagram variant
+                                meth_path = os.path.join(os.getcwd(), "methodology_diagram.png")
+                                generate_methodology_diagram(meth, meth_path, data=data)
+                            else:
+                                generate_methodology_chart(meth, meth_path, data=data)
+                            if os.path.exists(meth_path):
+                                story.append(Spacer(1, 2*mm))
+                                from reportlab.platypus import KeepTogether
+                                meth_img = RLImage(meth_path, width=doc.width, height=doc.width * 0.25)
+                                meth_block = [Paragraph(f"Gráfico de planificación — {meth}", st["h3"]), Spacer(1, 1*mm), meth_img]
+                                story.append(KeepTogether(meth_block))
+                                story.append(Spacer(1, 3*mm))
+                    except Exception:
+                        pass
             except Exception:
                 # no romper la generación del PDF si algo sale mal al insertar la imagen
                 pass

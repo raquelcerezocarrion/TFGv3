@@ -92,7 +92,7 @@ def create_budget_pie(out_path="budget_pie.png"):
     ax_bottom.text(0, 1, bottom_text, va="top", ha="left", fontsize=10)
 
     plt.tight_layout()
-    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    fig.savefig(out_path, dpi=300, bbox_inches="tight")
 
 
 if __name__ == "__main__":
