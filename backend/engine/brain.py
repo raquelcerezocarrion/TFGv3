@@ -1,15 +1,12 @@
 # backend/engine/brain.py
-# Este archivo contiene la parte «pensante» del asistente. Está escrito de forma
-# práctica y directa — como lo haría un estudiante en su proyecto final: claro,
-# con atajos útiles y comentarios fáciles de leer. Si algo te chirría, dilo y lo
-# ajustamos; la prioridad aquí es que haga lo que esperamos.
+
 import re
 import json
 import copy
 import unicodedata
 from typing import Tuple, Dict, Any, List, Optional
 
-# Memoria de usuario (preferencias; opcional según tu state_store)
+# Memoria de usuario 
 try:
     from backend.memory.state_store import get_client_prefs, upsert_client_pref
 except Exception:  # pragma: no cover
