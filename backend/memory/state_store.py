@@ -53,6 +53,13 @@ class ProposalFeedback(Base):
 
     proposal = relationship("ProposalLog", back_populates="feedbacks")
 
+class ProposalView(Base):
+    __tablename__ = "proposal_views"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, index=True, nullable=False)
+    proposal_id = Column(Integer, index=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
 # --- Usuario / Auth (simple)
 class User(Base):
     __tablename__ = "users"
@@ -122,6 +129,22 @@ def save_feedback(session_id: str, accepted: bool, score: Optional[int] = None, 
         )
         db.add(fb); db.commit(); db.refresh(fb)
         return int(fb.id)
+
+# --- Proposal views (para recomendaciones personalizadas)
+def log_proposal_view(user_id: int, proposal_id: int) -> int:
+    with SessionLocal() as db:
+        from sqlalchemy import func
+        # Evitar duplicados consecutivos: si el último view es el mismo, no duplicar
+        last = db.query(ProposalView).filter(ProposalView.user_id == user_id).order_by(ProposalView.created_at.desc()).first()
+        if not last or last.proposal_id != proposal_id:
+            v = ProposalView(user_id=user_id, proposal_id=proposal_id)
+            db.add(v); db.commit(); db.refresh(v)
+            return int(v.id)
+        return int(last.id)
+
+def list_recent_views(user_id: int, limit: int = 10) -> List[ProposalView]:
+    with SessionLocal() as db:
+        return db.query(ProposalView).filter(ProposalView.user_id == user_id).order_by(ProposalView.created_at.desc()).limit(limit).all()
 
 # --- Users helpers
 def get_user_by_email(email: str) -> Optional[User]:

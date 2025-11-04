@@ -4,6 +4,7 @@ import Auth from './components/Auth.jsx'
 import Profile from './components/Profile.jsx'
 import Employees from './components/Employees.jsx'   // ← nuevo
 import TopNav from './components/TopNav.jsx'
+import Recommendations from './components/Recommendations.jsx'
 import Sidebar from './components/Sidebar.jsx'
 import axios from 'axios'
 
@@ -165,10 +166,11 @@ export default function App() {
           <div className="font-semibold">Assistant · Propuestas</div>
           {token && (
             <TopNav
-              current={view === 'employees' ? 'employees' : view === 'profile' ? 'profile' : 'projects'}
+              current={view === 'employees' ? 'employees' : view === 'profile' ? 'profile' : (view === 'recommendations' ? 'recommendations' : 'projects')}
               onGoProjects={() => setView('chat')}
               onGoEmployees={() => setView('employees')}
               onGoProfile={() => setView('profile')}
+              onGoRecommendations={() => setView('recommendations')}
               onLogout={logout}
             />
           )}
@@ -201,6 +203,8 @@ export default function App() {
                   <Profile token={token} onOpenChat={(c) => { onSelectChat(c) }} logout={logout} />
                 ) : view === 'employees' ? (
                   <Employees token={token} />
+                ) : view === 'recommendations' ? (
+                  <Recommendations token={token} />
                 ) : (
                   <Chat
                     token={token}

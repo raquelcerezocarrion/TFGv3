@@ -1,10 +1,11 @@
 import React from 'react'
 
 export default function TopNav({
-  current = 'projects', // 'projects' | 'employees' | 'profile'
+  current = 'projects', // 'projects' | 'employees' | 'profile' | 'recommendations'
   onGoProjects,
   onGoEmployees,
   onGoProfile,
+  onGoRecommendations,
   onLogout,
 }) {
   const item = (key, label, onClick) => (
@@ -19,6 +20,7 @@ export default function TopNav({
   return (
     <nav className="flex items-center gap-2">
       {item('projects', 'Proyectos', onGoProjects)}
+      {item('recommendations', 'Recomendaciones', onGoRecommendations)}
       {item('employees', 'Empleados', onGoEmployees)}
       {item('profile', 'Perfil', onGoProfile)}
       {onLogout && (
