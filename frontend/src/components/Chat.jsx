@@ -15,7 +15,7 @@ async function detectApiBase() {
   return null
 }
 
-export default function Chat({ token, loadedMessages = null, onSaveCurrentChat = null, sessionId: externalSessionId = null }) {
+export default function Chat({ token, loadedMessages = null, selectedChatId = null, onSaveCurrentChat = null, onSaveExistingChat = null, sessionId: externalSessionId = null }) {
   const [apiBase, setApiBase] = useState(null)
   const [sessionId, setSessionId] = useState(() => 'demo-' + Math.random().toString(36).slice(2, 8))
   const [messages, setMessages] = useState([
@@ -62,7 +62,13 @@ export default function Chat({ token, loadedMessages = null, onSaveCurrentChat =
 
   useEffect(()=>{ if(externalSessionId){ setSessionId(externalSessionId) } }, [externalSessionId])
   useEffect(() => { if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight }, [messages])
-  useEffect(()=>{ if(Array.isArray(loadedMessages) && loadedMessages.length){ setMessages(loadedMessages.map(m => ({ role: m.role, content: m.content, ts: m.ts || new Date().toISOString() }))) } }, [loadedMessages])
+  // Cuando `loadedMessages` es un array (incluso vacío) debemos respetarlo.
+  // Antes se ignoraba el array vacío y se mostraba el mensaje inicial del asistente.
+  useEffect(() => {
+    if (!Array.isArray(loadedMessages)) return
+    const mapped = (loadedMessages || []).map(m => ({ role: m.role, content: m.content, ts: m.ts || new Date().toISOString() }))
+    setMessages(mapped)
+  }, [loadedMessages])
 
   const send = async () => {
     const text = input.trim()
@@ -144,16 +150,30 @@ export default function Chat({ token, loadedMessages = null, onSaveCurrentChat =
       {/* acciones superiores */}
       <div className="flex items-center justify-between">
         <div className="text-sm text-gray-500">Consejo: escribe <code className="px-1 py-[1px] rounded bg-gray-100 border">/propuesta: requisitos del cliente</code></div>
-        {onSaveCurrentChat && (
+        {(onSaveCurrentChat || onSaveExistingChat) && (
           <div className="relative">
-            <button className="px-3 py-2 border rounded-xl hover:bg-gray-50" onClick={() => setShowSaveDialog(true)}>Guardar chat</button>
+            <button className="px-3 py-2 border rounded-xl hover:bg-gray-50" onClick={() => setShowSaveDialog(true)}>
+              {selectedChatId ? 'Guardar cambios' : 'Guardar chat'}
+            </button>
             {showSaveDialog && (
               <div className="absolute right-0 mt-2 p-3 bg-white border rounded-xl shadow-lg w-80">
                 <div className="mb-2 font-medium">Título del chat</div>
                 <input className="w-full border rounded px-2 py-1 mb-2" value={saveTitle} onChange={(e)=>setSaveTitle(e.target.value)} placeholder="Título (opcional)" />
                 <div className="flex justify-end gap-2">
                   <button className="px-2 py-1 border rounded" onClick={()=>{ setShowSaveDialog(false); setSaveTitle('') }}>Cancelar</button>
-                  <button className="px-2 py-1 bg-emerald-600 text-white rounded" onClick={()=>{ onSaveCurrentChat(messages, saveTitle || null); setShowSaveDialog(false); setSaveTitle('') }}>Guardar</button>
+                  <button
+                    className="px-2 py-1 bg-emerald-600 text-white rounded"
+                    onClick={() => {
+                      if (selectedChatId && onSaveExistingChat) {
+                        onSaveExistingChat(selectedChatId, messages, saveTitle || null)
+                      } else if (onSaveCurrentChat) {
+                        onSaveCurrentChat(messages, saveTitle || null)
+                      }
+                      setShowSaveDialog(false); setSaveTitle('')
+                    }}
+                  >
+                    Guardar
+                  </button>
                 </div>
               </div>
             )}

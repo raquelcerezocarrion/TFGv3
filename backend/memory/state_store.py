@@ -167,11 +167,12 @@ def update_saved_chat(user_id: int, chat_id: int, title: Optional[str], content:
         db.add(row); db.commit(); db.refresh(row)
         return row
 
-    def delete_saved_chat(user_id: int, chat_id: int) -> bool:
-        # Borra un chat si pertenece al usuario; devuelve True si borró algo.
-        with SessionLocal() as db:
-            row = db.query(SavedChat).filter(SavedChat.user_id == user_id, SavedChat.id == chat_id).first()
-            if not row:
-                return False
-            db.delete(row); db.commit()
-            return True
+
+def delete_saved_chat(user_id: int, chat_id: int) -> bool:
+    # Borra un chat si pertenece al usuario; devuelve True si borró algo.
+    with SessionLocal() as db:
+        row = db.query(SavedChat).filter(SavedChat.user_id == user_id, SavedChat.id == chat_id).first()
+        if not row:
+            return False
+        db.delete(row); db.commit()
+        return True
