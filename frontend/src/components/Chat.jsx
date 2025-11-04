@@ -15,7 +15,7 @@ async function detectApiBase() {
   return null
 }
 
-export default function Chat({ token, loadedMessages = null, selectedChatId = null, onSaveCurrentChat = null, onSaveExistingChat = null, sessionId: externalSessionId = null }) {
+export default function Chat({ token, loadedMessages = null, selectedChatId = null, onSaveCurrentChat = null, onSaveExistingChat = null, sessionId: externalSessionId = null, externalMessage = null, externalMessageId = null }) {
   const [apiBase, setApiBase] = useState(null)
   const [sessionId, setSessionId] = useState(() => 'demo-' + Math.random().toString(36).slice(2, 8))
   const [messages, setMessages] = useState([
@@ -70,8 +70,8 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
     setMessages(mapped)
   }, [loadedMessages])
 
-  const send = async () => {
-    const text = input.trim()
+  const send = async (overrideText = null) => {
+    const text = (overrideText !== null ? String(overrideText) : input).trim()
     if (!text) return
     setMessages(prev => [...prev, { role: 'user', content: text, ts: new Date().toISOString() }])
     setInput('')
@@ -119,6 +119,14 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
       }
     }
   }
+
+  // If parent passes an externalMessage + externalMessageId, send it once when the id changes.
+  useEffect(() => {
+    if (!externalMessage || !externalMessageId) return
+    // send the provided text; send() will add the 'user' message and request a reply
+    send(externalMessage)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalMessageId])
 
   const openExport = () => { setReportMeta(m => ({ ...m, session_id: sessionId })); setShowExport(true) }
   const doExport = async () => {

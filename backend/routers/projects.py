@@ -378,3 +378,118 @@ def convert_chat_block_to_proposal(chat_id: int, payload: Dict[str, Any]):
         raise HTTPException(status_code=500, detail=f"No se pudo crear la propuesta: {e}")
 
     return {"proposal_id": pid, "session_id": sid, "created_at": datetime.utcnow().isoformat()}
+
+
+@router.get("/projects/{proposal_id}/phases")
+def get_proposal_phases(proposal_id: int):
+    """Devuelve una lista de fases para una propuesta dada.
+    Reglas:
+    - Si la propuesta persistida contiene 'phases' en proposal_json, se devuelve tal cual (añadiendo checklist si hace falta).
+    - Si no, se intenta inferir la metodología desde proposal_json['methodology'] o desde los 'requirements'
+      usando `backend.knowledge.methodologies.recommend_methodology` y se generan fases por plantilla.
+    Cada fase incluye { name, weeks (opcional), phase_idx, checklist: [..] }.
+    """
+    from backend.memory.state_store import SessionLocal, ProposalLog
+    try:
+        from backend.knowledge.methodologies import normalize_method_name, recommend_methodology
+    except Exception:
+        normalize_method_name = lambda x: x
+        def recommend_methodology(text: str):
+            return ("Scrum", [], [])
+
+    def _default_phases_for_method(method: str):
+        m = (method or "").lower()
+        if 'kanban' in m:
+            names = [
+                ("Backlog & Priorización", None),
+                ("Preparación / Ready", 1),
+                ("Development / En progreso", None),
+                ("Pruebas / QA", 1),
+                ("Release / Despliegue", 1),
+                ("Operación y Monitorización", None),
+            ]
+        elif 'safe' in m:
+            names = [
+                ("PI Planning (Program Increment)", 2),
+                ("Iteraciones / Sprints (por equipo)", 8),
+                ("System Demo & Integración", 1),
+                ("Stabilización y Hardening", 1),
+                ("Release & Inspect", 1),
+            ]
+        elif 'scrum' in m:
+            names = [
+                ("Descubrimiento / Incepción", 2),
+                ("Sprints iterativos (Desarrollo)", 8),
+                ("QA y Estabilización", 2),
+                ("Despliegue / Release", 1),
+                ("Operación / Mejora continua", None),
+            ]
+        elif 'scrumban' in m:
+            names = [
+                ("Incepción ligera", 1),
+                ("Sprints / Cadencia ligera", 6),
+                ("Flujo continuo / Kanban board", None),
+                ("QA y Hardening", 1),
+            ]
+        elif 'xp' in m or 'extreme' in m:
+            names = [
+                ("Incepción y especificación técnica", 2),
+                ("Iteraciones con prácticas XP", 8),
+                ("Integración continua & Tests", None),
+                ("Release seguro", 1),
+            ]
+        elif 'lean' in m:
+            names = [
+                ("Descubrimiento (MVP)", 2),
+                ("Construir–Medir–Aprender (experimentos)", 6),
+                ("Escalado/Optimización", None),
+            ]
+        else:
+            names = [
+                ("Descubrimiento", 2),
+                ("Desarrollo e Integración", 8),
+                ("QA y Estabilización", 2),
+                ("Despliegue", 1),
+            ]
+
+        out = []
+        for idx, (n, w) in enumerate(names):
+            out.append({
+                "name": n,
+                "weeks": w,
+                "phase_idx": idx,
+                "checklist": _phase_checklist_from_method(method, n)
+            })
+        return out
+
+    with SessionLocal() as db:
+        row = db.query(ProposalLog).filter(ProposalLog.id == proposal_id).first()
+        if not row:
+            raise HTTPException(status_code=404, detail="Propuesta no encontrada")
+
+        pj = row.proposal_json or {}
+        existing = pj.get('phases')
+        if isinstance(existing, list) and existing:
+            out = []
+            for i, ph in enumerate(existing):
+                if isinstance(ph, dict):
+                    name = ph.get('name') or f"Fase {i+1}"
+                    weeks = ph.get('weeks')
+                    checklist = ph.get('checklist') or _phase_checklist_from_method(pj.get('methodology'), name)
+                else:
+                    name = str(ph)
+                    weeks = None
+                    checklist = _phase_checklist_from_method(pj.get('methodology'), name)
+                out.append({"name": name, "weeks": weeks, "phase_idx": i, "checklist": checklist})
+            return out
+
+        method = (pj.get('methodology') or '').strip() or None
+        if not method:
+            try:
+                method, why, scored = recommend_methodology(row.requirements or '')
+            except Exception:
+                method = 'Scrum'
+
+        method = normalize_method_name(method or '')
+        phases = _default_phases_for_method(method)
+        return phases

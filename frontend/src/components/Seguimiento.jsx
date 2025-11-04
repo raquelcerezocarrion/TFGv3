@@ -22,8 +22,24 @@ export default function Seguimiento({ token, chats, onContinue }) {
   const [projectChatSession, setProjectChatSession] = useState(null)
   const [projectChatMessages, setProjectChatMessages] = useState(null)
   const [followUpProposal, setFollowUpProposal] = useState(null)
+  const [followUpView, setFollowUpView] = useState('actions') // 'actions' | 'chat'
 
   const base = useMemo(() => `http://${window.location.hostname}:8000`, [])
+
+  // Helper to parse phases from assistant/proposal text when backend didn't return phases
+  function parsePhasesFromText(text) {
+    if (!text) return []
+    const m = text.match(/Fases[:\s]+([^\n\r]+)/i)
+    if (!m) return []
+    const raw = m[1].trim()
+    const parts = raw.split(/→|->|\+|,/) .map(s => s.trim()).filter(Boolean)
+    return parts.map(p => {
+      const wk = p.match(/\((\s*\d+)\s*[swd]?\)/i)
+      const weeks = wk ? parseInt(wk[1].trim(), 10) : undefined
+      const name = p.replace(/\([^)]*\)/g, '').trim()
+      return { name, weeks, checklist: [] }
+    })
+  }
 
   // Helper: headers for authorized requests
   function authHeaders() {
@@ -227,10 +243,11 @@ export default function Seguimiento({ token, chats, onContinue }) {
       // Build messages: assistant content (the proposal) as assistant message
       const msgs = []
       if (p.requirements) msgs.push({ role: 'assistant', content: p.requirements, ts: p.created_at || new Date().toISOString() })
-      setProjectChatSession(sessionId)
-      setProjectChatMessages(msgs)
-      setFollowUpProposal(p)
-      setShowFollowUpChat(true)
+  setProjectChatSession(sessionId)
+  setProjectChatMessages(msgs)
+  setFollowUpView('actions')
+  setFollowUpProposal(p)
+  setShowFollowUpChat(true)
     } catch (e) {
       console.error('openProposalFollowUp', e)
       setError('No pude iniciar el seguimiento de la propuesta.')
@@ -477,98 +494,153 @@ export default function Seguimiento({ token, chats, onContinue }) {
                 </div>
               )}
             </div>
-            <button 
-              className="px-3 py-1 border rounded" 
-              onClick={() => {
-                setShowFollowUpChat(false);
-                setFollowUpProposal(null);
-                setProjectChatSession(null);
-                setProjectChatMessages(null);
-              }}
-            >
-              Volver a propuestas
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                className={`px-3 py-1 rounded text-sm ${followUpView === 'actions' ? 'bg-emerald-600 text-white' : 'border'}`}
+                onClick={() => setFollowUpView('actions')}
+              >
+                Acciones sugeridas
+              </button>
+
+              <button
+                className={`px-3 py-1 rounded text-sm border`}
+                onClick={async () => {
+                  if (!followUpProposal) return
+                  // ensure we have phases loaded for the proposal; try backend first, then parse from assistant text
+                  setSelectedProposal(followUpProposal)
+                  if (!phases || phases.length === 0) {
+                    // try to fetch from backend if proposal has id
+                    if (followUpProposal.id) {
+                      try {
+                        const res = await axios.get(`${base}/projects/${followUpProposal.id}/phases`)
+                        setPhases(res.data || [])
+                      } catch (e) {
+                        // ignore
+                      }
+                    }
+                    // still empty? try parse from assistant/proposal text
+                    if ((!phases || phases.length === 0) && followUpProposal.requirements) {
+                      const parsed = parsePhasesFromText(followUpProposal.requirements)
+                      if (parsed && parsed.length > 0) setPhases(parsed)
+                    }
+                    // fallback: if we have projectChatMessages (assistant content), try parse
+                    if ((!phases || phases.length === 0) && projectChatMessages && projectChatMessages.length > 0) {
+                      const parsed2 = parsePhasesFromText(projectChatMessages[0].content)
+                      if (parsed2 && parsed2.length > 0) setPhases(parsed2)
+                    }
+                  }
+                  setShowFollowUpChat(false)
+                  setStep(3)
+                }}
+              >
+                Ver fases
+              </button>
+
+              <button 
+                className="px-3 py-1 border rounded text-sm" 
+                onClick={() => {
+                  setShowFollowUpChat(false);
+                  setFollowUpProposal(null);
+                  setProjectChatSession(null);
+                  setProjectChatMessages(null);
+                }}
+              >
+                Volver a propuestas
+              </button>
+            </div>
           </div>
           <div className="flex-1 p-4 overflow-auto">
-            {/* Botones de acciones sugeridas */}
-            <div className="mb-4">
-              <h3 className="text-sm font-medium text-gray-700 mb-2">Acciones sugeridas:</h3>
-              <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
-                <button 
-                  className="p-3 text-left border rounded-lg hover:bg-gray-50 flex items-center gap-2"
-                  onClick={() => {
-                    const msg = "¿Puedes desglosar las tareas específicas para la fase de Discovery & CRC?";
-                    document.querySelector('textarea')?.focus();
-                    navigator.clipboard.writeText(msg);
-                  }}
-                >
-                  <span className="text-blue-600">📋</span>
-                  <span>Desglosar tareas de Discovery</span>
-                </button>
-                
-                <button 
-                  className="p-3 text-left border rounded-lg hover:bg-gray-50 flex items-center gap-2"
-                  onClick={() => {
-                    const msg = "¿Podrías sugerir algunos riesgos técnicos adicionales que debamos considerar?";
-                    document.querySelector('textarea')?.focus();
-                    navigator.clipboard.writeText(msg);
-                  }}
-                >
-                  <span className="text-yellow-600">⚠️</span>
-                  <span>Analizar riesgos técnicos</span>
-                </button>
+            {/* Conditionally show suggested actions or the chat */}
+            {followUpView === 'actions' && (
+              <div className="mb-4">
+                <h3 className="text-sm font-medium text-gray-700 mb-2">Acciones sugeridas:</h3>
+                <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
+                  <button 
+                    className="p-3 text-left border rounded-lg hover:bg-gray-50 flex items-center gap-2"
+                    onClick={() => {
+                      const msg = `Basándote en la metodología ${followUpProposal?.methodology || 'propuesta'} y el equipo definido, ¿podrías desglosar en detalle las tareas específicas de la fase inicial de Discovery y CRC? Necesito entender:\n1. Qué historias de usuario deberíamos priorizar\n2. Qué workshops o sesiones de refinamiento necesitamos\n3. Qué documentación técnica debemos preparar`;
+                      setExternalMessage(msg)
+                      setExternalMessageId(Date.now())
+                      setFollowUpView('chat')
+                    }}
+                  >
+                    <span className="text-blue-600">📋</span>
+                    <span>Desglosar tareas de Discovery</span>
+                  </button>
 
-                <button 
-                  className="p-3 text-left border rounded-lg hover:bg-gray-50 flex items-center gap-2"
-                  onClick={() => {
-                    const msg = "¿Puedes sugerir KPIs y métricas para medir el éxito del proyecto?";
-                    document.querySelector('textarea')?.focus();
-                    navigator.clipboard.writeText(msg);
-                  }}
-                >
-                  <span className="text-green-600">📊</span>
-                  <span>Definir KPIs del proyecto</span>
-                </button>
+                  <button 
+                    className="p-3 text-left border rounded-lg hover:bg-gray-50 flex items-center gap-2"
+                    onClick={() => {
+                      const msg = `Considerando el stack tecnológico del equipo (${followUpProposal?.requirements?.includes('Tech Stack') ? 'definido' : 'por definir'}) y los riesgos ya identificados:\n1. ¿Qué riesgos técnicos adicionales deberíamos considerar?\n2. ¿Qué medidas de mitigación sugieres para cada uno?\n3. ¿Cómo podríamos priorizar estos riesgos?`;
+                      setExternalMessage(msg)
+                      setExternalMessageId(Date.now())
+                      setFollowUpView('chat')
+                    }}
+                  >
+                    <span className="text-yellow-600">⚠️</span>
+                    <span>Analizar riesgos técnicos</span>
+                  </button>
 
-                <button 
-                  className="p-3 text-left border rounded-lg hover:bg-gray-50 flex items-center gap-2"
-                  onClick={() => {
-                    const msg = "¿Podrías elaborar un plan de pruebas y QA para el proyecto?";
-                    document.querySelector('textarea')?.focus();
-                    navigator.clipboard.writeText(msg);
-                  }}
-                >
-                  <span className="text-purple-600">🎯</span>
-                  <span>Plan de pruebas y QA</span>
-                </button>
+                  <button 
+                    className="p-3 text-left border rounded-lg hover:bg-gray-50 flex items-center gap-2"
+                    onClick={() => {
+                      const msg = `Para asegurar el éxito del proyecto y basándonos en el presupuesto de ${followUpProposal?.requirements?.match(/Presupuesto: ([^€]+)€/)?.[1] || 'asignado'} €:\n1. ¿Qué KPIs técnicos deberíamos monitorizar?\n2. ¿Qué métricas de calidad del código sugieres?\n3. ¿Cómo medimos el rendimiento del equipo?\n4. ¿Qué objetivos de negocio deberíamos trackear?`;
+                      setExternalMessage(msg)
+                      setExternalMessageId(Date.now())
+                      setFollowUpView('chat')
+                    }}
+                  >
+                    <span className="text-green-600">📊</span>
+                    <span>Definir KPIs del proyecto</span>
+                  </button>
 
-                <button 
-                  className="p-3 text-left border rounded-lg hover:bg-gray-50 flex items-center gap-2"
-                  onClick={() => {
-                    const msg = "¿Puedes sugerir una estrategia de despliegue y entrega continua?";
-                    document.querySelector('textarea')?.focus();
-                    navigator.clipboard.writeText(msg);
-                  }}
-                >
-                  <span className="text-indigo-600">🚀</span>
-                  <span>Estrategia de despliegue</span>
-                </button>
+                  <button 
+                    className="p-3 text-left border rounded-lg hover:bg-gray-50 flex items-center gap-2"
+                    onClick={() => {
+                      const msg = `Para la fase de Hardening & Pruebas de Aceptación:\n1. ¿Qué estrategia de testing recomiendas para este proyecto?\n2. ¿Qué tipos de pruebas deberíamos incluir?\n3. ¿Cómo organizamos los test sprints?\n4. ¿Qué herramientas de testing sugieres para el stack técnico propuesto?`;
+                      setExternalMessage(msg)
+                      setExternalMessageId(Date.now())
+                      setFollowUpView('chat')
+                    }}
+                  >
+                    <span className="text-purple-600">🎯</span>
+                    <span>Plan de pruebas y QA</span>
+                  </button>
 
-                <button 
-                  className="p-3 text-left border rounded-lg hover:bg-gray-50 flex items-center gap-2"
-                  onClick={() => {
-                    const msg = "¿Podrías detallar los entregables esperados para cada fase del proyecto?";
-                    document.querySelector('textarea')?.focus();
-                    navigator.clipboard.writeText(msg);
-                  }}
-                >
-                  <span className="text-orange-600">📦</span>
-                  <span>Definir entregables</span>
-                </button>
+                  <button 
+                    className="p-3 text-left border rounded-lg hover:bg-gray-50 flex items-center gap-2"
+                    onClick={() => {
+                      const msg = `Para la fase final de Release & Handover:\n1. ¿Qué estrategia de CI/CD recomiendas?\n2. ¿Cómo gestionamos los diferentes entornos?\n3. ¿Qué proceso de release sugieres?\n4. ¿Qué medidas de rollback y contingencia necesitamos?`;
+                      setExternalMessage(msg)
+                      setExternalMessageId(Date.now())
+                      setFollowUpView('chat')
+                    }}
+                  >
+                    <span className="text-indigo-600">🚀</span>
+                    <span>Estrategia de despliegue</span>
+                  </button>
+
+                  <button 
+                    className="p-3 text-left border rounded-lg hover:bg-gray-50 flex items-center gap-2"
+                    onClick={() => {
+                      const msg = `Para cada una de las fases del proyecto (${followUpProposal?.requirements?.match(/Fases: ([^→]+)/)?.[1] || 'definidas'}):\n1. ¿Qué entregables técnicos debemos generar?\n2. ¿Qué documentación es necesaria?\n3. ¿Qué criterios de aceptación sugieres para cada entregable?\n4. ¿Cómo validamos la calidad de cada entregable?`;
+                      setExternalMessage(msg)
+                      setExternalMessageId(Date.now())
+                      setFollowUpView('chat')
+                    }}
+                  >
+                    <span className="text-orange-600">📦</span>
+                    <span>Definir entregables</span>
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
-            <Chat token={token} loadedMessages={projectChatMessages} sessionId={projectChatSession} />
+            {followUpView === 'chat' && (
+              <div>
+                <Chat token={token} loadedMessages={projectChatMessages} sessionId={projectChatSession} externalMessage={externalMessage} externalMessageId={externalMessageId} />
+              </div>
+            )}
           </div>
         </div>
       )}

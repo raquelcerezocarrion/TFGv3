@@ -18,6 +18,14 @@ from backend.engine.context import (
     get_last_proposal, set_last_proposal,
     get_pending_change, set_pending_change, clear_pending_change
 )
+from backend.engine.actions import (
+    handle_discovery_tasks,
+    handle_risk_analysis,
+    handle_kpis_definition,
+    handle_qa_plan, 
+    handle_deployment_strategy,
+    handle_deliverables
+)
 
 # set_last_area es opcional (para “fuentes” por área); si no existe, hacemos no-op
 try:
@@ -26,6 +34,12 @@ except Exception:  # pragma: no cover
     def set_last_area(*a, **k):  # no-op si no existe
         return None
 
+# get_staff_roster es opcional; si no existe devolvemos lista vacía
+try:
+    from backend.engine.context import get_staff_roster
+except Exception:  # pragma: no cover
+    def get_staff_roster(*a, **k):
+        return []
 # Conocimiento de metodologías (explicaciones y comparativas + fuentes)
 from backend.knowledge.methodologies import (
     explain_methodology_choice,
@@ -443,6 +457,30 @@ def _pretty_proposal(p: Dict[str, Any]) -> str:
             lines.append(f"- {d}")
 
     return "\n".join(lines)
+
+
+def _project_context_summary(p: Optional[Dict[str, Any]]) -> str:
+    """Resumen corto (una línea o dos) con metodología, presupuesto y notas rápidas.
+    Útil para anteponer contexto a respuestas generadas por acciones.
+    """
+    if not p:
+        return "(Sin propuesta asociada)"
+    meth = p.get("methodology") or "(no definida)"
+    budget = p.get("budget") or {}
+    total = budget.get("total_eur")
+    try:
+        total_fmt = _eur(float(total)) if total is not None else "(no estimado)"
+    except Exception:
+        total_fmt = str(total) or "(no estimado)"
+    cont = float(((budget.get("assumptions") or {}).get("contingency_pct", 0)))
+    team = p.get("team") or []
+    team_brief = ", ".join(f"{t.get('role','?')} x{t.get('count',0)}" for t in team[:6])
+    if len(team) > 6:
+        team_brief += ", …"
+    parts = [f"Metodología: {meth}", f"Presupuesto estimado: {total_fmt} (contingencia {cont:.0f}%);"]
+    if team_brief:
+        parts.append(f"Equipo: {team_brief}")
+    return " • ".join(parts)
 
 
 
@@ -1553,6 +1591,27 @@ _CHANGE_PAT = re.compile(
     r"(?:\s+(?:en\s+vez\s+de|en\s+lugar\s+de)\s+(scrum|kanban|scrumban|xp|lean|crystal|fdd|dsdm|safe|devops))?",
     re.I
 )
+
+def _handle_suggested_action(text: str, proposal: Dict[str, Any]) -> Optional[str]:
+    """
+    Maneja las acciones sugeridas y devuelve la respuesta detallada correspondiente.
+    """
+    t = _norm(text)
+    
+    if "desglosar tareas de discovery" in t:
+        return handle_discovery_tasks(proposal)
+    elif "riesgos técnicos" in t:
+        return handle_risk_analysis(proposal)
+    elif "kpis del proyecto" in t:
+        return handle_kpis_definition(proposal)
+    elif "plan de pruebas" in t or "qa" in t:
+        return handle_qa_plan(proposal)
+    elif "estrategia de despliegue" in t:
+        return handle_deployment_strategy(proposal)
+    elif "definir entregables" in t:
+        return handle_deliverables(proposal)
+    
+    return None
 
 def _parse_change_request(text: str) -> Optional[Tuple[str, Optional[str]]]:
     t = _norm(text)
@@ -3391,9 +3450,20 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
         except Exception:
             pass
 
+        # Si no hay propuesta en sesión, intentar generar una provisional a partir
+        # de los requisitos guardados o del propio texto (como hace la sección
+        # de acciones guiadas más abajo). Si falla, devolver el mensaje instructivo.
         if not proposal:
-            return ("Aún no tengo una propuesta para analizar riesgos. "
-                    "Genera una con '/propuesta: ...' y luego te detallo riesgos y plan de prevención."), "Riesgos sin propuesta."
+            seed = req_text or text
+            try:
+                tmp = generate_proposal(seed)
+                info = METHODOLOGIES.get(tmp.get("methodology", ""), {})
+                tmp["methodology_sources"] = info.get("sources", [])
+                set_last_proposal(session_id, tmp, seed)
+                proposal = tmp
+            except Exception:
+                return ("Aún no tengo una propuesta para analizar riesgos. "
+                        "Genera una con '/propuesta: ...' y luego te detallo riesgos y plan de prevención."), "Riesgos sin propuesta."
 
         try:
             detailed_lines = _render_risks_detail(proposal)
@@ -3655,6 +3725,193 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
         except Exception:
             pass
         return _pretty_proposal(p), "Propuesta a partir de requisitos."
+
+    # === MANEJO DE ACCIONES GUIADAS ===
+    # Primero verificar si es una solicitud de acción específica
+    action_triggers = {
+        "discovery": ["descubrimiento", "alcance", "discovery", "kickoff"],
+        "risks": ["riesgo", "riesgos", "risk", "mitigacion"],
+        "kpis": ["kpi", "kpis", "metricas", "métricas", "objetivos", "metas"],
+        "qa": ["qa", "testing", "pruebas", "calidad"],
+        "deployment": ["despliegue", "deploy", "ci/cd", "release"],
+        "deliverables": ["entregables", "documentación", "documentacion", "artefactos"]
+    }
+    
+    t = _norm(text)
+    for action, keywords in action_triggers.items():
+        if any(k in t for k in keywords):
+            if not proposal:
+                # Intentar generar una propuesta provisional a partir de los requisitos
+                # guardados o del propio texto de la petición (por ejemplo cuando el
+                # frontend inserta un prompt al pulsar un botón). Si falla, pedir al
+                # usuario que cree una propuesta explícita.
+                seed = req_text or text
+                try:
+                    tmp = generate_proposal(seed)
+                    info = METHODOLOGIES.get(tmp.get("methodology", ""), {})
+                    tmp["methodology_sources"] = info.get("sources", [])
+                    # Guardamos la propuesta en la sesión para que siguientes acciones
+                    # la reutilicen sin regenerarla.
+                    set_last_proposal(session_id, tmp, seed)
+                    proposal = tmp
+                except Exception:
+                    return "Necesito una propuesta base para generar el detalle. Usa '/propuesta: ...' primero.", "Sin propuesta para acción."
+
+            # Ejecutar el handler correspondiente y adaptar la respuesta según la metodología propuesta
+            # Si el texto menciona explícitamente una metodología (p.ej. 'metodología XP'),
+            # forzamos la metodología de la propuesta a esa opción para que la respuesta
+            # esté alineada con lo que el usuario espera.
+            methods_in_text = _mentioned_methods(text)
+            if methods_in_text:
+                try:
+                    forced = methods_in_text[0]
+                    proposal["methodology"] = forced
+                    info = METHODOLOGIES.get(forced, {})
+                    proposal["methodology_sources"] = info.get("sources", [])
+                    # Persistir el cambio para próximas interacciones en la sesión
+                    try:
+                        set_last_proposal(session_id, proposal, req_text)
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+
+            if action == "discovery":
+                raw = handle_discovery_tasks(proposal)
+                tag = "Plan de discovery"
+            elif action == "risks":
+                raw = handle_risk_analysis(proposal)
+                tag = "Análisis de riesgos"
+            elif action == "kpis":
+                raw = handle_kpis_definition(proposal)
+                tag = "Definición de KPIs"
+            elif action == "qa":
+                raw = handle_qa_plan(proposal)
+                tag = "Plan de QA"
+            elif action == "deployment":
+                raw = handle_deployment_strategy(proposal)
+                tag = "Estrategia de despliegue"
+            elif action == "deliverables":
+                raw = handle_deliverables(proposal)
+                tag = "Plan de entregables"
+            else:
+                raw = ""
+                tag = "acción"
+
+            # Asegurarnos de que la salida final respete la metodología definida
+            # en la `proposal` (evita desalineos si handlers usan otra fuente).
+            try:
+                method_display = (proposal.get("methodology") or "").strip()
+                if method_display:
+                    # Reemplazar formas comunes como '(metodología X)'
+                    raw = re.sub(r"\(metodolog[ií]a [^\)]+\)", f"(metodología {method_display})", raw, flags=re.IGNORECASE)
+                    # Reemplazar 'Metodología: X' o 'metodología: X' en líneas
+                    raw = re.sub(r"(?i)metodolog[ií]a\s*[:\-]\s*[^\n\r]+", f"Metodología: {method_display}", raw)
+                    # Reemplazar encabezados simples 'metodología X' sin paréntesis
+                    raw = re.sub(r"(?i)\bmetodolog[ií]a\s+\w+\b", f"metodología {method_display}", raw)
+            except Exception:
+                pass
+
+            # Añadir adaptación por metodología si está disponible
+            try:
+                method = normalize_method_name((proposal.get("methodology") or "").strip())
+                minfo = METHODOLOGIES.get(method, {}) if method else {}
+
+                def _join(xs):
+                    return ", ".join(xs) if xs else "(no especificadas)"
+
+                extras: List[str] = []
+                # Contexto del proyecto (metodología, presupuesto, equipo breve)
+                ctx = _project_context_summary(proposal)
+
+                if minfo:
+                    # Encabezado contextual
+                    extras.append(f"Adaptación según metodología: {method}")
+
+                # Siempre anteponer el contexto del proyecto
+                if ctx:
+                    extras.insert(0, "Contexto del proyecto: " + ctx)
+
+                    # Prácticas y riesgos generales
+                    pract = minfo.get("practicas") or []
+                    riesgos = minfo.get("riesgos") or []
+                    if pract:
+                        extras.append("Prácticas clave: " + _join(pract))
+                    if riesgos:
+                        extras.append("Riesgos a vigilar: " + "; ".join(riesgos))
+
+                    # Recomendaciones específicas por acción
+                    if action == "discovery":
+                        if method.lower() == "scrum":
+                            extras.append("- En Scrum: planifica un Sprint 0 o un Kick-off de 1–2 semanas para alinear backlog, Definition of Ready y criterios de aceptación.")
+                        elif method.lower() == "xp":
+                            extras.append("- En XP: incorpora prácticas técnicas desde el inicio (TDD, pair programming) para validar hipótesis técnicas tempranas.")
+                        elif method.lower() == "kanban":
+                            extras.append("- En Kanban: prioriza por flujo y coste de retraso; usa políticas explícitas de entrada para las actividades de discovery.")
+                        else:
+                            extras.append("- Asegúrate de adaptar workshops y duración al ritmo de la metodología elegida.")
+
+                    if action == "risks":
+                        extras.append("- Prioriza riesgos por probabilidad × impacto y alínea mitigaciones con la cadencia del equipo.")
+                        if method.lower() in ("scrum", "scrumban"):
+                            extras.append("- En Scrum: revisa riesgos cada sprint review/retrospective y asigna owners para mitigaciones.")
+                        if method.lower() == "xp":
+                            extras.append("- En XP: mitiga con pruebas automáticas, TDD y revisiones de diseño tempranas.")
+
+                    if action == "kpis":
+                        # Sugerir KPIs según metodología
+                        if method.lower() == "scrum":
+                            extras.append("- KPIs sugeridos (Scrum): velocidad del equipo, sprint completion rate, lead time por historia, defect escape rate.")
+                        elif method.lower() == "kanban":
+                            extras.append("- KPIs sugeridos (Kanban): cycle time, lead time, throughput, WIP per column.")
+                        elif method.lower() == "xp":
+                            extras.append("- KPIs sugeridos (XP): cobertura de tests, defect density, tiempo medio de entrega, tiempo de restauración tras fallo.")
+                        else:
+                            extras.append("- KPIs técnicos y de negocio: mezcla métricas de calidad, entrega y adopción. Ajusta según tu metodología.")
+
+                    if action == "qa":
+                        if method.lower() == "xp":
+                            extras.append("- En XP: enfatiza TDD, integración continua y pair programming. Integrar suites de tests en cada commit.")
+                        elif method.lower() == "scrum":
+                            extras.append("- En Scrum: integra QA dentro del sprint; automatiza tests y corre en CI antes del merge.")
+                        elif method.lower() == "kanban":
+                            extras.append("- En Kanban: pruebas continuas y monitorización; establece gates de calidad en el flujo.")
+                        else:
+                            extras.append("- Define niveles de testing (unit/integration/e2e/performance) y automatízalos en CI.")
+
+                    if action == "deployment":
+                        extras.append("- Estrategias generales: CI/CD, despliegues canary/blue-green y rollback automatizado.")
+                        if method.lower() in ("devops",):
+                            extras.append("- En DevOps: Infrastructure as Code, pipelines reproducibles y observabilidad desde el día 1.")
+                        if method.lower() == "safe":
+                            extras.append("- En SAFe: coordina Program Increments y alineamiento entre equipos; añade runbooks y escalado de alertas.")
+
+                    if action == "deliverables":
+                        if method.lower() == "scrum":
+                            extras.append("- Entregables clave (Scrum): Incremento potencialmente entregable, Definition of Done, backlog priorizado, release notes por sprint.")
+                        elif method.lower() == "kanban":
+                            extras.append("- Entregables (Kanban): flujo de artefactos, pipeline de entrega y documentación de políticas de entrada/salida.")
+                        elif method.lower() == "xp":
+                            extras.append("- Entregables (XP): código con cobertura de tests, ADRs, scripts de despliegue y documentación mínima pero suficiente.")
+
+                    # Añadir fuentes metodológicas si existen
+                    fuentes = minfo.get("fuentes") or []
+                    if fuentes:
+                        extras.append("Fuentes y referencias:")
+                        for f in fuentes[:3]:
+                            autor = f.get("autor", "")
+                            titulo = f.get("titulo", "")
+                            anio = f.get("anio", "")
+                            url = f.get("url", "")
+                            extras.append(f"- {autor}: {titulo} ({anio}) — {url}")
+
+                if extras:
+                    raw = raw + "\n\n---\n\n" + "\n".join(extras)
+            except Exception:
+                # no fallar si algo del formato no cuadra
+                pass
+
+            return raw, tag
 
     # GAPS & FORMACIÓN BAJO DEMANDA
     if _asks_training_plan(text):
