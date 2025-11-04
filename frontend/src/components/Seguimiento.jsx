@@ -23,6 +23,8 @@ export default function Seguimiento({ token, chats, onContinue }) {
   const [projectChatMessages, setProjectChatMessages] = useState(null)
   const [followUpProposal, setFollowUpProposal] = useState(null)
   const [followUpView, setFollowUpView] = useState('actions') // 'actions' | 'chat'
+  const [externalMessage, setExternalMessage] = useState(null)
+  const [externalMessageId, setExternalMessageId] = useState(null)
 
   const base = useMemo(() => `http://${window.location.hostname}:8000`, [])
 
@@ -166,6 +168,29 @@ export default function Seguimiento({ token, chats, onContinue }) {
 
   function selectPhase(idx) {
     setSelectedPhaseIdx(idx)
+    // if description missing for this phase, request it from backend
+    try {
+      const ph = (phases && phases[idx]) || null
+      if (ph && (!ph.description || ph.description === '' ) && selectedProposal && selectedProposal.id) {
+        ;(async () => {
+          try {
+            const res = await axios.get(`${base}/projects/${selectedProposal.id}/phases/${idx}/definition`)
+            const def = res.data && res.data.definition
+            if (def) {
+              setPhases(prev => {
+                const copy = (prev || []).slice()
+                copy[idx] = { ...(copy[idx] || {}), description: def }
+                return copy
+              })
+            }
+          } catch (e) {
+            // ignore
+          }
+        })()
+      }
+    } catch (e) {
+      // ignore
+    }
   }
 
   // Small subcomponents for clarity
@@ -305,28 +330,51 @@ export default function Seguimiento({ token, chats, onContinue }) {
 
   // New: open proposal chat scoped to a specific phase
   async function openProposalPhaseChat(proposal, phaseIdx) {
+    // Show phase info immediately so the user sees details while we open the session
     setError(null)
+    const phase = (phases && phases[phaseIdx]) || null
+    const initialMsgs = []
+    if (phase) {
+      const phaseText = `Contexto de la fase seleccionada:\nNombre: ${phase.name}\nDescripción: ${phase.description || ''}\nChecklist:\n${(phase.checklist || []).map((t, i) => `${i+1}. ${t}`).join('\n')}`
+      initialMsgs.push({ role: 'user', content: phaseText, ts: new Date().toISOString() })
+    }
+    // set UI to phase view immediately
+    setProjectChatMessages(initialMsgs)
+    setSelectedPhaseIdx(phaseIdx)
+    setStep(4)
+
+    // Request definition if missing
+    const ph = (phases && phases[phaseIdx]) || null
+    if (ph && (!ph.description || ph.description === '') && proposal && proposal.id) {
+      try {
+        const r = await axios.get(`${base}/projects/${proposal.id}/phases/${phaseIdx}/definition`)
+        const d = r.data && r.data.definition
+        if (d) {
+          setPhases(prev => {
+            const copy = (prev || []).slice()
+            copy[phaseIdx] = { ...(copy[phaseIdx] || {}), description: d }
+            return copy
+          })
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    // then open backend session asynchronously and append assistant summary when ready
     setLoading(true)
     try {
       const res = await axios.get(`${base}/projects/${proposal.id}/open_session`)
       const sid = res.data.session_id
       const assistant_summary = res.data.assistant_summary
-      const msgs = []
-      // include phase context as initial user message so assistant is scoped
-      const phase = (phases && phases[phaseIdx]) || null
-  if (phase) {
-        const phaseText = `Contexto de la fase seleccionada:\nNombre: ${phase.name}\nDescripción: ${phase.description || ''}\nChecklist:\n${(phase.checklist || []).map((t, i) => `${i+1}. ${t}`).join('\n')}`
-        msgs.push({ role: 'user', content: phaseText, ts: new Date().toISOString() })
-      }
+      const msgs = [...initialMsgs]
       if (assistant_summary) msgs.push({ role: 'assistant', content: assistant_summary, ts: new Date().toISOString() })
       setProjectChatSession(sid)
       setProjectChatMessages(msgs)
-      // move to phase view + chat
-      setSelectedPhaseIdx(phaseIdx)
-      setStep(4)
     } catch (e) {
       console.error('openProposalPhaseChat', e)
-      setError('No pude abrir el chat de la fase.')
+      // don't block the UI; show an inline error but keep phase view
+      setError('No pude abrir el chat de la fase (el detalle de la fase sí está disponible).')
     } finally { setLoading(false) }
   }
 
@@ -453,31 +501,50 @@ export default function Seguimiento({ token, chats, onContinue }) {
 
         {/* Step 4: phase view + chat - show only selected phase info and chat */}
         {step === 4 && selectedProposal && selectedPhaseIdx !== null && (
-          <div className="max-w-4xl">
-            <div className="mb-4 flex items-center justify-between">
+          <div className="max-w-6xl">
+            <div className="mb-4 flex items-start justify-between">
               <div>
-                <h3 className="text-xl font-semibold">{selectedProposal.id ? `Propuesta #${selectedProposal.id}` : selectedChat?.title}</h3>
-                <div className="text-sm text-gray-500">Fase: {phases[selectedPhaseIdx]?.name}</div>
+                <h3 className="text-2xl font-semibold">{selectedProposal.id ? `Propuesta #${selectedProposal.id}` : selectedChat?.title}</h3>
+                <div className="text-sm text-gray-500 mt-1">Fase: <span className="font-medium">{phases[selectedPhaseIdx]?.name}</span></div>
               </div>
               <div className="flex items-center gap-2">
-                <button className="px-3 py-1 border rounded text-sm" onClick={() => { setStep(3); setProjectChatSession(null); setProjectChatMessages(null); }}>Volver a fases</button>
-                <button className="px-3 py-1 border rounded text-sm" onClick={() => { setStep(1); setSelectedChat(null); setSelectedProposal(null); setPhases([]); setProjectChatSession(null); setProjectChatMessages(null); }}>Volver a proyectos</button>
+                <button className="px-3 py-2 border rounded-lg text-sm hover:bg-gray-50" onClick={() => { setStep(3); setProjectChatSession(null); setProjectChatMessages(null); }}>Volver a fases</button>
+                <button className="px-3 py-2 border rounded-lg text-sm hover:bg-gray-50" onClick={() => { setStep(1); setSelectedChat(null); setSelectedProposal(null); setPhases([]); setProjectChatSession(null); setProjectChatMessages(null); }}>Volver a proyectos</button>
               </div>
             </div>
 
-            <div className="mb-4 p-4 border rounded bg-white shadow-sm">
-              <div className="font-semibold">{phases[selectedPhaseIdx]?.name}</div>
-              <div className="text-sm text-gray-700 mt-2">{phases[selectedPhaseIdx]?.description || 'Sin descripción.'}</div>
-              <div className="mt-3">
-                <div className="font-medium">Checklist</div>
-                <ul className="list-disc list-inside mt-2">
-                  {(phases[selectedPhaseIdx]?.checklist || []).map((t, i) => <li key={i} className="py-0.5 text-sm">{t}</li>)}
-                </ul>
-              </div>
-            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <aside className="md:col-span-1">
+                <div className="p-4 border rounded-lg bg-white shadow-sm sticky top-6">
+                  <div className="text-lg font-semibold mb-2">{phases[selectedPhaseIdx]?.name}</div>
+                  <div className="text-sm text-gray-700 mb-4">{phases[selectedPhaseIdx]?.description || 'Sin descripción.'}</div>
 
-            <div className="p-0 bg-white rounded">
-              <Chat token={token} loadedMessages={projectChatMessages} sessionId={projectChatSession} />
+                  <div className="mb-3">
+                    <div className="font-medium text-sm mb-2">Checklist sugerida</div>
+                    <ul className="list-decimal list-inside space-y-2 text-sm">
+                      {(phases[selectedPhaseIdx]?.checklist || []).map((t, i) => <li key={i} className="text-sm">{t}</li>)}
+                    </ul>
+                  </div>
+
+                  <div className="mt-4 flex flex-col gap-2">
+                    <button className="w-full px-3 py-2 bg-blue-600 text-white rounded-md" onClick={() => {
+                      const name = phases[selectedPhaseIdx]?.name || ''
+                      const msg = `Quiero hacer preguntas sobre la fase "${name}". Por favor, resume los puntos clave y dime qué dudas debería plantear al equipo.`
+                      setExternalMessage(msg)
+                      setExternalMessageId(Date.now())
+                    }}>Preguntar sobre esta fase</button>
+                    <button className="w-full px-3 py-2 border rounded-md text-sm" onClick={() => createRunForProposal()} disabled={runLoading}>{runLoading ? 'Iniciando…' : 'Iniciar seguimiento'}</button>
+                  </div>
+                </div>
+              </aside>
+
+              <main className="md:col-span-2 flex flex-col gap-4">
+                <div className="p-0 bg-white rounded-lg shadow-sm h-[60vh] flex flex-col overflow-hidden">
+                  <div className="flex-1 overflow-auto">
+                    <Chat token={token} loadedMessages={projectChatMessages} sessionId={projectChatSession} externalMessage={externalMessage} externalMessageId={externalMessageId} />
+                  </div>
+                </div>
+              </main>
             </div>
           </div>
         )}

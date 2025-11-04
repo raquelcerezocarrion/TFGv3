@@ -380,7 +380,7 @@ def convert_chat_block_to_proposal(chat_id: int, payload: Dict[str, Any]):
     return {"proposal_id": pid, "session_id": sid, "created_at": datetime.utcnow().isoformat()}
 
 
-@router.get("/projects/{proposal_id}/phases")
+@router.get("/{proposal_id}/phases")
 def get_proposal_phases(proposal_id: int):
     """Devuelve una lista de fases para una propuesta dada.
     Reglas:
@@ -452,12 +452,32 @@ def get_proposal_phases(proposal_id: int):
                 ("Despliegue", 1),
             ]
 
+        def _phase_description(method: str, name: str) -> str:
+            nn = (name or '').lower()
+            if 'descub' in nn or 'incepción' in nn or 'inception' in nn:
+                return 'Fase de descubrimiento: validar hipótesis, identificar stakeholders y priorizar backlog.'
+            if 'sprint' in nn or 'iter' in nn or 'desarrollo' in nn:
+                return 'Entrega iterativa de funcionalidad siguiendo la priorización del backlog.'
+            if 'qa' in nn or 'prueb' in nn or 'hardening' in nn:
+                return 'Pruebas, validación y corrección de defectos antes del despliegue.'
+            if 'deploy' in nn or 'desplieg' in nn or 'release' in nn:
+                return 'Preparación y ejecución del despliegue a entornos de producción.'
+            if 'oper' in nn or 'monitor' in nn:
+                return 'Operación, monitorización y mejora continua post-release.'
+            if 'planning' in nn or 'pi planning' in nn:
+                return 'Planificación a nivel de programa para coordinar equipos y objetivos.'
+            if 'backlog' in nn or 'prioriz' in nn:
+                return 'Organización y priorización de las tareas pendientes y epics.'
+            # fallback
+            return f'Descripción de la fase "{name}" relacionada con la metodología {method}.'
+
         out = []
         for idx, (n, w) in enumerate(names):
             out.append({
                 "name": n,
                 "weeks": w,
                 "phase_idx": idx,
+                "description": _phase_description(method, n),
                 "checklist": _phase_checklist_from_method(method, n)
             })
         return out
@@ -476,11 +496,15 @@ def get_proposal_phases(proposal_id: int):
                     name = ph.get('name') or f"Fase {i+1}"
                     weeks = ph.get('weeks')
                     checklist = ph.get('checklist') or _phase_checklist_from_method(pj.get('methodology'), name)
+                    description = ph.get('description') or (
+                        f'Descripción de la fase "{name}" basada en la metodología {pj.get("methodology") or "desconocida"}.'
+                    )
                 else:
                     name = str(ph)
                     weeks = None
                     checklist = _phase_checklist_from_method(pj.get('methodology'), name)
-                out.append({"name": name, "weeks": weeks, "phase_idx": i, "checklist": checklist})
+                    description = f'Descripción de la fase "{name}" basada en la metodología {pj.get("methodology") or "desconocida"}.'
+                out.append({"name": name, "weeks": weeks, "phase_idx": i, "description": description, "checklist": checklist})
             return out
 
         method = (pj.get('methodology') or '').strip() or None
@@ -493,3 +517,79 @@ def get_proposal_phases(proposal_id: int):
         method = normalize_method_name(method or '')
         phases = _default_phases_for_method(method)
         return phases
+
+
+@router.get("/{proposal_id}/open_session")
+def open_session_for_proposal(proposal_id: int):
+    """Crea una session_id temporal para abrir un chat contextual sobre la propuesta
+    y devuelve un `assistant_summary` que el frontend puede mostrar al inicializar el chat.
+    """
+    from backend.memory.state_store import SessionLocal, ProposalLog
+    from datetime import datetime
+
+    with SessionLocal() as db:
+        row = db.query(ProposalLog).filter(ProposalLog.id == proposal_id).first()
+        if not row:
+            raise HTTPException(status_code=404, detail="Propuesta no encontrada")
+
+        pj = row.proposal_json or {}
+        # session id temporal para el frontend
+        sid = f"proposal_{proposal_id}_{int(datetime.utcnow().timestamp())}"
+
+        # Intentar generar un resumen legible: preferir estructura de propuesta
+        try:
+            if isinstance(pj, dict) and pj.get('methodology'):
+                summary = _pretty_proposal(pj)
+            else:
+                summary = pj.get('assistant_block') or pj.get('requirements') or ''
+        except Exception:
+            summary = pj.get('assistant_block') or pj.get('requirements') or ''
+
+        return {"session_id": sid, "assistant_summary": summary}
+
+
+@router.get("/{proposal_id}/phases/{phase_idx}/definition")
+def get_phase_definition(proposal_id: int, phase_idx: int):
+    """Devuelve la definición ampliada de una fase concreta.
+    Si la fase almacenada/plantilla ya incluye 'description' la devuelve.
+    En caso contrario, intenta usar la función de explicación del brain
+    para generar una descripción detallada contextualizada en la propuesta.
+    """
+    from backend.memory.state_store import SessionLocal, ProposalLog
+    try:
+        # intentar reutilizar la lista de fases ya generada
+        phases = get_proposal_phases(proposal_id)
+    except HTTPException:
+        raise
+    except Exception:
+        phases = []
+
+    if not phases or phase_idx < 0 or phase_idx >= len(phases):
+        raise HTTPException(status_code=404, detail="Fase no encontrada")
+
+    ph = phases[phase_idx]
+    desc = ph.get('description')
+    if desc:
+        return {"definition": desc}
+
+    # si no hay descripción, intentar usar brain._explain_specific_phase
+    try:
+        from backend.engine.brain import _explain_specific_phase
+        # recuperar propuesta completa para contexto
+        with SessionLocal() as db:
+            row = db.query(ProposalLog).filter(ProposalLog.id == proposal_id).first()
+            if row:
+                pj = row.proposal_json or {}
+            else:
+                pj = {}
+
+        # _explain_specific_phase espera el texto preguntado y la proposal dict
+        asked = f"¿Qué es la fase {ph.get('name')}?"
+        expl = _explain_specific_phase(asked, pj) if callable(_explain_specific_phase) else None
+        if expl:
+            return {"definition": expl}
+    except Exception:
+        pass
+
+    # fallback genérico
+    return {"definition": ph.get('description') or f"Descripción de la fase '{ph.get('name')}'."}
