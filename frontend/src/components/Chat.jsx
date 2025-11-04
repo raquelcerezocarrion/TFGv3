@@ -153,11 +153,11 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
         {(onSaveCurrentChat || onSaveExistingChat) && (
           <div className="relative">
             <button className="px-3 py-2 border rounded-xl hover:bg-gray-50" onClick={() => setShowSaveDialog(true)}>
-              {selectedChatId ? 'Guardar cambios' : 'Guardar chat'}
+              {selectedChatId ? 'Guardar cambios' : 'Guardar proyecto'}
             </button>
             {showSaveDialog && (
               <div className="absolute right-0 mt-2 p-3 bg-white border rounded-xl shadow-lg w-80">
-                <div className="mb-2 font-medium">Título del chat</div>
+                <div className="mb-2 font-medium">Título del proyecto</div>
                 <input className="w-full border rounded px-2 py-1 mb-2" value={saveTitle} onChange={(e)=>setSaveTitle(e.target.value)} placeholder="Título (opcional)" />
                 <div className="flex justify-end gap-2">
                   <button className="px-2 py-1 border rounded" onClick={()=>{ setShowSaveDialog(false); setSaveTitle('') }}>Cancelar</button>

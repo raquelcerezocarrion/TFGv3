@@ -1,15 +1,12 @@
 import React, { useMemo, useState } from 'react'
 
 /**
- * Sidebar con búsqueda, nuevo chat y lista de chats guardados.
- * Añade el botón "Empleados".
+ * Sidebar de Proyectos: búsqueda, nuevo proyecto y lista de proyectos guardados.
  */
 export default function Sidebar({
   chats = [],
   onSelect,
   onNew,
-  onProfile,
-  onEmployees,   // ← nuevo
   onRename,
   onDelete,
   onContinue
@@ -43,30 +40,14 @@ export default function Sidebar({
             className="px-3 py-2 rounded-xl bg-emerald-600 text-white hover:opacity-90 transition"
             onClick={() => onNew?.()}
           >
-            Nuevo chat
+            Nuevo proyecto
           </button>
-          <div className="flex items-center gap-2">
-            <button
-              className="px-3 py-2 rounded-xl border hover:bg-gray-50 transition"
-              onClick={() => onEmployees?.()}   // ← aquí
-              title="Empleados"
-            >
-              Empleados
-            </button>
-            <button
-              className="px-3 py-2 rounded-xl border hover:bg-gray-50 transition"
-              onClick={() => onProfile?.()}
-              title="Perfil"
-            >
-              Perfil
-            </button>
-          </div>
         </div>
 
         <div className="mt-3">
           <input
             className="w-full rounded-xl border px-3 py-2 text-sm"
-            placeholder="Buscar chats…"
+            placeholder="Buscar proyectos…"
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
@@ -87,7 +68,7 @@ export default function Sidebar({
                   <button className="text-left w-full" onClick={() => onSelect?.(c)}>
                     {!isEditing ? (
                       <>
-                        <div className="font-medium line-clamp-1">{c.title || `Chat ${c.id}`}</div>
+                        <div className="font-medium line-clamp-1">{c.title || `Proyecto ${c.id}`}</div>
                         <div className="text-[11px] text-gray-500">{new Date(c.updated_at).toLocaleString()}</div>
                       </>
                     ) : (
@@ -107,7 +88,7 @@ export default function Sidebar({
 
                   {!isEditing && (
                     <div className="mt-2 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition">
-                      <button className="px-2 py-1 text-xs rounded-lg border" onClick={() => onContinue?.(c)}>Cargar y continuar</button>
+                      <button className="px-2 py-1 text-xs rounded-lg border" onClick={() => onContinue?.(c)}>Abrir y continuar</button>
                       <button className="px-2 py-1 text-xs rounded-lg border" onClick={() => startEdit(c)}>Renombrar</button>
                       <button className="px-2 py-1 text-xs rounded-lg border text-red-600" onClick={() => onDelete?.(c.id)}>Eliminar</button>
                     </div>

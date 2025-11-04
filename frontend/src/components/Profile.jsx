@@ -59,7 +59,7 @@ export default function Profile({ token, onOpenChat, logout }){
       {/* Removed inline save/edit form - Profile should only list saved chats */}
 
       <div>
-        <h3 className="font-medium mb-2">Chats guardados</h3>
+        <h3 className="font-medium mb-2">Proyectos guardados</h3>
         <div className="mb-3">
           <button className="px-3 py-1 bg-red-600 text-white rounded" onClick={()=>{
             if(typeof logout === 'function'){
@@ -71,12 +71,12 @@ export default function Profile({ token, onOpenChat, logout }){
             }
           }}>Cerrar sesión</button>
         </div>
-        {chats.length === 0 && <div className="text-sm text-gray-500">No hay chats guardados.</div>}
+        {chats.length === 0 && <div className="text-sm text-gray-500">No hay proyectos guardados.</div>}
         <div className="space-y-2">
           {chats.map(c => (
             <div key={c.id} className="border rounded p-2">
               <button className="text-left w-full" onClick={() => onOpenChat ? onOpenChat(c) : null}>
-                <div className="font-medium">{c.title || `Chat ${c.id}`}</div>
+                <div className="font-medium">{c.title || `Proyecto ${c.id}`}</div>
                 <div className="text-xs text-gray-500">{new Date(c.updated_at).toLocaleString()}</div>
               </button>
             </div>

@@ -3,6 +3,7 @@ import Chat from './components/Chat.jsx'
 import Auth from './components/Auth.jsx'
 import Profile from './components/Profile.jsx'
 import Employees from './components/Employees.jsx'   // ← nuevo
+import TopNav from './components/TopNav.jsx'
 import Sidebar from './components/Sidebar.jsx'
 import axios from 'axios'
 
@@ -12,7 +13,7 @@ export default function App() {
   const onLogin = (t) => { localStorage.setItem('tfg_token', t); setToken(t) }
 
   const [chats, setChats] = useState([])
-  const [view, setView] = useState('chat') // 'chat' | 'profile' | 'employees'
+  const [view, setView] = useState('chat') // 'chat' (Proyectos) | 'profile' | 'employees'
   const [loadedMessages, setLoadedMessages] = useState(null)
   const [selectedChatId, setSelectedChatId] = useState(null)
   const [sessionIdForChat, setSessionIdForChat] = useState(null)
@@ -53,14 +54,14 @@ export default function App() {
     try {
       if (!token) {
         // prevenimos intentos anónimos; el backend devuelve 401 si no hay token
-        window.alert('Debes iniciar sesión para crear un chat.')
+        window.alert('Debes iniciar sesión para crear un proyecto.')
         return
       }
-      const title = window.prompt('Título del chat:', 'Nuevo chat')
+      const title = window.prompt('Título del proyecto:', 'Nuevo proyecto')
       if (title === null) return // usuario canceló
       const base = `http://${window.location.hostname}:8000`
       // El endpoint exige 'content' no vacío; usamos un array JSON vacío como contenido inicial
-      const payload = { title: title || `Chat ${new Date().toLocaleString()}`, content: JSON.stringify([]) }
+      const payload = { title: title || `Proyecto ${new Date().toLocaleString()}`, content: JSON.stringify([]) }
       let res
       try {
         res = await axios.post(`${base}/user/chats`, payload, { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } })
@@ -77,16 +78,16 @@ export default function App() {
         setSelectedChatId(null)
       }
       setView('chat')
-    } catch (e) { console.error('new chat', e) }
+    } catch (e) { console.error('new project', e) }
   }
   const onProfile   = () => setView('profile')
   const onEmployees = () => setView('employees')
 
   const onSaveCurrentChat = async (messages, title = null) => {
     try {
-      if (!token) { window.alert('Debes iniciar sesión para guardar chats.'); return }
+  if (!token) { window.alert('Debes iniciar sesión para guardar proyectos.'); return }
       const base = `http://${window.location.hostname}:8000`
-      const payload = { title: title || `Chat ${new Date().toLocaleString()}`, content: JSON.stringify(messages) }
+  const payload = { title: title || `Proyecto ${new Date().toLocaleString()}`, content: JSON.stringify(messages) }
       try {
         await axios.post(`${base}/user/chats`, payload, { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } })
         await fetchChats()
@@ -98,7 +99,7 @@ export default function App() {
 
   const onSaveExistingChat = async (chatId, messages, title = null) => {
     try {
-      if (!token) { window.alert('Debes iniciar sesión para guardar cambios.'); return }
+  if (!token) { window.alert('Debes iniciar sesión para guardar cambios.'); return }
       const base = `http://${window.location.hostname}:8000`
       const body = { content: JSON.stringify(messages) }
       if (title) body.title = title
@@ -113,7 +114,7 @@ export default function App() {
 
   const onRename = async (chatId, newTitle) => {
     try {
-      if (!token) { window.alert('Debes iniciar sesión para renombrar chats.'); return }
+  if (!token) { window.alert('Debes iniciar sesión para renombrar proyectos.'); return }
       const base = `http://${window.location.hostname}:8000`
       // Enviar solo el título para evitar sobreescribir el contenido con cadena vacía
       try {
@@ -127,7 +128,7 @@ export default function App() {
 
   const onDelete = async (chatId) => {
     try {
-      if (!token) { window.alert('Debes iniciar sesión para eliminar chats.'); return }
+  if (!token) { window.alert('Debes iniciar sesión para eliminar proyectos.'); return }
       const base = `http://${window.location.hostname}:8000`
       try {
         await axios.delete(`${base}/user/chats/${chatId}`, { headers: { Authorization: `Bearer ${token}` } })
@@ -140,7 +141,7 @@ export default function App() {
 
   const onContinue = async (chat) => {
     try {
-      if (!token) { window.alert('Debes iniciar sesión para continuar chats.'); return }
+  if (!token) { window.alert('Debes iniciar sesión para continuar proyectos.'); return }
       const base = `http://${window.location.hostname}:8000`
       try {
         const r = await axios.post(`${base}/user/chats/${chat.id}/continue`, {}, { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } })
@@ -155,7 +156,7 @@ export default function App() {
     } catch (e) { console.error('continue', e) }
   }
 
-  const showBackToChat = token && (view === 'profile' || view === 'employees')
+  // Top navigation controls the visible section; Sidebar is only shown in Proyectos (view === 'chat')
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-emerald-50">
@@ -163,12 +164,13 @@ export default function App() {
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="font-semibold">Assistant · Propuestas</div>
           {token && (
-            <button
-              className="text-sm text-gray-600 hover:text-gray-800"
-              onClick={() => setView(v => (v === 'chat' ? 'profile' : 'chat'))}
-            >
-              {showBackToChat ? 'Volver al chat' : 'Mi perfil'}
-            </button>
+            <TopNav
+              current={view === 'employees' ? 'employees' : view === 'profile' ? 'profile' : 'projects'}
+              onGoProjects={() => setView('chat')}
+              onGoEmployees={() => setView('employees')}
+              onGoProfile={() => setView('profile')}
+              onLogout={logout}
+            />
           )}
         </div>
       </header>
@@ -181,18 +183,18 @@ export default function App() {
             </div>
           ) : (
             <>
+              {view === 'chat' && (
               <div className="w-80 flex-shrink-0 mr-4">
                 <Sidebar
                   chats={chats}
                   onSelect={onSelectChat}
                   onNew={onNew}
-                  onProfile={onProfile}
-                  onEmployees={onEmployees}     // ← nuevo
                   onRename={onRename}
                   onDelete={onDelete}
                   onContinue={onContinue}
                 />
               </div>
+              )}
 
               <div className="flex-1">
                 {view === 'profile' ? (
