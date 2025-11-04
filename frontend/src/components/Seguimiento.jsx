@@ -490,6 +490,84 @@ export default function Seguimiento({ token, chats, onContinue }) {
             </button>
           </div>
           <div className="flex-1 p-4 overflow-auto">
+            {/* Botones de acciones sugeridas */}
+            <div className="mb-4">
+              <h3 className="text-sm font-medium text-gray-700 mb-2">Acciones sugeridas:</h3>
+              <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
+                <button 
+                  className="p-3 text-left border rounded-lg hover:bg-gray-50 flex items-center gap-2"
+                  onClick={() => {
+                    const msg = "¿Puedes desglosar las tareas específicas para la fase de Discovery & CRC?";
+                    document.querySelector('textarea')?.focus();
+                    navigator.clipboard.writeText(msg);
+                  }}
+                >
+                  <span className="text-blue-600">📋</span>
+                  <span>Desglosar tareas de Discovery</span>
+                </button>
+                
+                <button 
+                  className="p-3 text-left border rounded-lg hover:bg-gray-50 flex items-center gap-2"
+                  onClick={() => {
+                    const msg = "¿Podrías sugerir algunos riesgos técnicos adicionales que debamos considerar?";
+                    document.querySelector('textarea')?.focus();
+                    navigator.clipboard.writeText(msg);
+                  }}
+                >
+                  <span className="text-yellow-600">⚠️</span>
+                  <span>Analizar riesgos técnicos</span>
+                </button>
+
+                <button 
+                  className="p-3 text-left border rounded-lg hover:bg-gray-50 flex items-center gap-2"
+                  onClick={() => {
+                    const msg = "¿Puedes sugerir KPIs y métricas para medir el éxito del proyecto?";
+                    document.querySelector('textarea')?.focus();
+                    navigator.clipboard.writeText(msg);
+                  }}
+                >
+                  <span className="text-green-600">📊</span>
+                  <span>Definir KPIs del proyecto</span>
+                </button>
+
+                <button 
+                  className="p-3 text-left border rounded-lg hover:bg-gray-50 flex items-center gap-2"
+                  onClick={() => {
+                    const msg = "¿Podrías elaborar un plan de pruebas y QA para el proyecto?";
+                    document.querySelector('textarea')?.focus();
+                    navigator.clipboard.writeText(msg);
+                  }}
+                >
+                  <span className="text-purple-600">🎯</span>
+                  <span>Plan de pruebas y QA</span>
+                </button>
+
+                <button 
+                  className="p-3 text-left border rounded-lg hover:bg-gray-50 flex items-center gap-2"
+                  onClick={() => {
+                    const msg = "¿Puedes sugerir una estrategia de despliegue y entrega continua?";
+                    document.querySelector('textarea')?.focus();
+                    navigator.clipboard.writeText(msg);
+                  }}
+                >
+                  <span className="text-indigo-600">🚀</span>
+                  <span>Estrategia de despliegue</span>
+                </button>
+
+                <button 
+                  className="p-3 text-left border rounded-lg hover:bg-gray-50 flex items-center gap-2"
+                  onClick={() => {
+                    const msg = "¿Podrías detallar los entregables esperados para cada fase del proyecto?";
+                    document.querySelector('textarea')?.focus();
+                    navigator.clipboard.writeText(msg);
+                  }}
+                >
+                  <span className="text-orange-600">📦</span>
+                  <span>Definir entregables</span>
+                </button>
+              </div>
+            </div>
+
             <Chat token={token} loadedMessages={projectChatMessages} sessionId={projectChatSession} />
           </div>
         </div>
