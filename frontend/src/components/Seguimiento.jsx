@@ -18,9 +18,10 @@ export default function Seguimiento({ token, chats, onContinue }) {
   const [run, setRun] = useState(null)
   const [runLoading, setRunLoading] = useState(false)
   const [error, setError] = useState(null)
-  const [showProjectChat, setShowProjectChat] = useState(false)
+  const [showFollowUpChat, setShowFollowUpChat] = useState(false)
   const [projectChatSession, setProjectChatSession] = useState(null)
   const [projectChatMessages, setProjectChatMessages] = useState(null)
+  const [followUpProposal, setFollowUpProposal] = useState(null)
 
   const base = useMemo(() => `http://${window.location.hostname}:8000`, [])
 
@@ -205,8 +206,8 @@ export default function Seguimiento({ token, chats, onContinue }) {
             </>
           ) : (
             <>
-              <button className="px-3 py-1 bg-indigo-600 text-white rounded text-sm" onClick={() => openInlineProposalChat(p)}>Abrir en chat</button>
-              <button className="px-3 py-1 bg-emerald-600 text-white rounded text-sm" onClick={() => convertInlineProposal(p)}>Convertir en propuesta</button>
+              <button className="px-3 py-1 bg-emerald-600 text-white rounded text-sm" onClick={() => openProposalFollowUp(p)}>Empezar seguimiento</button>
+              <button className="px-3 py-1 bg-indigo-600 text-white rounded text-sm" onClick={() => convertInlineProposal(p)}>Convertir en propuesta</button>
             </>
           )}
         </div>
@@ -215,7 +216,7 @@ export default function Seguimiento({ token, chats, onContinue }) {
   )
 
   // Open a chat seeded with an inline proposal (assistant message found in the saved chat)
-  async function openInlineProposalChat(p) {
+  async function openProposalFollowUp(p) {
     setError(null)
     setLoading(true)
     try {
@@ -228,10 +229,11 @@ export default function Seguimiento({ token, chats, onContinue }) {
       if (p.requirements) msgs.push({ role: 'assistant', content: p.requirements, ts: p.created_at || new Date().toISOString() })
       setProjectChatSession(sessionId)
       setProjectChatMessages(msgs)
-      setShowProjectChat(true)
+      setFollowUpProposal(p)
+      setShowFollowUpChat(true)
     } catch (e) {
-      console.error('openInlineProposalChat', e)
-      setError('No pude abrir el chat inline de la propuesta.')
+      console.error('openProposalFollowUp', e)
+      setError('No pude iniciar el seguimiento de la propuesta.')
     } finally { setLoading(false) }
   }
 
@@ -463,20 +465,32 @@ export default function Seguimiento({ token, chats, onContinue }) {
           </div>
         )}
       </div>
-      {/* Modal: chat for selected proposal */}
-      {showProjectChat && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center pt-10">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setShowProjectChat(false)} />
-          <div className="relative z-60 w-[95%] max-w-4xl bg-white rounded-2xl shadow-xl">
-            <div className="flex items-center justify-between p-3 border-b">
-              <div className="font-semibold">Chat de proyecto — Asistente en Seguimiento</div>
-              <div className="flex items-center gap-2">
-                <button className="px-3 py-1 border rounded" onClick={() => setShowProjectChat(false)}>Cerrar</button>
-              </div>
+      {/* Nueva vista dedicada para seguimiento */}
+      {showFollowUpChat && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-white">
+          <div className="flex items-center justify-between p-4 border-b">
+            <div>
+              <h2 className="text-xl font-semibold">Seguimiento del proyecto</h2>
+              {followUpProposal && (
+                <div className="text-sm text-gray-600 mt-1">
+                  Metodología: {followUpProposal.methodology || '—'}
+                </div>
+              )}
             </div>
-            <div className="p-3 h-[60vh]">
-              <Chat token={token} loadedMessages={projectChatMessages} sessionId={projectChatSession} />
-            </div>
+            <button 
+              className="px-3 py-1 border rounded" 
+              onClick={() => {
+                setShowFollowUpChat(false);
+                setFollowUpProposal(null);
+                setProjectChatSession(null);
+                setProjectChatMessages(null);
+              }}
+            >
+              Volver a propuestas
+            </button>
+          </div>
+          <div className="flex-1 p-4 overflow-auto">
+            <Chat token={token} loadedMessages={projectChatMessages} sessionId={projectChatSession} />
           </div>
         </div>
       )}
