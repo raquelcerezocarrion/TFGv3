@@ -1,6 +1,7 @@
 # backend/routers/projects.py
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
+import re
 from typing import List, Dict, Any, Optional
 
 from backend.memory.conversation import save_message
@@ -9,6 +10,7 @@ from backend.engine.context import set_last_proposal
 from backend.core.config import settings
 import jwt
 from typing import Tuple
+from backend.engine.brain import _pretty_proposal
 
 router = APIRouter()
 
@@ -136,79 +138,175 @@ def _keyword_recommend(query: str, top_k: int = 5):
         return res[:top_k]
 
 
-    # ----------------- Endpoints para seguimiento (lista, detalle y checklist por fase) -----------------
-    def _phase_checklist_from_method(method: Optional[str], phase_name: str) -> List[str]:
-        """Genera una checklist básica para una fase concreta combinando reglas por nombre
-        de fase y prácticas de la metodología si están disponibles.
-        """
+# ----------------- Endpoints para seguimiento (lista, detalle y checklist por fase) -----------------
+def _phase_checklist_from_method(method: Optional[str], phase_name: str) -> List[str]:
+    """Genera una checklist básica para una fase concreta combinando reglas por nombre
+    de fase y prácticas de la metodología si están disponibles.
+    """
+    try:
+        from backend.knowledge.methodologies import METHODOLOGIES
+    except Exception:
+        METHODOLOGIES = {}
+
+    m = (METHODOLOGIES.get(method) or {}) if method else {}
+    practicas = m.get("practicas", []) if isinstance(m, dict) else []
+
+    name = (phase_name or "").lower()
+    tasks: List[str] = []
+
+    # Tareas genéricas por tipo de fase
+    if any(k in name for k in ("discover", "descub", "incep", "incepción", "inception")):
+        tasks += [
+            "Reunir stakeholders clave y validar objetivos",
+            "Mapear requisitos y necesidades de usuario (user journeys)",
+            "Definir criterios de aceptación / Definition of Ready",
+            "Priorizar backlog inicial y definir MVP",
+            "Detectar riesgos técnicos y dependencias (spikes si es necesario)",
+        ]
+    elif any(k in name for k in ("implement", "implementación", "iter", "sprint", "desarrollo")):
+        tasks += [
+            "Configurar repositorios, ramas y CI/CD",
+            "Implementar features por prioridad con PR y code review",
+            "Añadir pruebas unitarias e integración",
+            "Revisar performance en piezas críticas",
+        ]
+    elif any(k in name for k in ("qa", "hardening", "pruebas", "estabiliz", "stabiliz")):
+        tasks += [
+            "Ejecutar pruebas de integración y end-to-end",
+            "Pruebas de aceptación por parte del product owner",
+            "Revisión de seguridad y remedio de vulnerabilidades",
+            "Pruebas de carga/performance si procede",
+        ]
+    elif any(k in name for k in ("desplieg", "release", "puesta", "handover", "producción")):
+        tasks += [
+            "Preparar release notes y plan de despliegue",
+            "Ejecutar checklist pre-despliegue (migraciones, backups)",
+            "Desplegar a producción y monitorear métricas básicas",
+            "Handover a equipo de operación y capacitación a usuarios",
+        ]
+    elif any(k in name for k in ("observab", "monitor", "ops", "oper")):
+        tasks += [
+            "Configurar logging, métricas y alertas",
+            "Definir runbook y responsable de incidentes",
+        ]
+    else:
+        # fallback genérico
+        tasks += [
+            "Revisar objetivos de la fase",
+            "Confirmar entregables y criterios de aceptación",
+        ]
+
+    # Añadir prácticas recomendadas de la metodología como acciones sugeridas
+    for p in practicas:
+        if isinstance(p, str) and p not in tasks:
+            tasks.append(f"Aplicar práctica: {p}")
+
+    return tasks
+
+
+@router.get("/list")
+def list_proposals(session_id: str):
+    """Lista propuestas guardadas para una sesión (cliente)."""
+    from backend.memory.state_store import SessionLocal, ProposalLog
+    with SessionLocal() as db:
+        rows = db.query(ProposalLog).filter(ProposalLog.session_id == session_id).order_by(ProposalLog.created_at.desc()).all()
+        out = []
+        for r in rows:
+            out.append({
+                "id": int(r.id),
+                "requirements": r.requirements,
+                "created_at": r.created_at.isoformat(),
+                "methodology": (r.proposal_json or {}).get("methodology"),
+            })
+        return out
+
+
+@router.get("/from_chat/{chat_id}")
+def list_proposals_from_chat(chat_id: int):
+    """Intento razonable de obtener propuestas relacionadas a un chat guardado.
+    Extrae texto del `SavedChat` y busca ProposalLog cuya requirements coincidan
+    parcialmente. Es un fallback para cuando abrimos un chat guardado.
+    """
+    from backend.memory.state_store import SessionLocal, ProposalLog, SavedChat
+    with SessionLocal() as db:
+        sc = db.query(SavedChat).filter(SavedChat.id == chat_id).first()
+        if not sc:
+            raise HTTPException(status_code=404, detail="Chat guardado no encontrado")
+        raw = sc.content or ""
+        # Intentar parsear JSON de mensajes; si es array, extraer textos assistant y user
+        text_blob = raw
         try:
-            from backend.knowledge.methodologies import METHODOLOGIES
+            import json as _json
+            parsed = _json.loads(raw)
+            if isinstance(parsed, list):
+                parts = []
+                for m in parsed:
+                    if isinstance(m, dict) and m.get('content'):
+                        parts.append(str(m.get('content')))
+                text_blob = "\n".join(parts)
         except Exception:
-            METHODOLOGIES = {}
+            pass
 
-        m = (METHODOLOGIES.get(method) or {}) if method else {}
-        practicas = m.get("practicas", []) if isinstance(m, dict) else []
+        # Tokenizar por frases/palabras largas para buscar coincidencias
+        toks = [t.strip() for t in re.split(r"\W+", text_blob.lower()) if len(t.strip()) >= 5][:8]
+        out = []
+        if toks:
+            try:
+                from sqlalchemy import or_
+                conds = [ProposalLog.requirements.ilike(f"%{t}%") for t in toks]
+                rows = db.query(ProposalLog).filter(or_(*conds)).order_by(ProposalLog.created_at.desc()).limit(20).all()
+                for r in rows:
+                    out.append({
+                        "id": int(r.id),
+                        "requirements": r.requirements,
+                        "created_at": r.created_at.isoformat(),
+                        "methodology": (r.proposal_json or {}).get("methodology"),
+                    })
+            except Exception:
+                # ignore SQL issues and fallback to python-side heuristics below
+                out = []
 
-        name = (phase_name or "").lower()
-        tasks: List[str] = []
+        # Si no encontramos coincidencias por tokens, intentamos heurística más robusta:
+        # 1) parsear mensajes guardados y buscar bloques de assistant que parezcan la propuesta final
+        if not out:
+            try:
+                import json as _json
+                parsed = _json.loads(raw)
+                assistant_texts = []
+                if isinstance(parsed, list):
+                    for m in parsed:
+                        try:
+                            if isinstance(m, dict) and (m.get('role') == 'assistant' or m.get('role') == 'system') and isinstance(m.get('content'), str):
+                                txt = m.get('content')
+                                if len(txt) > 40:
+                                    assistant_texts.append(txt)
+                        except Exception:
+                            continue
+                # buscar cada texto en proposal_json serializado
+                if assistant_texts:
+                    cand_rows = db.query(ProposalLog).order_by(ProposalLog.created_at.desc()).limit(200).all()
+                    for at in assistant_texts:
+                        at_norm = at.lower().strip()
+                        for r in cand_rows:
+                            try:
+                                pj = _json.dumps(r.proposal_json or {})
+                                if at_norm[:80] in pj.lower():
+                                    out.append({
+                                        "id": int(r.id),
+                                        "requirements": r.requirements,
+                                        "created_at": r.created_at.isoformat(),
+                                        "methodology": (r.proposal_json or {}).get("methodology"),
+                                    })
+                            except Exception:
+                                continue
+                        if out:
+                            break
+            except Exception:
+                pass
 
-        # Tareas genéricas por tipo de fase
-        if any(k in name for k in ("discover", "descub", "incep", "incepción", "inception")):
-            tasks += [
-                "Reunir stakeholders clave y validar objetivos",
-                "Mapear requisitos y necesidades de usuario (user journeys)",
-                "Definir criterios de aceptación / Definition of Ready",
-                "Priorizar backlog inicial y definir MVP",
-                "Detectar riesgos técnicos y dependencias (spikes si es necesario)",
-            ]
-        elif any(k in name for k in ("implement", "implementación", "iter", "sprint", "desarrollo")):
-            tasks += [
-                "Configurar repositorios, ramas y CI/CD",
-                "Implementar features por prioridad con PR y code review",
-                "Añadir pruebas unitarias e integración",
-                "Revisar performance en piezas críticas",
-            ]
-        elif any(k in name for k in ("qa", "hardening", "pruebas", "estabiliz", "stabiliz")):
-            tasks += [
-                "Ejecutar pruebas de integración y end-to-end",
-                "Pruebas de aceptación por parte del product owner",
-                "Revisión de seguridad y remedio de vulnerabilidades",
-                "Pruebas de carga/performance si procede",
-            ]
-        elif any(k in name for k in ("desplieg", "release", "puesta", "handover", "producción")):
-            tasks += [
-                "Preparar release notes y plan de despliegue",
-                "Ejecutar checklist pre-despliegue (migraciones, backups)",
-                "Desplegar a producción y monitorear métricas básicas",
-                "Handover a equipo de operación y capacitación a usuarios",
-            ]
-        elif any(k in name for k in ("observab", "monitor", "ops", "oper")):
-            tasks += [
-                "Configurar logging, métricas y alertas",
-                "Definir runbook y responsable de incidentes",
-            ]
-        else:
-            # fallback genérico
-            tasks += [
-                "Revisar objetivos de la fase",
-                "Confirmar entregables y criterios de aceptación",
-            ]
-
-        # Añadir prácticas recomendadas de la metodología como acciones sugeridas
-        for p in practicas:
-            if isinstance(p, str) and p not in tasks:
-                tasks.append(f"Aplicar práctica: {p}")
-
-        return tasks
-
-
-    @router.get("/list")
-    def list_proposals(session_id: str):
-        """Lista propuestas guardadas para una sesión (cliente)."""
-        from backend.memory.state_store import SessionLocal, ProposalLog
-        with SessionLocal() as db:
-            rows = db.query(ProposalLog).filter(ProposalLog.session_id == session_id).order_by(ProposalLog.created_at.desc()).all()
-            out = []
+        # Fallback final: si aún no hay resultados, devolver las últimas 5 propuestas como ayuda UX
+        if not out:
+            rows = db.query(ProposalLog).order_by(ProposalLog.created_at.desc()).limit(5).all()
             for r in rows:
                 out.append({
                     "id": int(r.id),
@@ -216,7 +314,8 @@ def _keyword_recommend(query: str, top_k: int = 5):
                     "created_at": r.created_at.isoformat(),
                     "methodology": (r.proposal_json or {}).get("methodology"),
                 })
-            return out
+
+        return out
 
 
     @router.get("/{proposal_id}")
@@ -228,6 +327,44 @@ def _keyword_recommend(query: str, top_k: int = 5):
             if not row:
                 raise HTTPException(status_code=404, detail="Propuesta no encontrada")
             return row.proposal_json or {}
+
+
+@router.get("/{proposal_id}/open_session")
+def open_proposal_session(proposal_id: int):
+    """Prepara una sesión de chat asociada a una propuesta guardada.
+    - Carga la propuesta en la memoria del 'brain' para que las siguientes
+    llamadas al chat (WebSocket/HTTP) usen ese contexto.
+    - Devuelve el `session_id` asociado a la propuesta y un bloque resumen
+    de la propuesta listo para mostrar como mensaje inicial del asistente.
+    """
+    from backend.memory.state_store import SessionLocal, ProposalLog
+    from backend.engine.context import set_last_proposal
+    with SessionLocal() as db:
+        row = db.query(ProposalLog).filter(ProposalLog.id == proposal_id).first()
+        if not row:
+            raise HTTPException(status_code=404, detail="Propuesta no encontrada")
+        p = row.proposal_json or {}
+        sid = row.session_id
+
+    # Setear en el contexto en memoria para que generate_reply use esta propuesta
+    try:
+        set_last_proposal(sid, p, row.requirements)
+        # Log minimal del asistente
+        try:
+            save_message(sid, "assistant", f"[PROPUESTA CARGADA] {p.get('methodology','')} — {p.get('budget',{}).get('total_eur','?')} €")
+        except Exception:
+            pass
+    except Exception:
+        # No fallar la llamada por problemas de memoria en proceso
+        pass
+
+    # Construir un resumen legible usando util del brain
+    try:
+        pretty = _pretty_proposal(p)
+    except Exception:
+        pretty = "Propuesta cargada. Pide 'fases', 'presupuesto' o pregunta sobre la fase concreta."
+
+    return {"session_id": sid, "assistant_summary": pretty}
 
 
     @router.get("/{proposal_id}/phases")

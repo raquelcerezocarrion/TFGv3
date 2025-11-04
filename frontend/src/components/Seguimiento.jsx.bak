@@ -1,0 +1,8 @@
+// Backup copy of Seguimiento.jsx before refactor
+// If anything goes wrong, restore this file content back into Seguimiento.jsx
+
+import React from 'react'
+
+export default function SeguimientoBackup() {
+  return <div>This is a backup of the original Seguimiento.jsx</div>
+}

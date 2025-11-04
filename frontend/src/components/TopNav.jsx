@@ -12,7 +12,10 @@ export default function TopNav({
   const item = (key, label, onClick) => (
     <button
       className={`px-3 py-2 rounded-xl border transition ${current === key ? 'bg-gray-900 text-white border-gray-900' : 'hover:bg-gray-50'}`}
-      onClick={onClick}
+      onClick={() => {
+        console.debug(`[TopNav] click ${label}`)
+        try { onClick && onClick() } catch(e) { console.error('[TopNav] onClick error', e) }
+      }}
     >
       {label}
     </button>

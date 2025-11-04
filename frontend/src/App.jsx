@@ -86,6 +86,12 @@ export default function App() {
   const onEmployees = () => setView('employees')
   const onSeguimiento = () => setView('seguimiento')
 
+  // DEBUG: ayuda a detectar si el click llega correctamente
+  const onSeguimientoDebug = () => {
+    console.debug('[App] onSeguimiento called — cambio a view=seguimiento')
+    setView('seguimiento')
+  }
+
   const onSaveCurrentChat = async (messages, title = null) => {
     try {
   if (!token) { window.alert('Debes iniciar sesión para guardar proyectos.'); return }
@@ -163,14 +169,14 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-emerald-50">
-      <header className="border-b bg-white/80 backdrop-blur sticky top-0 z-10">
+              <header className="border-b bg-white/80 backdrop-blur sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="font-semibold">Assistant · Propuestas</div>
-          {token && (
+                {token && (
             <TopNav
               current={view === 'employees' ? 'employees' : view === 'profile' ? 'profile' : (view === 'recommendations' ? 'recommendations' : 'projects')}
               onGoProjects={() => setView('chat')}
-                onGoSeguimiento={onSeguimiento}
+                onGoSeguimiento={onSeguimientoDebug}
               onGoEmployees={() => setView('employees')}
               onGoProfile={() => setView('profile')}
               onGoRecommendations={() => setView('recommendations')}
@@ -209,7 +215,7 @@ export default function App() {
                 ) : view === 'recommendations' ? (
                   <Recommendations token={token} />
                   ) : view === 'seguimiento' ? (
-                    <Seguimiento token={token} chats={chats} />
+                    <Seguimiento token={token} chats={chats} onContinue={onContinue} />
                   ) : (
                   <Chat
                     token={token}
