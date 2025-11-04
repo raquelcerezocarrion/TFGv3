@@ -199,3 +199,84 @@ def delete_saved_chat(user_id: int, chat_id: int) -> bool:
             return False
         db.delete(row); db.commit()
         return True
+
+
+# --- Tracking / Seguimiento ---
+class TrackingRun(Base):
+    __tablename__ = "tracking_runs"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, index=True, nullable=False)
+    proposal_id = Column(Integer, index=True, nullable=False)
+    name = Column(String, nullable=True)
+    status = Column(String, nullable=False, default="active")
+    started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class TrackingTask(Base):
+    __tablename__ = "tracking_tasks"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    run_id = Column(Integer, ForeignKey("tracking_runs.id"), index=True, nullable=False)
+    phase_idx = Column(Integer, nullable=False)
+    text = Column(Text, nullable=False)
+    completed = Column(Boolean, nullable=False, default=False)
+    completed_at = Column(DateTime, nullable=True)
+
+
+def create_tracking_run(user_id: int, proposal_id: int, name: Optional[str], tasks: List[Dict[str, Any]]) -> int:
+    """Crea un TrackingRun con las tareas asociadas. 'tasks' es lista de dicts {phase_idx, text} """
+    with SessionLocal() as db:
+        run = TrackingRun(user_id=user_id, proposal_id=proposal_id, name=name or None, status="active")
+        db.add(run); db.commit(); db.refresh(run)
+        for t in tasks:
+            tt = TrackingTask(run_id=run.id, phase_idx=int(t.get("phase_idx", 0)), text=str(t.get("text", "")), completed=bool(t.get("completed", False)))
+            db.add(tt)
+        db.commit()
+        return int(run.id)
+
+
+def list_tracking_runs(user_id: int, proposal_id: Optional[int] = None, limit: int = 50):
+    with SessionLocal() as db:
+        q = db.query(TrackingRun).filter(TrackingRun.user_id == user_id)
+        if proposal_id is not None:
+            q = q.filter(TrackingRun.proposal_id == proposal_id)
+        rows = q.order_by(TrackingRun.started_at.desc()).limit(limit).all()
+        out = []
+        for r in rows:
+            out.append({"id": r.id, "name": r.name, "proposal_id": r.proposal_id, "status": r.status, "started_at": r.started_at.isoformat()})
+        return out
+
+
+def get_tracking_run(run_id: int):
+    with SessionLocal() as db:
+        run = db.query(TrackingRun).filter(TrackingRun.id == run_id).first()
+        if not run:
+            return None
+        tasks = db.query(TrackingTask).filter(TrackingTask.run_id == run_id).order_by(TrackingTask.id.asc()).all()
+        return {
+            "id": run.id,
+            "user_id": run.user_id,
+            "proposal_id": run.proposal_id,
+            "name": run.name,
+            "status": run.status,
+            "started_at": run.started_at.isoformat(),
+            "tasks": [
+                {"id": t.id, "phase_idx": t.phase_idx, "text": t.text, "completed": bool(t.completed), "completed_at": (t.completed_at.isoformat() if t.completed_at else None)}
+                for t in tasks
+            ]
+        }
+
+
+def toggle_task_completion(run_id: int, task_idx: int, completed: bool) -> Optional[bool]:
+    with SessionLocal() as db:
+        tasks = db.query(TrackingTask).filter(TrackingTask.run_id == run_id).order_by(TrackingTask.id.asc()).all()
+        if task_idx < 0 or task_idx >= len(tasks):
+            return None
+        t = tasks[task_idx]
+        t.completed = bool(completed)
+        t.completed_at = datetime.utcnow() if completed else None
+        db.add(t); db.commit(); db.refresh(t)
+        return bool(t.completed)
+
+
+# Recrear tablas nuevas si añadimos modelos después del create_all inicial
+Base.metadata.create_all(engine)

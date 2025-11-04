@@ -6,6 +6,7 @@ import Employees from './components/Employees.jsx'   // ← nuevo
 import TopNav from './components/TopNav.jsx'
 import Recommendations from './components/Recommendations.jsx'
 import Sidebar from './components/Sidebar.jsx'
+import Seguimiento from './components/Seguimiento.jsx'
 import axios from 'axios'
 
 export default function App() {
@@ -83,6 +84,7 @@ export default function App() {
   }
   const onProfile   = () => setView('profile')
   const onEmployees = () => setView('employees')
+  const onSeguimiento = () => setView('seguimiento')
 
   const onSaveCurrentChat = async (messages, title = null) => {
     try {
@@ -168,6 +170,7 @@ export default function App() {
             <TopNav
               current={view === 'employees' ? 'employees' : view === 'profile' ? 'profile' : (view === 'recommendations' ? 'recommendations' : 'projects')}
               onGoProjects={() => setView('chat')}
+                onGoSeguimiento={onSeguimiento}
               onGoEmployees={() => setView('employees')}
               onGoProfile={() => setView('profile')}
               onGoRecommendations={() => setView('recommendations')}
@@ -205,7 +208,9 @@ export default function App() {
                   <Employees token={token} />
                 ) : view === 'recommendations' ? (
                   <Recommendations token={token} />
-                ) : (
+                  ) : view === 'seguimiento' ? (
+                    <Seguimiento token={token} chats={chats} />
+                  ) : (
                   <Chat
                     token={token}
                     loadedMessages={loadedMessages}

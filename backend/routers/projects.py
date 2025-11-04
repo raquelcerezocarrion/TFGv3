@@ -8,6 +8,7 @@ from backend.engine.planner import generate_proposal
 from backend.engine.context import set_last_proposal
 from backend.core.config import settings
 import jwt
+from typing import Tuple
 
 router = APIRouter()
 
@@ -133,6 +134,250 @@ def _keyword_recommend(query: str, top_k: int = 5):
         # ordenar por score y cortar
         res.sort(key=lambda x: x.get("similarity", 0.0), reverse=True)
         return res[:top_k]
+
+
+    # ----------------- Endpoints para seguimiento (lista, detalle y checklist por fase) -----------------
+    def _phase_checklist_from_method(method: Optional[str], phase_name: str) -> List[str]:
+        """Genera una checklist básica para una fase concreta combinando reglas por nombre
+        de fase y prácticas de la metodología si están disponibles.
+        """
+        try:
+            from backend.knowledge.methodologies import METHODOLOGIES
+        except Exception:
+            METHODOLOGIES = {}
+
+        m = (METHODOLOGIES.get(method) or {}) if method else {}
+        practicas = m.get("practicas", []) if isinstance(m, dict) else []
+
+        name = (phase_name or "").lower()
+        tasks: List[str] = []
+
+        # Tareas genéricas por tipo de fase
+        if any(k in name for k in ("discover", "descub", "incep", "incepción", "inception")):
+            tasks += [
+                "Reunir stakeholders clave y validar objetivos",
+                "Mapear requisitos y necesidades de usuario (user journeys)",
+                "Definir criterios de aceptación / Definition of Ready",
+                "Priorizar backlog inicial y definir MVP",
+                "Detectar riesgos técnicos y dependencias (spikes si es necesario)",
+            ]
+        elif any(k in name for k in ("implement", "implementación", "iter", "sprint", "desarrollo")):
+            tasks += [
+                "Configurar repositorios, ramas y CI/CD",
+                "Implementar features por prioridad con PR y code review",
+                "Añadir pruebas unitarias e integración",
+                "Revisar performance en piezas críticas",
+            ]
+        elif any(k in name for k in ("qa", "hardening", "pruebas", "estabiliz", "stabiliz")):
+            tasks += [
+                "Ejecutar pruebas de integración y end-to-end",
+                "Pruebas de aceptación por parte del product owner",
+                "Revisión de seguridad y remedio de vulnerabilidades",
+                "Pruebas de carga/performance si procede",
+            ]
+        elif any(k in name for k in ("desplieg", "release", "puesta", "handover", "producción")):
+            tasks += [
+                "Preparar release notes y plan de despliegue",
+                "Ejecutar checklist pre-despliegue (migraciones, backups)",
+                "Desplegar a producción y monitorear métricas básicas",
+                "Handover a equipo de operación y capacitación a usuarios",
+            ]
+        elif any(k in name for k in ("observab", "monitor", "ops", "oper")):
+            tasks += [
+                "Configurar logging, métricas y alertas",
+                "Definir runbook y responsable de incidentes",
+            ]
+        else:
+            # fallback genérico
+            tasks += [
+                "Revisar objetivos de la fase",
+                "Confirmar entregables y criterios de aceptación",
+            ]
+
+        # Añadir prácticas recomendadas de la metodología como acciones sugeridas
+        for p in practicas:
+            if isinstance(p, str) and p not in tasks:
+                tasks.append(f"Aplicar práctica: {p}")
+
+        return tasks
+
+
+    @router.get("/list")
+    def list_proposals(session_id: str):
+        """Lista propuestas guardadas para una sesión (cliente)."""
+        from backend.memory.state_store import SessionLocal, ProposalLog
+        with SessionLocal() as db:
+            rows = db.query(ProposalLog).filter(ProposalLog.session_id == session_id).order_by(ProposalLog.created_at.desc()).all()
+            out = []
+            for r in rows:
+                out.append({
+                    "id": int(r.id),
+                    "requirements": r.requirements,
+                    "created_at": r.created_at.isoformat(),
+                    "methodology": (r.proposal_json or {}).get("methodology"),
+                })
+            return out
+
+
+    @router.get("/{proposal_id}")
+    def get_proposal(proposal_id: int):
+        """Recupera la propuesta JSON completa por id."""
+        from backend.memory.state_store import SessionLocal, ProposalLog
+        with SessionLocal() as db:
+            row = db.query(ProposalLog).filter(ProposalLog.id == proposal_id).first()
+            if not row:
+                raise HTTPException(status_code=404, detail="Propuesta no encontrada")
+            return row.proposal_json or {}
+
+
+    @router.get("/{proposal_id}/phases")
+    def get_proposal_phases(proposal_id: int):
+        """Devuelve las fases de la propuesta y una checklist sugerida por fase."""
+        from backend.memory.state_store import SessionLocal, ProposalLog
+        with SessionLocal() as db:
+            row = db.query(ProposalLog).filter(ProposalLog.id == proposal_id).first()
+            if not row:
+                raise HTTPException(status_code=404, detail="Propuesta no encontrada")
+            p = row.proposal_json or {}
+            method = p.get("methodology")
+            phases = p.get("phases") or []
+            out = []
+            for idx, ph in enumerate(phases):
+                name = ph.get("name") if isinstance(ph, dict) else str(ph)
+                weeks = ph.get("weeks") if isinstance(ph, dict) else None
+                checklist = _phase_checklist_from_method(method, name)
+                out.append({"index": idx, "name": name, "weeks": weeks, "checklist": checklist})
+            return out
+
+
+    @router.get("/{proposal_id}/phases/{phase_idx}")
+    def get_phase_detail(proposal_id: int, phase_idx: int):
+        """Detalle de una fase concreta: checklist y contexto (metodología, decision_log)."""
+        from backend.memory.state_store import SessionLocal, ProposalLog
+        with SessionLocal() as db:
+            row = db.query(ProposalLog).filter(ProposalLog.id == proposal_id).first()
+            if not row:
+                raise HTTPException(status_code=404, detail="Propuesta no encontrada")
+            p = row.proposal_json or {}
+            phases = p.get("phases") or []
+            if phase_idx < 0 or phase_idx >= len(phases):
+                raise HTTPException(status_code=400, detail="Índice de fase fuera de rango")
+            ph = phases[phase_idx]
+            name = ph.get("name") if isinstance(ph, dict) else str(ph)
+            weeks = ph.get("weeks") if isinstance(ph, dict) else None
+            checklist = _phase_checklist_from_method(p.get("methodology"), name)
+            # contexto adicional útil para el usuario
+            context = {
+                "methodology": p.get("methodology"),
+                "decision_log": p.get("decision_log", []),
+                "methodology_sources": p.get("methodology_sources", []),
+            }
+            return {"index": phase_idx, "name": name, "weeks": weeks, "checklist": checklist, "context": context}
+
+
+    # ----------------- Endpoints de seguimiento persistente -----------------
+    class TrackingCreateIn(BaseModel):
+        name: Optional[str] = None
+
+
+    @router.post("/{proposal_id}/tracking")
+    def create_tracking(proposal_id: int, payload: TrackingCreateIn, request: Request):
+        """Crea un run de seguimiento para la propuesta: genera tareas por fase y las persiste.
+        Requiere Authorization (JWT con 'user_id')."""
+        # validar propuesta
+        from backend.memory.state_store import SessionLocal, ProposalLog, create_tracking_run
+        # extraer token
+        try:
+            auth = request.headers.get("Authorization") or ""
+            if not auth.lower().startswith("bearer "):
+                raise Exception("Missing token")
+            token = auth.split()[1]
+            data = jwt.decode(token, settings.APP_NAME, algorithms=["HS256"])  # type: ignore
+            user_id = int(data.get("user_id"))
+        except Exception:
+            raise HTTPException(status_code=401, detail="Authorization required")
+
+        with SessionLocal() as db:
+            row = db.query(ProposalLog).filter(ProposalLog.id == proposal_id).first()
+            if not row:
+                raise HTTPException(status_code=404, detail="Propuesta no encontrada")
+            p = row.proposal_json or {}
+
+        # construir tareas por fase
+        phases = p.get("phases") or []
+        method = p.get("methodology")
+        tasks = []
+        for idx, ph in enumerate(phases):
+            name = ph.get("name") if isinstance(ph, dict) else str(ph)
+            checklist = _phase_checklist_from_method(method, name)
+            # cada item de checklist -> tarea individual
+            for item in checklist:
+                tasks.append({"phase_idx": idx, "text": f"{name} — {item}"})
+
+        run_id = create_tracking_run(user_id, proposal_id, payload.name or f"Seguimiento propuesta {proposal_id}", tasks)
+        return {"run_id": run_id, "task_count": len(tasks)}
+
+
+    @router.get("/{proposal_id}/tracking")
+    def list_tracking_for_proposal(proposal_id: int, request: Request):
+        try:
+            auth = request.headers.get("Authorization") or ""
+            if not auth.lower().startswith("bearer "):
+                raise Exception("Missing token")
+            token = auth.split()[1]
+            data = jwt.decode(token, settings.APP_NAME, algorithms=["HS256"])  # type: ignore
+            user_id = int(data.get("user_id"))
+        except Exception:
+            raise HTTPException(status_code=401, detail="Authorization required")
+        from backend.memory.state_store import list_tracking_runs
+        return list_tracking_runs(user_id, proposal_id)
+
+
+    @router.get("/tracking/{run_id}")
+    def get_tracking_run_endpoint(run_id: int, request: Request):
+        try:
+            auth = request.headers.get("Authorization") or ""
+            if not auth.lower().startswith("bearer "):
+                raise Exception("Missing token")
+            token = auth.split()[1]
+            data = jwt.decode(token, settings.APP_NAME, algorithms=["HS256"])  # type: ignore
+            user_id = int(data.get("user_id"))
+        except Exception:
+            raise HTTPException(status_code=401, detail="Authorization required")
+        from backend.memory.state_store import get_tracking_run
+        run = get_tracking_run(run_id)
+        if not run:
+            raise HTTPException(status_code=404, detail="Run no encontrado")
+        if int(run.get("user_id") or 0) != int(user_id):
+            raise HTTPException(status_code=403, detail="No autorizado")
+        return run
+
+
+    @router.post("/tracking/{run_id}/tasks/{task_idx}/toggle")
+    def toggle_task(run_id: int, task_idx: int, body: Dict[str, Any], request: Request):
+        """Marca/desmarca una tarea del run. Body: {"completed": true|false}"""
+        try:
+            auth = request.headers.get("Authorization") or ""
+            if not auth.lower().startswith("bearer "):
+                raise Exception("Missing token")
+            token = auth.split()[1]
+            data = jwt.decode(token, settings.APP_NAME, algorithms=["HS256"])  # type: ignore
+            user_id = int(data.get("user_id"))
+        except Exception:
+            raise HTTPException(status_code=401, detail="Authorization required")
+
+        from backend.memory.state_store import get_tracking_run, toggle_task_completion
+        run = get_tracking_run(run_id)
+        if not run:
+            raise HTTPException(status_code=404, detail="Run no encontrado")
+        if int(run.get("user_id") or 0) != int(user_id):
+            raise HTTPException(status_code=403, detail="No autorizado")
+
+        completed = bool(body.get("completed", True))
+        res = toggle_task_completion(run_id, int(task_idx), completed)
+        if res is None:
+            raise HTTPException(status_code=400, detail="Índice de tarea fuera de rango")
+        return {"completed": res}
 
 
 @router.get("/{proposal_id}/report.pdf")
