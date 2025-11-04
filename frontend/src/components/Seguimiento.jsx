@@ -9,7 +9,7 @@ import Chat from './Chat.jsx'
 export default function Seguimiento({ token, chats, onContinue }) {
   const [loading, setLoading] = useState(false)
   const [selectedChat, setSelectedChat] = useState(null)
-  const [step, setStep] = useState(1) // 1: choose project, 2: choose phase, 3: phase view + chat
+  const [step, setStep] = useState(1) // 1: choose project, 2: choose proposal, 3: choose phase, 4: phase view + chat
   const [sessionId, setSessionId] = useState(null)
   const [proposals, setProposals] = useState([])
   const [selectedProposal, setSelectedProposal] = useState(null)
@@ -38,7 +38,8 @@ export default function Seguimiento({ token, chats, onContinue }) {
       const sid = res.data.session_id
       setSessionId(sid)
       setSelectedChat(chat)
-      await fetchProposalsForSession(sid, chat.id)
+      // Ensure we only load proposals that were produced in this saved chat
+      await fetchProposalsDirectFromChat(chat)
     } catch (e) {
       console.error('open session', e)
       setError('No pude abrir la sesión para este proyecto.')
@@ -156,15 +157,6 @@ export default function Seguimiento({ token, chats, onContinue }) {
     setLoading(true)
     try {
       setSelectedChat(chat)
-      // fetch proposals related to this saved chat
-      const data = await fetchProposalsDirectFromChat(chat)
-      // auto-select first proposal if available and load its phases
-      if (data && data.length > 0) {
-        const first = data[0]
-        await selectProposal(first)
-        setSelectedProposal(first)
-      }
-      // advance to phase selection step
       setStep(2)
     } catch (e) {
       console.error('handleSelectProject', e)
@@ -174,9 +166,8 @@ export default function Seguimiento({ token, chats, onContinue }) {
 
   const ChatItem = ({ c }) => (
     <div
-      className="p-3 border rounded-md flex items-center justify-between shadow-sm bg-white hover:shadow-md cursor-pointer"
+      className="p-3 border rounded-md flex items-center justify-between shadow-sm bg-white"
       role="listitem"
-      onClick={() => handleSelectProject(c)}
     >
       <div className="flex-1 pr-2">
         <div className="text-sm font-medium text-gray-800">{c.title || `Proyecto ${c.id}`}</div>
@@ -184,16 +175,13 @@ export default function Seguimiento({ token, chats, onContinue }) {
       </div>
         <div className="flex gap-2">
           <button
-            aria-label={`Seleccionar proyecto ${c.id}`}
-            className="px-3 py-1 border rounded text-sm hover:bg-gray-50"
-            onClick={(e) => { e.stopPropagation(); handleSelectProject(c) }}
-          >
-            Seleccionar
-          </button>
-          <button
             aria-label={`Cargar propuestas ${c.id}`}
             className="px-3 py-1 border rounded text-sm bg-white hover:bg-gray-50"
-            onClick={(e) => { e.stopPropagation(); fetchProposalsDirectFromChat(c) }}
+            onClick={() => {
+              setSelectedChat(c);
+              setStep(2);
+              fetchProposalsDirectFromChat(c);
+            }}
           >
             Cargar propuestas
           </button>
@@ -202,20 +190,79 @@ export default function Seguimiento({ token, chats, onContinue }) {
   )
 
   const ProposalCard = ({ p }) => (
-    <article className={`p-4 border rounded-md shadow-sm bg-white ${selectedProposal?.id === p.id ? 'ring-2 ring-emerald-200' : ''}`} aria-labelledby={`proposal-${p.id}`}>
+    <article className={`p-4 border rounded-md shadow-sm bg-white ${selectedProposal?.id === p.id ? 'ring-2 ring-emerald-200' : ''}`} aria-labelledby={`proposal-${p.id || 'inline'}`}>
       <div className="flex justify-between items-start">
         <div>
-          <h3 id={`proposal-${p.id}`} className="font-semibold text-sm">Propuesta #{p.id}</h3>
+          <h3 id={`proposal-${p.id || 'inline'}`} className="font-semibold text-sm">{p.id ? `Propuesta #${p.id}` : 'Propuesta (chat)'}</h3>
           <div className="text-xs text-gray-500">Metodología: {p.methodology || '—'}</div>
           <p className="mt-2 text-xs text-gray-600 line-clamp-3">{p.requirements || '—'}</p>
         </div>
         <div className="ml-4 flex-shrink-0 flex flex-col gap-2">
-          <button className="px-3 py-1 bg-blue-600 text-white rounded text-sm" onClick={() => selectProposal(p)}>Ver fases</button>
-          <button className="px-3 py-1 bg-indigo-600 text-white rounded text-sm" onClick={() => openProposalChat(p)}>Abrir chat</button>
+          {p.id ? (
+            <>
+              <button className="px-3 py-1 bg-blue-600 text-white rounded text-sm" onClick={async () => { await selectProposal(p); setSelectedProposal(p); setStep(3); }}>Ver fases</button>
+              <button className="px-3 py-1 bg-indigo-600 text-white rounded text-sm" onClick={() => openProposalChat(p)}>Abrir chat</button>
+            </>
+          ) : (
+            <>
+              <button className="px-3 py-1 bg-indigo-600 text-white rounded text-sm" onClick={() => openInlineProposalChat(p)}>Abrir en chat</button>
+              <button className="px-3 py-1 bg-emerald-600 text-white rounded text-sm" onClick={() => convertInlineProposal(p)}>Convertir en propuesta</button>
+            </>
+          )}
         </div>
       </div>
     </article>
   )
+
+  // Open a chat seeded with an inline proposal (assistant message found in the saved chat)
+  async function openInlineProposalChat(p) {
+    setError(null)
+    setLoading(true)
+    try {
+      // ensure we have a session for the saved chat
+      if (!sessionId && selectedChat) {
+        await openSessionForChat(selectedChat)
+      }
+      // Build messages: assistant content (the proposal) as assistant message
+      const msgs = []
+      if (p.requirements) msgs.push({ role: 'assistant', content: p.requirements, ts: p.created_at || new Date().toISOString() })
+      setProjectChatSession(sessionId)
+      setProjectChatMessages(msgs)
+      setShowProjectChat(true)
+    } catch (e) {
+      console.error('openInlineProposalChat', e)
+      setError('No pude abrir el chat inline de la propuesta.')
+    } finally { setLoading(false) }
+  }
+
+  async function convertInlineProposal(p) {
+    if (!selectedChat) { setError('Selecciona primero un proyecto.'); return }
+    setError(null)
+    setLoading(true)
+    try {
+      const res = await axios.post(`${base}/projects/from_chat/${selectedChat.id}/to_proposal`, { content: p.requirements }, { headers: authHeaders() })
+      const newId = res.data.proposal_id
+      const created_at = res.data.created_at
+      // Replace inline proposal in the list with the newly created ProposalLog entry
+      const merged = (proposals || []).map(x => {
+        if (x === p || (x.inline && x.requirements === p.requirements && x.created_at === p.created_at)) {
+          return { id: newId, requirements: p.requirements, created_at: created_at, methodology: null }
+        }
+        return x
+      })
+      setProposals(merged)
+      // Auto-select the new proposal and load its phases
+      const newProposal = merged.find(x => x.id === newId)
+      if (newProposal) {
+        await selectProposal(newProposal)
+        setSelectedProposal(newProposal)
+        setStep(3)
+      }
+    } catch (e) {
+      console.error('convertInlineProposal', e)
+      setError('No pude convertir la propuesta.')
+    } finally { setLoading(false) }
+  }
 
   async function openProposalChat(proposal) {
     setError(null)
@@ -248,7 +295,7 @@ export default function Seguimiento({ token, chats, onContinue }) {
       const msgs = []
       // include phase context as initial user message so assistant is scoped
       const phase = (phases && phases[phaseIdx]) || null
-      if (phase) {
+  if (phase) {
         const phaseText = `Contexto de la fase seleccionada:\nNombre: ${phase.name}\nDescripción: ${phase.description || ''}\nChecklist:\n${(phase.checklist || []).map((t, i) => `${i+1}. ${t}`).join('\n')}`
         msgs.push({ role: 'user', content: phaseText, ts: new Date().toISOString() })
       }
@@ -257,7 +304,7 @@ export default function Seguimiento({ token, chats, onContinue }) {
       setProjectChatMessages(msgs)
       // move to phase view + chat
       setSelectedPhaseIdx(phaseIdx)
-      setStep(3)
+      setStep(4)
     } catch (e) {
       console.error('openProposalPhaseChat', e)
       setError('No pude abrir el chat de la fase.')
@@ -329,7 +376,7 @@ export default function Seguimiento({ token, chats, onContinue }) {
           </div>
         )}
 
-        {/* Step 2: project selected - show only project name and phase selection */}
+        {/* Step 2: proposal selection (after choosing project). If exactly one proposal existed we skipped here. */}
         {step === 2 && selectedChat && (
           <div className="max-w-3xl">
             <div className="mb-4 flex items-center justify-between">
@@ -342,11 +389,34 @@ export default function Seguimiento({ token, chats, onContinue }) {
               </div>
             </div>
 
-            <div className="mb-3 font-medium">Selecciona la fase para hacer seguimiento</div>
+            <div className="mb-3 font-medium">Propuestas encontradas</div>
+            <div className="space-y-3">
+              {loading && <div className="text-sm text-gray-500">Buscando propuestas…</div>}
+              {!loading && (!proposals || proposals.length === 0) && <div className="text-sm text-gray-500">No se encontraron propuestas para este proyecto. Usa "Cargar propuestas" en la lista de proyectos o vuelve atrás.</div>}
+              {!loading && proposals.map(p => (
+                <ProposalCard key={p.id} p={p} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Step 3: phase selection - show phases for the chosen proposal */}
+        {step === 3 && selectedProposal && (
+          <div className="max-w-3xl">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-semibold">{selectedProposal.id ? `Propuesta #${selectedProposal.id}` : selectedChat?.title}</h3>
+                <div className="text-xs text-gray-500">Selecciona la fase para hacer seguimiento</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button className="px-3 py-1 border rounded text-sm" onClick={() => { setStep(2); setSelectedProposal(null); setPhases([]); setProjectChatSession(null); setProjectChatMessages(null); }}>Volver a propuestas</button>
+                <button className="px-3 py-1 border rounded text-sm" onClick={() => { setStep(1); setSelectedChat(null); setSelectedProposal(null); setPhases([]); setProjectChatSession(null); setProjectChatMessages(null); }}>Volver a proyectos</button>
+              </div>
+            </div>
+
             <div className="space-y-3">
               {loading && <div className="text-sm text-gray-500">Cargando fases…</div>}
-              {!loading && !selectedProposal && <div className="text-sm text-gray-500">No hay propuesta seleccionada. Puedes pulsar "Cargar propuestas" en la lista de proyectos para intentar recuperar una propuesta asociada.</div>}
-              {!loading && selectedProposal && phases.length === 0 && <div className="text-sm text-gray-500">No se encontraron fases para la propuesta seleccionada.</div>}
+              {!loading && phases.length === 0 && <div className="text-sm text-gray-500">No se encontraron fases para la propuesta seleccionada.</div>}
               {!loading && phases.map((ph, idx) => (
                 <div key={idx} className="p-3 border rounded-md bg-white shadow-sm flex items-center justify-between">
                   <div>
@@ -362,8 +432,8 @@ export default function Seguimiento({ token, chats, onContinue }) {
           </div>
         )}
 
-        {/* Step 3: phase view + chat - show only selected phase info and chat */}
-        {step === 3 && selectedProposal && selectedPhaseIdx !== null && (
+        {/* Step 4: phase view + chat - show only selected phase info and chat */}
+        {step === 4 && selectedProposal && selectedPhaseIdx !== null && (
           <div className="max-w-4xl">
             <div className="mb-4 flex items-center justify-between">
               <div>
@@ -371,7 +441,7 @@ export default function Seguimiento({ token, chats, onContinue }) {
                 <div className="text-sm text-gray-500">Fase: {phases[selectedPhaseIdx]?.name}</div>
               </div>
               <div className="flex items-center gap-2">
-                <button className="px-3 py-1 border rounded text-sm" onClick={() => { setStep(2); setProjectChatSession(null); setProjectChatMessages(null); }}>Volver a fases</button>
+                <button className="px-3 py-1 border rounded text-sm" onClick={() => { setStep(3); setProjectChatSession(null); setProjectChatMessages(null); }}>Volver a fases</button>
                 <button className="px-3 py-1 border rounded text-sm" onClick={() => { setStep(1); setSelectedChat(null); setSelectedProposal(null); setPhases([]); setProjectChatSession(null); setProjectChatMessages(null); }}>Volver a proyectos</button>
               </div>
             </div>
