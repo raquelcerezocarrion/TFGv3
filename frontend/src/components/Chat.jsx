@@ -18,12 +18,30 @@ async function detectApiBase() {
 export default function Chat({ token, loadedMessages = null, selectedChatId = null, onSaveCurrentChat = null, onSaveExistingChat = null, sessionId: externalSessionId = null, externalMessage = null, externalMessageId = null }) {
   const [apiBase, setApiBase] = useState(null)
   const [sessionId, setSessionId] = useState(() => 'demo-' + Math.random().toString(36).slice(2, 8))
-  const [messages, setMessages] = useState([
-    { role: 'assistant', content: '👋 Hola, soy el asistente (Parte 1). Pídeme una propuesta o escribe cualquier cosa.', ts: new Date().toISOString() }
-  ])
+  // Start empty; if parent doesn't provide `loadedMessages` we'll show a friendly greeting.
+  const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const wsRef = useRef(null)
   const listRef = useRef(null)
+  const [userHasScrolled, setUserHasScrolled] = useState(false)
+
+  // Scroll to bottom, but only if the user hasn't scrolled up
+  useEffect(() => {
+    if (listRef.current && !userHasScrolled) {
+      listRef.current.scrollTop = listRef.current.scrollHeight
+    }
+  }, [messages, userHasScrolled])
+
+  // Detect if user scrolls up
+  const handleScroll = () => {
+    const { scrollTop, scrollHeight, clientHeight } = listRef.current
+    // If user is not at the bottom, set the flag
+    if (scrollTop + clientHeight < scrollHeight - 20) { // 20px buffer
+      setUserHasScrolled(true)
+    } else {
+      setUserHasScrolled(false)
+    }
+  }
   const [showSaveDialog, setShowSaveDialog] = useState(false)
   const [saveTitle, setSaveTitle] = useState('')
 
@@ -61,13 +79,22 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
   }, [sessionId])
 
   useEffect(()=>{ if(externalSessionId){ setSessionId(externalSessionId) } }, [externalSessionId])
-  useEffect(() => { if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight }, [messages])
+  
   // Cuando `loadedMessages` es un array (incluso vacío) debemos respetarlo.
   // Antes se ignoraba el array vacío y se mostraba el mensaje inicial del asistente.
   useEffect(() => {
     if (!Array.isArray(loadedMessages)) return
     const mapped = (loadedMessages || []).map(m => ({ role: m.role, content: m.content, ts: m.ts || new Date().toISOString() }))
     setMessages(mapped)
+    setUserHasScrolled(false) // Reset scroll lock on new messages
+  }, [loadedMessages])
+
+  // If parent didn't pass `loadedMessages`, show the default assistant greeting once.
+  useEffect(() => {
+    if (Array.isArray(loadedMessages)) return
+    if (messages.length > 0) return
+    setMessages([{ role: 'assistant', content: '👋 Hola, soy el asistente. Pídeme una propuesta o escribe cualquier cosa.', ts: new Date().toISOString() }])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadedMessages])
 
   const send = async (overrideText = null) => {
@@ -75,6 +102,7 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
     if (!text) return
     setMessages(prev => [...prev, { role: 'user', content: text, ts: new Date().toISOString() }])
     setInput('')
+    setUserHasScrolled(false) // Auto-scroll to new message
 
     if (!apiBase) {
       setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ Backend no detectado.', ts: new Date().toISOString() }])
@@ -154,7 +182,7 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
   }
 
   return (
-    <div className="h-full flex flex-col gap-3">
+    <div className="h-full flex flex-col gap-2 min-w-0 min-h-0 box-border text-[13px] relative overflow-hidden">
       {/* acciones superiores */}
       <div className="flex items-center justify-between">
         <div className="text-sm text-gray-500">Consejo: escribe <code className="px-1 py-[1px] rounded bg-gray-100 border">/propuesta: requisitos del cliente</code></div>
@@ -188,30 +216,32 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
           </div>
         )}
       </div>
-
-      {/* área de mensajes */}
-      <div ref={listRef} className="flex-1 overflow-y-auto custom-scroll rounded-2xl border bg-gradient-to-b from-white to-gray-50 p-4">
-        <div className="space-y-3">
-          {messages.map((m, i) => (
-            <div key={i} className={`max-w-[85%] rounded-2xl px-3 py-2 shadow-sm ${m.role === 'user' ? 'ml-auto bg-blue-600 text-white' : 'bg-white border'}`}>
-              <pre className="whitespace-pre-wrap font-sans text-[13px] leading-relaxed">{m.content}</pre>
-              {m.ts && <div className="text-[10px] opacity-60 mt-1">{new Date(m.ts).toLocaleString()}</div>}
-            </div>
-          ))}
+      {/* area wrapper: messages scroll + fixed input at bottom (flex layout) */}
+      <div className="flex flex-col w-full min-h-0 h-full">
+        <div ref={listRef} onScroll={handleScroll} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 custom-scroll rounded-2xl border bg-gradient-to-b from-white to-gray-50 box-border flex flex-col justify-end">
+          <div className="space-y-3 pb-4 flex flex-col">
+            {messages.map((m, i) => (
+              <div key={i} className={`box-border max-w-full md:max-w-[60%] break-words rounded-2xl px-3 py-2 shadow-sm ${m.role === 'user' ? 'ml-auto bg-blue-600 text-white' : 'bg-white border'}`}>
+                <div className="whitespace-pre-wrap font-sans text-[12px] leading-relaxed break-words">{m.content}</div>
+                {m.ts && <div className="text-[10px] opacity-60 mt-1">{new Date(m.ts).toLocaleString()}</div>}
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
 
-      {/* entrada */}
-      <div className="flex items-center gap-2">
-        <input
-          className="flex-1 border rounded-2xl px-3 py-2"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Escribe… (o /propuesta: requisitos del cliente)"
-          onKeyDown={(e) => (e.key === 'Enter' ? send() : null)}
-        />
-        <button className="px-4 py-2 rounded-2xl bg-blue-600 text-white hover:opacity-90" onClick={send}>Enviar</button>
-        <button className="px-4 py-2 rounded-2xl bg-emerald-600 text-white hover:opacity-90" onClick={openExport}>Exportar PDF</button>
+        <div className="flex items-center gap-2 mt-3 flex-shrink-0 w-full">
+          <input
+            className="flex-1 min-w-0 border rounded-2xl px-3 h-10"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Escribe… (o /propuesta: requisitos del cliente)"
+            onKeyDown={(e) => (e.key === 'Enter' ? send() : null)}
+          />
+          <div className="flex-shrink-0 flex items-center gap-2">
+            <button className="px-4 py-2 rounded-2xl bg-blue-600 text-white hover:opacity-90" onClick={send}>Enviar</button>
+            <button className="px-4 py-2 rounded-2xl bg-emerald-600 text-white hover:opacity-90" onClick={openExport}>Exportar PDF</button>
+          </div>
+        </div>
       </div>
 
       {/* modal export */}

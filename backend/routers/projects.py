@@ -568,28 +568,85 @@ def get_phase_definition(proposal_id: int, phase_idx: int):
         raise HTTPException(status_code=404, detail="Fase no encontrada")
 
     ph = phases[phase_idx]
+
+    # Try to fetch the stored proposal to detect methodology and allow returning structured data
+    with SessionLocal() as db:
+        row = db.query(ProposalLog).filter(ProposalLog.id == proposal_id).first()
+        pj = row.proposal_json or {} if row else {}
+
     desc = ph.get('description')
-    if desc:
+
+    # Attempt to find structured phase info for the proposal methodology regardless of desc presence
+    structured = None
+    try:
+        from backend.knowledge.methodologies import get_method_phases, normalize_method_name
+        import re
+        method = (pj.get('methodology') or '').strip() or None
+        if method:
+            key = normalize_method_name(method)
+            mp = get_method_phases(key) or []
+            
+            # Try exact match first
+            phase_name_lower = (ph.get('name') or '').lower().strip()
+            for s in mp:
+                if (s.get('name') or '').lower().strip() == phase_name_lower:
+                    structured = s
+                    break
+            
+            # If no exact match, try fuzzy matching by tokens
+            if not structured and phase_name_lower:
+                # Tokenize the phase name from proposal
+                tokens = set(re.findall(r'\w+', phase_name_lower))
+                best_match = None
+                best_score = 0
+                
+                for s in mp:
+                    s_name = (s.get('name') or '').lower().strip()
+                    s_tokens = set(re.findall(r'\w+', s_name))
+                    
+                    # Calculate Jaccard similarity
+                    if s_tokens:
+                        intersection = len(tokens & s_tokens)
+                        union = len(tokens | s_tokens)
+                        score = intersection / union if union > 0 else 0
+                        
+                        if score > best_score and score >= 0.3:  # At least 30% similarity
+                            best_score = score
+                            best_match = s
+                
+                # Special handling for common aliases
+                if not best_match:
+                    if any(w in phase_name_lower for w in ['discovery', 'incep', 'inicio', 'kickoff']):
+                        # Use first phase as it's typically inception/discovery
+                        if mp:
+                            best_match = mp[0]
+                
+                structured = best_match
+    except Exception:
+        structured = None
+
+    if desc and not structured:
         return {"definition": desc}
 
-    # si no hay descripción, intentar usar brain._explain_specific_phase
+    # si no hay descripción o hay structured pero necesitamos una explicación textual, intentar usar brain._explain_specific_phase
     try:
         from backend.engine.brain import _explain_specific_phase
         # recuperar propuesta completa para contexto
-        with SessionLocal() as db:
-            row = db.query(ProposalLog).filter(ProposalLog.id == proposal_id).first()
-            if row:
-                pj = row.proposal_json or {}
-            else:
-                pj = {}
-
         # _explain_specific_phase espera el texto preguntado y la proposal dict
         asked = f"¿Qué es la fase {ph.get('name')}?"
         expl = _explain_specific_phase(asked, pj) if callable(_explain_specific_phase) else None
         if expl:
-            return {"definition": expl}
+            resp = {"definition": expl}
+            if structured:
+                resp["structured"] = structured
+            return resp
     except Exception:
         pass
 
-    # fallback genérico
+    # fallback: if we had structured data, return it with a textual summary; otherwise return generic description
+    if structured:
+        # build a lightweight textual definition if desc missing
+        text_def = desc or f"{structured.get('name')} — {structured.get('summary') or ('Descripción de la fase ' + structured.get('name'))}"
+        return {"definition": text_def, "structured": structured}
+
     return {"definition": ph.get('description') or f"Descripción de la fase '{ph.get('name')}'."}

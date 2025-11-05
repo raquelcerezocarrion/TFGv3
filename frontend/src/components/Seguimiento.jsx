@@ -6,7 +6,7 @@ import Chat from './Chat.jsx'
 // - Maintains original endpoints and behavior
 // - Adds improved layout, skeletons, accessibility and clearer empty states
 
-export default function Seguimiento({ token, chats, onContinue }) {
+export default function Seguimiento({ token, chats, onContinue, onSaveCurrentChat, onSaveExistingChat }) {
   const [loading, setLoading] = useState(false)
   const [selectedChat, setSelectedChat] = useState(null)
   const [step, setStep] = useState(1) // 1: choose project, 2: choose proposal, 3: choose phase, 4: phase view + chat
@@ -25,6 +25,7 @@ export default function Seguimiento({ token, chats, onContinue }) {
   const [followUpView, setFollowUpView] = useState('actions') // 'actions' | 'chat'
   const [externalMessage, setExternalMessage] = useState(null)
   const [externalMessageId, setExternalMessageId] = useState(null)
+  const [phaseDefLoading, setPhaseDefLoading] = useState(false)
 
   const base = useMemo(() => `http://${window.location.hostname}:8000`, [])
 
@@ -168,15 +169,39 @@ export default function Seguimiento({ token, chats, onContinue }) {
 
   function selectPhase(idx) {
     setSelectedPhaseIdx(idx)
-    // if description missing for this phase, request it from backend
+    // ALWAYS request structured definition from backend when opening a phase
     try {
       const ph = (phases && phases[idx]) || null
-      if (ph && (!ph.description || ph.description === '' ) && selectedProposal && selectedProposal.id) {
+      if (ph && selectedProposal && selectedProposal.id) {
         ;(async () => {
+          setPhaseDefLoading(true)
           try {
             const res = await axios.get(`${base}/projects/${selectedProposal.id}/phases/${idx}/definition`)
+            console.log('🔍 Phase definition response:', res.data)
             const def = res.data && res.data.definition
-            if (def) {
+            const structured = res.data && res.data.structured
+            
+            if (structured) {
+              console.log('✅ Structured data received:', structured)
+              // merge structured fields into phase
+              setPhases(prev => {
+                const copy = (prev || []).slice()
+                const current = copy[idx] || {}
+                copy[idx] = {
+                  ...current,
+                  description: def || structured.summary || current.description,
+                  goals: structured.goals || structured.objectives || current.goals,
+                  kpis: structured.kpis || current.kpis,
+                  roles: structured.roles_responsibilities || current.roles,
+                  deliverables: structured.deliverables || current.deliverables,
+                  questions: structured.questions_to_ask || current.questions,
+                  checklist: structured.checklist || current.checklist
+                }
+                console.log('📝 Updated phase data:', copy[idx])
+                return copy
+              })
+            } else if (def) {
+              console.log('⚠️ Only definition received, no structured data')
               setPhases(prev => {
                 const copy = (prev || []).slice()
                 copy[idx] = { ...(copy[idx] || {}), description: def }
@@ -184,12 +209,14 @@ export default function Seguimiento({ token, chats, onContinue }) {
               })
             }
           } catch (e) {
-            // ignore
+            console.error('❌ Error fetching phase definition:', e)
+          } finally {
+            setPhaseDefLoading(false)
           }
         })()
       }
     } catch (e) {
-      // ignore
+      console.error('❌ Error in selectPhase:', e)
     }
   }
 
@@ -343,13 +370,36 @@ export default function Seguimiento({ token, chats, onContinue }) {
     setSelectedPhaseIdx(phaseIdx)
     setStep(4)
 
-    // Request definition if missing
+    // Request definition ALWAYS to get structured data (non-blocking; keep UI responsive)
     const ph = (phases && phases[phaseIdx]) || null
-    if (ph && (!ph.description || ph.description === '') && proposal && proposal.id) {
+    if (ph && proposal && proposal.id) {
       try {
+        setPhaseDefLoading(true)
         const r = await axios.get(`${base}/projects/${proposal.id}/phases/${phaseIdx}/definition`)
+        console.log('🔍 Phase definition response (openProposalPhaseChat):', r.data)
         const d = r.data && r.data.definition
-        if (d) {
+        const structured = r.data && r.data.structured
+        
+        if (structured) {
+          console.log('✅ Structured data received (openProposalPhaseChat):', structured)
+          setPhases(prev => {
+            const copy = (prev || []).slice()
+            const current = copy[phaseIdx] || {}
+            copy[phaseIdx] = {
+              ...current,
+              description: d || structured.summary || current.description,
+              goals: structured.goals || structured.objectives || current.goals,
+              kpis: structured.kpis || current.kpis,
+              roles: structured.roles_responsibilities || current.roles,
+              deliverables: structured.deliverables || current.deliverables,
+              questions: structured.questions_to_ask || current.questions,
+              checklist: structured.checklist || current.checklist
+            }
+            console.log('📝 Updated phase data (openProposalPhaseChat):', copy[phaseIdx])
+            return copy
+          })
+        } else if (d) {
+          console.log('⚠️ Only definition received, no structured data (openProposalPhaseChat)')
           setPhases(prev => {
             const copy = (prev || []).slice()
             copy[phaseIdx] = { ...(copy[phaseIdx] || {}), description: d }
@@ -357,7 +407,9 @@ export default function Seguimiento({ token, chats, onContinue }) {
           })
         }
       } catch (e) {
-        // ignore
+        console.error('❌ Error fetching phase definition (openProposalPhaseChat):', e)
+      } finally {
+        setPhaseDefLoading(false)
       }
     }
 
@@ -425,11 +477,13 @@ export default function Seguimiento({ token, chats, onContinue }) {
   )
 
   return (
-    <section className="p-6">
-      <header className="mb-6">
-        <h2 className="text-2xl font-semibold">Seguimiento de proyectos</h2>
-        <p className="text-sm text-gray-500 mt-1">Abre un proyecto guardado y trabaja sobre la propuesta final: fases, checklist y seguimiento.</p>
-      </header>
+  <section className="p-6 bg-white rounded-2xl shadow-lg overflow-hidden box-border max-w-[1200px] mx-auto h-[calc(100vh-120px)]">
+      <div className="hidden">
+        <header className="mb-6">
+          <h2 className="text-2xl font-semibold">Seguimiento de proyectos</h2>
+          <p className="text-sm text-gray-500 mt-1">Abre un proyecto guardado y trabaja sobre la propuesta final: fases, checklist y seguimiento.</p>
+        </header>
+      </div>
 
       <div className="">
         {/* Step 1: project selection - only show saved projects */}
@@ -501,50 +555,36 @@ export default function Seguimiento({ token, chats, onContinue }) {
 
         {/* Step 4: phase view + chat - show only selected phase info and chat */}
         {step === 4 && selectedProposal && selectedPhaseIdx !== null && (
-          <div className="max-w-6xl">
-            <div className="mb-4 flex items-start justify-between">
-              <div>
-                <h3 className="text-2xl font-semibold">{selectedProposal.id ? `Propuesta #${selectedProposal.id}` : selectedChat?.title}</h3>
-                <div className="text-sm text-gray-500 mt-1">Fase: <span className="font-medium">{phases[selectedPhaseIdx]?.name}</span></div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button className="px-3 py-2 border rounded-lg text-sm hover:bg-gray-50" onClick={() => { setStep(3); setProjectChatSession(null); setProjectChatMessages(null); }}>Volver a fases</button>
-                <button className="px-3 py-2 border rounded-lg text-sm hover:bg-gray-50" onClick={() => { setStep(1); setSelectedChat(null); setSelectedProposal(null); setPhases([]); setProjectChatSession(null); setProjectChatMessages(null); }}>Volver a proyectos</button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <aside className="md:col-span-1">
-                <div className="p-4 border rounded-lg bg-white shadow-sm sticky top-6">
-                  <div className="text-lg font-semibold mb-2">{phases[selectedPhaseIdx]?.name}</div>
-                  <div className="text-sm text-gray-700 mb-4">{phases[selectedPhaseIdx]?.description || 'Sin descripción.'}</div>
-
-                  <div className="mb-3">
-                    <div className="font-medium text-sm mb-2">Checklist sugerida</div>
-                    <ul className="list-decimal list-inside space-y-2 text-sm">
-                      {(phases[selectedPhaseIdx]?.checklist || []).map((t, i) => <li key={i} className="text-sm">{t}</li>)}
-                    </ul>
-                  </div>
-
-                  <div className="mt-4 flex flex-col gap-2">
-                    <button className="w-full px-3 py-2 bg-blue-600 text-white rounded-md" onClick={() => {
-                      const name = phases[selectedPhaseIdx]?.name || ''
-                      const msg = `Quiero hacer preguntas sobre la fase "${name}". Por favor, resume los puntos clave y dime qué dudas debería plantear al equipo.`
-                      setExternalMessage(msg)
-                      setExternalMessageId(Date.now())
-                    }}>Preguntar sobre esta fase</button>
-                    <button className="w-full px-3 py-2 border rounded-md text-sm" onClick={() => createRunForProposal()} disabled={runLoading}>{runLoading ? 'Iniciando…' : 'Iniciar seguimiento'}</button>
-                  </div>
+          <div className="w-full max-w-full mx-auto overflow-hidden box-border h-full flex flex-col">
+            <div className="bg-white rounded-2xl p-4 overflow-hidden h-full flex flex-col">
+              <div className="mb-3 flex items-start justify-between flex-shrink-0">
+                <div>
+                  <h3 className="text-xl font-semibold">{selectedProposal.id ? `Propuesta #${selectedProposal.id}` : selectedChat?.title}</h3>
+                  <div className="text-xs text-gray-500 mt-1">Fase: <span className="font-medium">{phases[selectedPhaseIdx]?.name}</span></div>
                 </div>
-              </aside>
-
-              <main className="md:col-span-2 flex flex-col gap-4">
-                <div className="p-0 bg-white rounded-lg shadow-sm h-[60vh] flex flex-col overflow-hidden">
-                  <div className="flex-1 overflow-auto">
-                    <Chat token={token} loadedMessages={projectChatMessages} sessionId={projectChatSession} externalMessage={externalMessage} externalMessageId={externalMessageId} />
-                  </div>
+                <div className="flex items-center gap-2">
+                  <button className="px-2 py-1 border rounded text-xs hover:bg-gray-50" onClick={() => { setStep(3); setProjectChatSession(null); setProjectChatMessages(null); }}>Volver a fases</button>
+                  <button className="px-2 py-1 border rounded text-xs hover:bg-gray-50" onClick={() => { setStep(1); setSelectedChat(null); setSelectedProposal(null); setPhases([]); setProjectChatSession(null); setProjectChatMessages(null); }}>Volver a proyectos</button>
                 </div>
-              </main>
+              </div>
+
+              <div className="grid grid-cols-1 h-full overflow-hidden box-border flex-1 min-h-0">
+                {/* Right panel - Chat */}
+                <main className="flex flex-col h-full min-w-0 min-h-0">
+                  <div className="flex flex-col h-full overflow-hidden p-2 min-h-0">
+                    <Chat 
+                      token={token} 
+                      loadedMessages={projectChatMessages} 
+                      sessionId={projectChatSession} 
+                      externalMessage={externalMessage} 
+                      externalMessageId={externalMessageId} 
+                      onSaveCurrentChat={onSaveCurrentChat}
+                      onSaveExistingChat={onSaveExistingChat}
+                      selectedChatId={selectedChat?.id || null}
+                    />
+                  </div>
+                </main>
+              </div>
             </div>
           </div>
         )}
@@ -703,9 +743,9 @@ export default function Seguimiento({ token, chats, onContinue }) {
               </div>
             )}
 
-            {followUpView === 'chat' && (
+              {followUpView === 'chat' && (
               <div>
-                <Chat token={token} loadedMessages={projectChatMessages} sessionId={projectChatSession} externalMessage={externalMessage} externalMessageId={externalMessageId} />
+                <Chat token={token} loadedMessages={projectChatMessages} sessionId={projectChatSession} externalMessage={externalMessage} externalMessageId={externalMessageId} onSaveCurrentChat={onSaveCurrentChat} onSaveExistingChat={onSaveExistingChat} selectedChatId={selectedChat?.id || null} />
               </div>
             )}
           </div>

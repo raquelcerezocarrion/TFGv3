@@ -47,6 +47,8 @@ from backend.knowledge.methodologies import (
     compare_methods,
     normalize_method_name,
     METHODOLOGIES,
+    get_method_phases,
+    get_phase_detail,
 )
 
 # Persistencia opcional
@@ -3063,6 +3065,82 @@ def _training_benefits_card(level: str, method: str) -> str:
 
 # ===================== generación de respuesta =====================
 
+
+def _render_phase_rich_response(ntext: str, phase_info: Dict, method: str, phase_asked: str) -> str:
+    """Genera una respuesta rica y orientada a preguntas para una fase concreta.
+
+    ntext: texto normalizado de la consulta del usuario
+    phase_info: diccionario con campos de la fase (goals, checklist, kpis, etc.)
+    method: nombre de la metodología
+    phase_asked: texto original de la fase mencionada
+    """
+    lines = [f">> Sobre la fase {phase_info.get('name', phase_asked)} (metodología: {method}):\n"]
+
+    # Resumen y contexto
+    if phase_info.get('summary'):
+        lines.append(phase_info.get('summary'))
+
+    # Preguntas frecuentes / intenciones detectadas
+    # Problemas / bloqueos
+    if any(k in ntext for k in ["problema","issue","bloqueado","retraso","atascado","dificultad","error"]):
+        if phase_info.get('common_issues'):
+            lines.append('\nPROBLEMAS COMUNES:')
+            for issue in phase_info.get('common_issues', []):
+                lines.append(f"  - {issue}")
+        if phase_info.get('mitigations'):
+            lines.append('\nMEDIDAS RECOMENDADAS:')
+            for mit in phase_info.get('mitigations', []):
+                lines.append(f"  - {mit}")
+
+    # Cambios / ajustes / checklist
+    if any(k in ntext for k in ["cambio","modificar","ajustar","revisar","checklist","validar","comprobar"]):
+        if phase_info.get('goals'):
+            lines.append('\nOBJETIVOS:')
+            for g in phase_info.get('goals', []):
+                lines.append(f"  - {g}")
+        if phase_info.get('checklist'):
+            lines.append('\nCHECKLIST DETALLADO:')
+            for c in phase_info.get('checklist', []):
+                lines.append(f"  - {c}")
+
+    # Cómo hacerlo / responsabilidades
+    if any(k in ntext for k in ["como","que hacer","ayuda","necesito","roles","responsab","quien"]):
+        if phase_info.get('roles_responsibilities'):
+            lines.append('\nROLES Y RESPONSABILIDADES:')
+            for role, resp in (phase_info.get('roles_responsibilities') or {}).items():
+                lines.append(f"  - {role}: {resp}")
+        if phase_info.get('questions_to_ask'):
+            lines.append('\nPREGUNTAS ÚTILES PARA EL EQUIPO:')
+            for q in phase_info.get('questions_to_ask', [])[:8]:
+                lines.append(f"  - {q}")
+
+    # KPIs y entregables
+    if phase_info.get('kpis'):
+        lines.append('\nKPIs SUGERIDOS:')
+        for kpi in phase_info.get('kpis', [])[:8]:
+            lines.append(f"  - {kpi}")
+    if phase_info.get('deliverables'):
+        lines.append('\nENTREGABLES PRINCIPALES:')
+        for d in phase_info.get('deliverables', [])[:8]:
+            lines.append(f"  - {d}")
+
+    # Si el usuario pregunta 'qué pasa si...' o escenarios
+    if any(k in ntext for k in ["si", "y si", "qué pasa", "que pasa"]):
+        lines.append('\nESCENARIOS COMUNES Y RESPUESTAS:')
+        # heurísticas simples basadas en mitigations/common_issues
+        if phase_info.get('common_issues'):
+            for issue in phase_info.get('common_issues', [])[:3]:
+                lines.append(f"  - Si ocurre '{issue}': revisar {phase_info.get('mitigations',[ 'acciones de mitigación no disponibles'])[0]}")
+        else:
+            lines.append("  - Si surge un bloqueo: identificar owner, reducir scope y comunicar impacto al PO.")
+
+    # Añadir duración si existe
+    if phase_info.get('typical_weeks'):
+        lines.append(f"\nDuración típica: {phase_info.get('typical_weeks')} semanas")
+
+    return "\n".join(lines)
+
+
 def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
     text = message.strip()
     proposal, req_text = get_last_proposal(session_id)
@@ -3513,7 +3591,56 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             "'quita fase QA', 'añade riesgo: cumplimiento RGPD', 'quiero formarme'."
         ), "Ayuda."
 
-    # si preguntan por una fase concreta: explicarla en detalle
+    # PREGUNTAS ESPECÍFICAS DE SEGUIMIENTO sobre fases
+    ntext = _norm(text)
+    phase_mentioned = _match_phase_name(text, proposal)
+    
+    # Detectar preguntas de seguimiento (problemas, cambios, retrasos, dudas)
+    is_followup_question = any(k in ntext for k in [
+        "problema","issue","bloqueado","bloqueada","retraso","atascado","atascada",
+        "dificultad","cambio","modificar","ajustar","revisar",
+        "como","que hacer","ayuda con","necesito","duda","consulta",
+        "no funciona","falla","error"
+    ])
+    
+    if phase_mentioned and is_followup_question:
+        try:
+            set_last_area(session_id, "phases")
+        except Exception:
+            pass
+        
+        # Obtener información estructurada de la fase
+        method = (proposal or {}).get('methodology', 'Scrum')
+        try:
+            # Normalizar el nombre de la metodología para buscar las fases
+            method_normalized = normalize_method_name(method)
+            phases = get_method_phases(method_normalized) or []
+        except Exception:
+            phases = []
+        
+        # Buscar la fase específica
+        phase_info = None
+        if phases:
+            n = _norm_simple(phase_mentioned)
+            for ph in phases:
+                pn = _norm_simple(ph.get('name', '') or '')
+                if pn and (pn in n or n in pn):
+                    phase_info = ph
+                    break
+        
+        # Construir respuesta contextual basada en el conocimiento de la fase
+        if phase_info:
+            try:
+                resp = _render_phase_rich_response(ntext, phase_info, method, phase_mentioned)
+                return resp, f"Seguimiento de fase: {phase_mentioned}"
+            except Exception:
+                # Fallback seguro a la explicación textual existente
+                return _explain_specific_phase(text, proposal), f"Fase concreta: {phase_mentioned}."
+        else:
+            # Fallback si no hay info estructurada
+            return _explain_specific_phase(text, proposal), f"Fase concreta: {phase_mentioned}."
+    
+    # si preguntan por una fase concreta: explicarla en detalle (caso general)
     phase_detail = _match_phase_name(text, proposal)
     if phase_detail and (any(k in _norm(text) for k in [
         "qué es","que es","explica","explícame","explicame",
@@ -3527,6 +3654,57 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
         return _explain_specific_phase(text, proposal), f"Fase concreta: {phase_detail}."
 
     # Fases (sin 'por qué')
+    # Si el usuario pide las fases y menciona una metodología concreta, devolver
+    # el detalle estructurado de las fases desde el catálogo `METHODOLOGY_PHASES`.
+    methods_in_text = _mentioned_methods(text)
+    if _asks_phases_simple(text) and not _asks_why(text) and methods_in_text:
+        try:
+            set_last_area(session_id, "phases")
+        except Exception:
+            pass
+
+        method = methods_in_text[0]
+        try:
+            phases = get_method_phases(method) or []
+        except Exception:
+            phases = []
+
+        if not phases:
+            # Fallback a la ficha de la metodología si no hay fases estructuradas
+            try:
+                return _method_overview_text(method), f"Fases (metodología: {method})"
+            except Exception:
+                return (f"No tengo definidas las fases para {method}."), f"Fases: sin datos {method}"
+
+        lines = [f"Fases típicas en {method}:"]
+        for i, ph in enumerate(phases, start=1):
+            name = ph.get("name") or f"Fase {i}"
+            summary = ph.get("summary") or "(sin resumen)"
+            weeks = ph.get("typical_weeks") or ph.get("weeks") or ph.get("weeks_estimate") or "?"
+            lines.append(f"\n{i}. {name} — {summary} (duración típica: {weeks} semanas)")
+
+            if ph.get("goals"):
+                lines.append("  Objetivos:")
+                for g in ph.get("goals", [])[:5]:
+                    lines.append(f"    - {g}")
+            if ph.get("checklist"):
+                lines.append("  Checklist:")
+                for c in ph.get("checklist", [])[:6]:
+                    lines.append(f"    - {c}")
+            if ph.get("roles_responsibilities"):
+                lines.append("  Roles clave:")
+                for role, resp in (ph.get("roles_responsibilities") or {}).items():
+                    lines.append(f"    - {role}: {resp}")
+            if ph.get("kpis"):
+                lines.append("  KPIs:")
+                for kpi in ph.get("kpis", [])[:5]:
+                    lines.append(f"    - {kpi}")
+            if ph.get("deliverables"):
+                lines.append("  Entregables:")
+                for d in ph.get("deliverables", [])[:6]:
+                    lines.append(f"    - {d}")
+
+        return "\n".join(lines), f"Fases (metodología: {method})"
     if _asks_phases_simple(text) and not _asks_why(text):
         set_last_area(session_id, "phases")
         if proposal:

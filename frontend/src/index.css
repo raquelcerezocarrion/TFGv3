@@ -4,6 +4,9 @@
 
 html, body, #root { height: 100%; }
 
+/* Evitar scroll horizontal inesperado en toda la app */
+body { overflow-x: hidden; }
+
 /* Scrollbar discreto para paneles largos */
 .custom-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
 .custom-scroll::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.18); border-radius: 8px; }

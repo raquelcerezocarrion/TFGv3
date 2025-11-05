@@ -186,8 +186,8 @@ export default function App() {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 py-6">
-        <div className="bg-white/70 backdrop-blur shadow-xl rounded-3xl p-4 flex h-[78vh] border">
+      <main className="w-full px-4 py-6 h-[calc(100vh-64px)]">
+        <div className="bg-white/70 backdrop-blur shadow-none rounded-none p-4 flex h-full w-full border-0">
           {!token ? (
             <div className="w-full grid place-items-center">
               <div className="w-full max-w-md"><Auth onLogin={onLogin} /></div>
@@ -215,7 +215,7 @@ export default function App() {
                 ) : view === 'recommendations' ? (
                   <Recommendations token={token} />
                   ) : view === 'seguimiento' ? (
-                    <Seguimiento token={token} chats={chats} onContinue={onContinue} />
+                    <Seguimiento token={token} chats={chats} onContinue={onContinue} onSaveCurrentChat={onSaveCurrentChat} onSaveExistingChat={onSaveExistingChat} />
                   ) : (
                   <Chat
                     token={token}
