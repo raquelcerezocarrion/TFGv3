@@ -54,9 +54,11 @@ from backend.knowledge.methodologies import (
 # Persistencia opcional
 try:
     from backend.memory.state_store import save_proposal, log_message
+    from backend.memory.state_store import list_messages
 except Exception:  # pragma: no cover
     def save_proposal(*a, **k): return None
     def log_message(*a, **k): return None
+    def list_messages(*a, **k): return []
 
 # NLU opcional
 try:
@@ -3141,6 +3143,78 @@ def _render_phase_rich_response(ntext: str, phase_info: Dict, method: str, phase
     return "\n".join(lines)
 
 
+# ------------------ Especialistas por metodología (Scrum primero) ------------------
+def _scrum_phase_specialist(ntext: str, phase_info: Dict, proposal: Optional[Dict[str, Any]] = None) -> str:
+    """Genera recomendaciones y acciones específicas para fases de Scrum.
+
+    Devuelve texto adicional pensado exclusivamente para la vista de seguimiento.
+    """
+    name = (phase_info.get('name') or '').lower()
+    lines: List[str] = []
+
+    # Incepción / Plan de Releases (discovery)
+    if any(k in name for k in ['incepción', 'incepcion', 'discovery', 'plan de releases']):
+        lines.append('SUGERENCIAS PRÁCTICAS (Incepción / Discovery):')
+        lines.append('- Validar y priorizar las 3 hipótesis con mayor impacto; asigna owners para cada hipótesis.')
+        lines.append('- Ejecuta 1 workshop de alineación con stakeholders y acuerda criterios de éxito (KPIs concretos).')
+        lines.append('- Entregables inmediatos: backlog inicial priorizado, roadmap de releases y definition of ready para primer sprint.')
+        if proposal:
+            lines.append('- Revisa dependencias detectadas en la propuesta y marca como riesgos con owners.')
+
+    # Sprints / Desarrollo iterativo
+    if any(k in name for k in ['sprints', 'desarrollo iterativo', 'iteración', 'sprint']):
+        lines.append('SUGERENCIAS PRÁCTICAS (Sprints / Desarrollo iterativo):')
+        lines.append('- Revisa que cada historia tenga DoR y DoD claros; crea una checklist mínima de DoD técnica y de negocio.')
+        lines.append('- Si hay retrasos, calcula la desviación de velocity de los últimos 3 sprints y ajusta forecast.')
+        lines.append('- Implementa un burndown diario y registra impedimentos; asigna owners para cada impedimento con SLA de resolución.')
+        if phase_info.get('checklist'):
+            lines.append('- Para mejorar cumplimiento, automatiza ejecución de los pasos críticos de la checklist en CI.')
+
+    # Hardening & Pruebas de aceptación
+    if any(k in name for k in ['hardening', 'pruebas', 'aceptación', 'testing']):
+        lines.append('SUGERENCIAS PRÁCTICAS (Hardening / Aceptación):')
+        lines.append('- Definir gates automáticos en CI que impidan avanzar si fallan tests críticos (integration/e2e).')
+        lines.append('- Prioriza bugs por severidad y fecha límite de fix; crea un plan de estabilización con owners y tiempos de resolución.')
+        lines.append('- Verifica entornos de staging reproducibles y añade smoke tests post-deploy.')
+        if phase_info.get('kpis'):
+            lines.append(f"- KPIs objetivo sugeridos: {', '.join(phase_info.get('kpis', [])[:3])}")
+
+    # Release & Handover
+    if any(k in name for k in ['release', 'handover', 'despliegue']):
+        lines.append('SUGERENCIAS PRÁCTICAS (Release & Handover):')
+        lines.append('- Define plan de rollback con pasos concretos y owner en cada paso; prueba el rollback en staging.')
+        lines.append('- Asegura runbooks y monitorización (dashboards + alertas) listos antes del deploy.')
+        lines.append('- Realiza una verificación post-release (smoke + checks de integridad) con checklist y responsables.')
+        if proposal:
+            lines.append('- Programa una retro específica para recoger lecciones aprendidas y actualizar Definition of Done si procede.')
+
+    # Si no hemos añadido nada, devolver cadena vacía
+    if not lines:
+        return ''
+
+    return "\n".join(lines)
+
+
+def _apply_method_specialist(method: str, ntext: str, phase_info: Dict, base_resp: str, proposal: Optional[Dict[str, Any]] = None) -> str:
+    """Encapsula la llamada al especialista correspondiente según metodología.
+
+    Actualmente implementa sólo Scrum; devuelve el texto combinado.
+    """
+    m = normalize_method_name(method) if method else ''
+    extra = ''
+    try:
+        if m == 'Scrum'.lower() or m.lower() == 'scrum':
+            extra = _scrum_phase_specialist(ntext, phase_info, proposal)
+    except Exception:
+        extra = ''
+
+    if extra:
+        return base_resp + "\n\n---\n\n" + extra
+    return base_resp
+
+# ----------------------------------------------------------------------------------
+
+
 def _merge_proposal_and_catalog_phase(proposal: Optional[Dict[str, Any]], phase_name_or_idx: str, method: str) -> Dict:
     """Devuelve una versión 'merged' de la fase, priorizando datos de la proposal.
 
@@ -3647,6 +3721,70 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
     ntext = _norm(text)
     phase_mentioned = _match_phase_name(text, proposal)
 
+    # Preguntas del tipo "¿qué fase es esta?", "en qué fase estamos", "qué fase estoy"
+    def _is_which_phase_query(nt: str) -> bool:
+        checks = [
+            "que fase es esta", "qué fase es esta", "en que fase estamos", "en qué fase estamos",
+            "que fase estoy", "qué fase estoy", "qué fase es", "que fase es",
+            "en que fase estoy", "en qué fase estoy"
+        ]
+        for c in checks:
+            if c in nt:
+                return True
+        # also short forms like 'qué fase' or 'que fase' alone
+        if nt.strip() in ("que fase", "qué fase"):
+            return True
+        return False
+
+    if _is_which_phase_query(ntext):
+        # Intentar inferir la fase desde la propuesta o desde el historial de conversación
+        if not proposal:
+            # Si hay requisitos guardados, intentar generar provisionalmente
+            seed = req_text or text
+            try:
+                tmp = generate_proposal(seed)
+                info = METHODOLOGIES.get(tmp.get("methodology", ""), {})
+                tmp["methodology_sources"] = info.get("sources", [])
+                set_last_proposal(session_id, tmp, seed)
+                proposal = tmp
+            except Exception:
+                proposal = None
+
+        if not proposal:
+            return ("No tengo una propuesta ni contexto para saber a qué fase te refieres. "
+                    "Genera una propuesta con '/propuesta: ...' o dime a qué artefacto/fase te refieres."), "Qué fase: sin propuesta"
+
+        # Buscar en el historial la última referencia a una fase
+        try:
+            msgs = list_messages(session_id, limit=40) or []
+        except Exception:
+            msgs = []
+
+        found_phase = None
+        # recorremos los mensajes más recientes buscando coincidencias con fases de la proposal
+        try:
+            for m in reversed(msgs):
+                content = getattr(m, 'content', '') or getattr(m, 'text', '') or ''
+                if not content:
+                    continue
+                cand = _match_phase_name(content, proposal)
+                if cand:
+                    found_phase = cand
+                    break
+        except Exception:
+            found_phase = None
+
+        method = (proposal or {}).get('methodology', '(no definida)')
+        if found_phase:
+            return (f"Según el contexto reciente estás hablando de la fase: '{found_phase}' del plan. "
+                    f"La metodología del proyecto es: {method}.") , f"Qué fase: {found_phase}"
+
+        # Si no aparece en historial, devolver resumen y pedir que el usuario aclare
+        phases_list = proposal.get('phases') or []
+        brief = ", ".join(f"{i+1}. {ph.get('name','(sin nombre)')}" for i, ph in enumerate(phases_list[:6]))
+        return (f"La propuesta actual usa la metodología '{method}'. Las fases del plan son: {brief}. "
+                "¿A cuál de estas te refieres (puedes indicar número o nombre)?"), "Qué fase: pedir aclaración"
+
     # Comando explícito para pedir detalle de una fase por índice o nombre: '/fase:2' o '/fase nombre'
     if text.lower().startswith('/fase'):
         # formato: /fase:2 o /fase 2 o /fase: nombre
@@ -3667,6 +3805,10 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
         merged = _merge_proposal_and_catalog_phase(proposal, arg, method)
         try:
             resp = _render_phase_rich_response(_norm(arg), merged, method, merged.get('name', arg))
+            try:
+                resp = _apply_method_specialist(method, _norm(arg), merged, resp, proposal)
+            except Exception:
+                pass
             return resp, f"Detalle fase: {merged.get('name', arg)}"
         except Exception:
             return _explain_specific_phase(text, proposal), "Fase: fallback"
@@ -3708,6 +3850,10 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
         if phase_info:
             try:
                 resp = _render_phase_rich_response(ntext, phase_info, method, phase_mentioned)
+                try:
+                    resp = _apply_method_specialist(method, ntext, phase_info, resp, proposal)
+                except Exception:
+                    pass
                 return resp, f"Seguimiento de fase: {phase_mentioned}"
             except Exception:
                 # Fallback seguro a la explicación textual existente
@@ -3732,6 +3878,10 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
         merged = _merge_proposal_and_catalog_phase(proposal, phase_detail, method)
         try:
             resp = _render_phase_rich_response(_norm(text), merged, method, phase_detail)
+            try:
+                resp = _apply_method_specialist(method, _norm(text), merged, resp, proposal)
+            except Exception:
+                pass
             return resp, f"Fase concreta: {phase_detail}."
         except Exception:
             return _explain_specific_phase(text, proposal), f"Fase concreta: {phase_detail}."

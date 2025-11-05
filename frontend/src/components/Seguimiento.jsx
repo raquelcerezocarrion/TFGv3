@@ -362,8 +362,13 @@ export default function Seguimiento({ token, chats, onContinue, onSaveCurrentCha
     const phase = (phases && phases[phaseIdx]) || null
     const initialMsgs = []
     if (phase) {
-      const phaseText = `Contexto de la fase seleccionada:\nNombre: ${phase.name}\nDescripción: ${phase.description || ''}\nChecklist:\n${(phase.checklist || []).map((t, i) => `${i+1}. ${t}`).join('\n')}`
-      initialMsgs.push({ role: 'user', content: phaseText, ts: new Date().toISOString() })
+      // First message must be assistant greeting scoped to the selected phase
+      initialMsgs.push({ role: 'assistant', content: `Hola! En qué te puedo ayudar sobre la fase ${phase.name}` , ts: new Date().toISOString() })
+      // NOTE: We intentionally DO NOT push the full phase context as a 'user' message
+      // because the UI previously showed it as a blue user bubble. The user requested
+      // that only the assistant greeting remains visible. If later we need to send
+      // the structured context to the backend without rendering it as a user bubble,
+      // we can pass it via a hidden prop or include it in the proactive message.
     }
     // set UI to phase view immediately
     setProjectChatMessages(initialMsgs)
@@ -423,6 +428,14 @@ export default function Seguimiento({ token, chats, onContinue, onSaveCurrentCha
       if (assistant_summary) msgs.push({ role: 'assistant', content: assistant_summary, ts: new Date().toISOString() })
       setProjectChatSession(sid)
       setProjectChatMessages(msgs)
+      // Enviar proactivamente una petición al asistente (opción A)
+      try {
+        const proactive = `Proactividad: considerando la fase \"${phase?.name || ''}\" y la metodología ${proposal?.methodology || ''}, por favor propon 3 acciones prioritarias, 3 riesgos críticos a vigilar, una checklist mínima de 5 ítems y sugerencias de responsables para cada ítem.`
+        setExternalMessage(proactive)
+        setExternalMessageId(Date.now())
+      } catch (e) {
+        console.debug('No pude lanzar mensaje proactivo:', e)
+      }
     } catch (e) {
       console.error('openProposalPhaseChat', e)
       // don't block the UI; show an inline error but keep phase view
