@@ -218,7 +218,7 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
       </div>
       {/* area wrapper: messages scroll + fixed input at bottom (flex layout) */}
       <div className="flex flex-col w-full min-h-0 h-full">
-        <div ref={listRef} onScroll={handleScroll} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 custom-scroll rounded-2xl border bg-gradient-to-b from-white to-gray-50 box-border flex flex-col justify-end">
+        <div ref={listRef} onScroll={handleScroll} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 custom-scroll rounded-2xl border bg-gradient-to-b from-white to-gray-50 box-border flex flex-col">
           <div className="space-y-3 pb-4 flex flex-col">
             {messages.map((m, i) => (
               <div key={i} className={`box-border max-w-full md:max-w-[60%] break-words rounded-2xl px-3 py-2 shadow-sm ${m.role === 'user' ? 'ml-auto bg-blue-600 text-white' : 'bg-white border'}`}>

@@ -556,34 +556,57 @@ export default function Seguimiento({ token, chats, onContinue, onSaveCurrentCha
         {/* Step 4: phase view + chat - show only selected phase info and chat */}
         {step === 4 && selectedProposal && selectedPhaseIdx !== null && (
           <div className="w-full max-w-full mx-auto overflow-hidden box-border h-full flex flex-col">
-            <div className="bg-white rounded-2xl p-4 overflow-hidden h-full flex flex-col">
-              <div className="mb-3 flex items-start justify-between flex-shrink-0">
-                <div>
-                  <h3 className="text-xl font-semibold">{selectedProposal.id ? `Propuesta #${selectedProposal.id}` : selectedChat?.title}</h3>
-                  <div className="text-xs text-gray-500 mt-1">Fase: <span className="font-medium">{phases[selectedPhaseIdx]?.name}</span></div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button className="px-2 py-1 border rounded text-xs hover:bg-gray-50" onClick={() => { setStep(3); setProjectChatSession(null); setProjectChatMessages(null); }}>Volver a fases</button>
-                  <button className="px-2 py-1 border rounded text-xs hover:bg-gray-50" onClick={() => { setStep(1); setSelectedChat(null); setSelectedProposal(null); setPhases([]); setProjectChatSession(null); setProjectChatMessages(null); }}>Volver a proyectos</button>
+            <div className="bg-white rounded-2xl p-4 overflow-hidden h-full flex flex-row gap-4">
+              <div className="w-80 flex-shrink-0">
+                <div className="p-4 bg-white border rounded-lg h-full flex flex-col justify-between">
+                  <div>
+                    <h3 className="text-lg font-semibold">{selectedProposal.id ? `Propuesta #${selectedProposal.id}` : selectedChat?.title}</h3>
+                    <div className="text-xs text-gray-500 mt-1">Fase: <span className="font-medium">{phases[selectedPhaseIdx]?.name}</span></div>
+
+                    <div className="mt-3 text-sm text-gray-700">
+                      <div className="font-medium">Descripción</div>
+                      <div className="mt-1 text-xs text-gray-600">{phases[selectedPhaseIdx]?.description || phases[selectedPhaseIdx]?.summary || 'Sin descripción disponible.'}</div>
+                    </div>
+
+                    <div className="mt-4">
+                      <div className="font-medium text-sm">Checklist</div>
+                      <ul className="list-disc list-inside mt-2 text-sm text-gray-700 space-y-1">
+                        {(phases[selectedPhaseIdx]?.checklist || []).slice(0,8).map((t,i) => <li key={i}>{t}</li>)}
+                        {(!phases[selectedPhaseIdx]?.checklist || phases[selectedPhaseIdx].checklist.length===0) && <li className="text-xs text-gray-500">No hay checklist disponible.</li>}
+                      </ul>
+                    </div>
+
+                    <div className="mt-4">
+                      <div className="font-medium text-sm">KPIs</div>
+                      <ul className="list-disc list-inside mt-2 text-sm text-gray-700 space-y-1">
+                        {(phases[selectedPhaseIdx]?.kpis || []).slice(0,6).map((k,i) => <li key={i}>{k}</li>)}
+                        {(!phases[selectedPhaseIdx]?.kpis || phases[selectedPhaseIdx].kpis.length===0) && <li className="text-xs text-gray-500">No hay KPIs definidos.</li>}
+                      </ul>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 flex flex-col gap-2">
+                    <button className="px-3 py-1 border rounded text-sm" onClick={() => { setStep(3); setProjectChatSession(null); setProjectChatMessages(null); }}>Volver a fases</button>
+                    <button className="px-3 py-1 border rounded text-sm" onClick={() => { setStep(1); setSelectedChat(null); setSelectedProposal(null); setPhases([]); setProjectChatSession(null); setProjectChatMessages(null); }}>Volver a proyectos</button>
+                    <button className="px-3 py-1 bg-emerald-600 text-white rounded text-sm" onClick={() => createRunForProposal()} disabled={runLoading}>{runLoading ? 'Iniciando…' : 'Iniciar seguimiento'}</button>
+                  </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 h-full overflow-hidden box-border flex-1 min-h-0">
-                {/* Right panel - Chat */}
-                <main className="flex flex-col h-full min-w-0 min-h-0">
-                  <div className="flex flex-col h-full overflow-hidden p-2 min-h-0">
-                    <Chat 
-                      token={token} 
-                      loadedMessages={projectChatMessages} 
-                      sessionId={projectChatSession} 
-                      externalMessage={externalMessage} 
-                      externalMessageId={externalMessageId} 
-                      onSaveCurrentChat={onSaveCurrentChat}
-                      onSaveExistingChat={onSaveExistingChat}
-                      selectedChatId={selectedChat?.id || null}
-                    />
-                  </div>
-                </main>
+              {/* Right: Chat panel, fixed-height so messages scroll internally */}
+              <div className="flex-1 min-w-0 flex flex-col">
+                <div className="h-[64vh] p-2 min-h-0">
+                  <Chat 
+                    token={token} 
+                    loadedMessages={projectChatMessages} 
+                    sessionId={projectChatSession} 
+                    externalMessage={externalMessage} 
+                    externalMessageId={externalMessageId} 
+                    onSaveCurrentChat={onSaveCurrentChat}
+                    onSaveExistingChat={onSaveExistingChat}
+                    selectedChatId={selectedChat?.id || null}
+                  />
+                </div>
               </div>
             </div>
           </div>

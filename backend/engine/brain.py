@@ -3141,6 +3141,58 @@ def _render_phase_rich_response(ntext: str, phase_info: Dict, method: str, phase
     return "\n".join(lines)
 
 
+def _merge_proposal_and_catalog_phase(proposal: Optional[Dict[str, Any]], phase_name_or_idx: str, method: str) -> Dict:
+    """Devuelve una versión 'merged' de la fase, priorizando datos de la proposal.
+
+    phase_name_or_idx: puede ser un nombre parcial de fase o un índice (string de número).
+    method: nombre de metodología (normalizado o no).
+    """
+    merged: Dict = {}
+    # 1) intentar tomar desde proposal si existe
+    if proposal:
+        # si se pasó un número
+        try:
+            idx = int(phase_name_or_idx)
+            phases_prop = proposal.get('phases') or []
+            if 0 <= idx < len(phases_prop):
+                merged.update(phases_prop[idx] or {})
+        except Exception:
+            # intentar match por nombre parcial
+            phases_prop = proposal.get('phases') or []
+            n = _norm_simple(phase_name_or_idx)
+            for ph in phases_prop:
+                if ph and _norm_simple(ph.get('name','')) in n or n in _norm_simple(ph.get('name','')):
+                    merged.update(ph or {})
+                    break
+
+    # 2) enriquecer con catálogo metodologías
+    try:
+        cat_phases = get_method_phases(method) or []
+        # buscar el mismo por nombre (canon)
+        n = _norm_simple(phase_name_or_idx)
+        for c in cat_phases:
+            cn = _norm_simple(c.get('name',''))
+            if cn and (cn in n or n in cn or (merged.get('name') and _norm_simple(merged.get('name')) in cn or cn in _norm_simple(merged.get('name')))):
+                # añadir solo claves que no estén en merged o que sean vacías
+                for k, v in c.items():
+                    if k not in merged or not merged.get(k):
+                        merged[k] = v
+                break
+    except Exception:
+        pass
+
+    # 3) asegurarnos de campos clave
+    merged.setdefault('name', phase_name_or_idx)
+    merged.setdefault('summary', merged.get('summary') or '')
+    merged.setdefault('goals', merged.get('goals') or [])
+    merged.setdefault('checklist', merged.get('checklist') or [])
+    merged.setdefault('roles_responsibilities', merged.get('roles_responsibilities') or {})
+    merged.setdefault('kpis', merged.get('kpis') or [])
+    merged.setdefault('deliverables', merged.get('deliverables') or [])
+    merged.setdefault('questions_to_ask', merged.get('questions_to_ask') or [])
+    return merged
+
+
 def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
     text = message.strip()
     proposal, req_text = get_last_proposal(session_id)
@@ -3594,6 +3646,30 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
     # PREGUNTAS ESPECÍFICAS DE SEGUIMIENTO sobre fases
     ntext = _norm(text)
     phase_mentioned = _match_phase_name(text, proposal)
+
+    # Comando explícito para pedir detalle de una fase por índice o nombre: '/fase:2' o '/fase nombre'
+    if text.lower().startswith('/fase'):
+        # formato: /fase:2 o /fase 2 o /fase: nombre
+        arg = None
+        if ':' in text:
+            arg = text.split(':',1)[1].strip()
+        else:
+            parts = text.split(None,1)
+            arg = parts[1].strip() if len(parts) > 1 else None
+
+        if not arg:
+            return ("Indica la fase que quieres ver. Ej: '/fase: 1' o '/fase: Incepción'"), "Comando fase: falta argumento"
+
+        if not proposal:
+            return ("Para ver la fase de un proyecto necesito que exista una propuesta en esta sesión. Usa '/propuesta: ...' primero."), "Fase sin propuesta"
+
+        method = proposal.get('methodology') or 'Scrum'
+        merged = _merge_proposal_and_catalog_phase(proposal, arg, method)
+        try:
+            resp = _render_phase_rich_response(_norm(arg), merged, method, merged.get('name', arg))
+            return resp, f"Detalle fase: {merged.get('name', arg)}"
+        except Exception:
+            return _explain_specific_phase(text, proposal), "Fase: fallback"
     
     # Detectar preguntas de seguimiento (problemas, cambios, retrasos, dudas)
     is_followup_question = any(k in ntext for k in [
@@ -3651,7 +3727,14 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             set_last_area(session_id, "phases")
         except Exception:
             pass
-        return _explain_specific_phase(text, proposal), f"Fase concreta: {phase_detail}."
+        # Preferir contexto de la proposal: combinar datos de la proposal con el catálogo
+        method = (proposal or {}).get('methodology') or 'Scrum'
+        merged = _merge_proposal_and_catalog_phase(proposal, phase_detail, method)
+        try:
+            resp = _render_phase_rich_response(_norm(text), merged, method, phase_detail)
+            return resp, f"Fase concreta: {phase_detail}."
+        except Exception:
+            return _explain_specific_phase(text, proposal), f"Fase concreta: {phase_detail}."
 
     # Fases (sin 'por qué')
     # Si el usuario pide las fases y menciona una metodología concreta, devolver
