@@ -5,6 +5,7 @@ import json
 import copy
 import unicodedata
 from typing import Tuple, Dict, Any, List, Optional
+import logging
 
 # Context helpers for session proposal state
 try:
@@ -53,6 +54,23 @@ def _norm(s: str) -> str:
         return ''.join(c for c in nk if not unicodedata.combining(c)).strip()
     except Exception:
         return (s or '').lower().strip()
+
+# Intents classifier (optional). If no model is available, keep None.
+_INTENTS = None
+
+# Similarity helper (optional). If not available, keep None.
+_SIM = None
+
+# Importar catálogo de metodologías (datos estructurados sobre fases/prácticas)
+try:
+    from backend.knowledge.methodologies import METHODOLOGIES, get_method_phases, normalize_method_name
+except Exception:
+    # Fallbacks para entornos de test donde el módulo no esté disponible
+    METHODOLOGIES = {}
+    def get_method_phases(m: str) -> List[Dict]:
+        return []
+    def normalize_method_name(n: str) -> str:
+        return (n or '').strip().title()
 
 
 # ===================== detectores =====================
@@ -3387,6 +3405,44 @@ def _match_phase_user_intent(ntext: str, phase_info: Dict) -> Optional[Tuple[str
         return ("roles", None)
     if any(k in t for k in ["duración", "semanas", "plazo", "tiempo", "estimación", "estimado"]):
         return ("timeline", None)
+    # Cambios presupuestarios: contingencia, % o palabra 'contingencia'
+    m_pct = re.search(r"(contingenc|contingencia|contingency|contingencia)\s*(?:[:=]?\s*)?(\d{1,2})\s*%", t)
+    if m_pct:
+        try:
+            pct = int(m_pct.group(2))
+            return ("budget_change", pct)
+        except Exception:
+            return ("budget_change", None)
+    if any(k in t for k in ["contingencia", "contingency", "contingenc"]) and re.search(r"\d{1,2}%", t):
+        m = re.search(r"(\d{1,2})%", t)
+        if m:
+            return ("budget_change", int(m.group(1)))
+        return ("budget_change", None)
+    # Añadir/quitar personal
+    if any(k in t for k in ["añadir", "agregar", "contratar", "nuevo empleado", "nuevo perfil", "incorporar"]) or re.search(r"\b(anadir|añadir|agregar|contratar)\b", t):
+        # intentar extraer rol y cantidad
+        m = re.search(r"(\d+(?:[.,]\d+)?)\s*(?:persona?s?|fte|fte?s?)", t)
+        cnt = float(m.group(1).replace(",", ".")) if m else 1.0
+        # buscar rol candidato (palabras del diccionario de roles)
+        role = None
+        for k in _ROLE_SYNONYMS.keys():
+            if k in t:
+                role = _ROLE_SYNONYMS[k]
+                break
+        # si no hay rol explícito, intentar buscar palabras comunes
+        if not role:
+            for cand in ["pm", "tech lead", "backend", "frontend", "qa", "ux", "ml"]:
+                if cand in t:
+                    role = _canonical_role(cand)
+                    break
+        return ("add_employee", f"{cnt}:{role}" if role else f"{cnt}:unknown")
+    # Cambiar duración de fase
+    m_weeks = re.search(r"(\d{1,3})\s*(?:semanas|s|weeks)", t)
+    if any(k in t for k in ["aumentar", "reducir", "acortar", "ampliar", "cambiar semanas", "cambiar duración"]) and m_weeks:
+        return ("change_phase_weeks", int(m_weeks.group(1)))
+    # Pregunta genérica: ¿puedo hacer cambios?
+    if any(k in t for k in ["puedo hacer cambios", "puedo cambiar", "puedo modificar", "hacer cambios", "cambios?"]):
+        return ("can_change", None)
     return None
 
 
@@ -3514,8 +3570,181 @@ def _merge_proposal_and_catalog_phase(proposal: Optional[Dict[str, Any]], phase_
     return merged
 
 
+# ---------------- Structured short answers for phase follow-ups ----------------
+# For the seguimiento view we want concise, focused answers to short questions
+# like "qué es <fase>", "objetivo", "entregables", "prácticas" etc.
+# This dictionary contains short responses per methodology -> phase -> question type.
+PHASE_SHORT_RESPONSES: Dict[str, Dict[str, Dict[str, str]]] = {
+    "Scrum": {
+        "Incepción & Plan de Releases": {
+            "definition": "Incepción / Discovery: fase inicial para alinear visión, alcance y roadmap; se define backlog inicial y criterios de éxito.",
+            "objective": "Alinear stakeholders, priorizar epics y definir Definition of Ready/Done para el primer sprint.",
+            "deliverables": "ENTREGABLES PRINCIPALES:\n- Backlog priorizado\n- Roadmap de releases\n- Definition of Done inicial",
+            "practices": "Workshops con stakeholders, mapping de alcance y priorización por valor/riesgo.",
+            "kpis": "% historias listas para sprint; claridad del alcance; aprobación de stakeholders.",
+        },
+        "Sprints de Desarrollo (2w)": {
+            "definition": "Sprints de Desarrollo: ciclos iterativos (normalmente 2 semanas) para entregar incrementos de valor.",
+            "objective": "Entregar increments potencialmente desplegables y recoger feedback frecuente.",
+            "deliverables": "Incremento funcional, tests, demo y release notes por sprint.",
+            "practices": "Planning, Daily, Review, Retrospectiva; Definition of Done y CI/CD integrada.",
+            "kpis": "Velocidad del equipo, lead time por historia, tasa de defectos por sprint.",
+        },
+        "QA/Hardening Sprint": {
+            "definition": "Fase de estabilización y pruebas antes de release: centra en QA, performance y cierre de defectos.",
+            "practices": "Automatización de regresión, pruebas de carga y checklist de release.",
+            "deliverables": "Evidencias de pruebas, informes de performance y correcciones críticas cerradas.",
+        },
+        "Despliegue & Transferencia": {
+            "definition": "Release & Handover: puesta en producción y transferencia operativa al equipo de soporte/cliente.",
+            "practices": "Deploy canary/blue-green, runbooks y verificación post-release.",
+            "deliverables": "Checklist de release, plan de rollback y runbooks operativos.",
+        }
+    },
+    "Kanban": {
+        "Descubrimiento & Diseño": {
+            "definition": "Descubrimiento & Diseño: preparar el trabajo y las políticas de flujo; definir los ítems prioritarios para el tablero.",
+            "practices": "Mapear flujo, definir políticas de entrada/salida y limitar WIP.",
+        }
+    }
+}
+
+
+# Definiciones cortas para entregables comunes (normalizadas)
+DELIVERABLE_DEFINITIONS: Dict[str, str] = {
+    "backlog priorizado": "Backlog priorizado: lista ordenada de ítems (épicas, historias) priorizados por valor y riesgo; incluye estimaciones, criterios de aceptación y dependencias, y sirve como fuente para planificar sprints/releases.",
+    "backlog": "Backlog priorizado: lista ordenada de ítems (épicas, historias) priorizados por valor y riesgo; incluye estimaciones y criterios de aceptación.",
+    "roadmap de releases": "Roadmap de releases: calendario de alto nivel con hitos y releases previstos, objetivos por release y fechas/marcos temporales aproximados.",
+    "plan de releases": "Roadmap de releases: calendario de alto nivel con hitos y releases previstos y objetivos por release.",
+    "definition of done": "Definition of Done: conjunto de criterios mínimos que debe cumplir una historia para considerarse completa (tests, documentación, revisión de código, despliegue, etc.).",
+    "definition of done inicial": "Definition of Done inicial: versión inicial de los criterios de 'done' acordada en Incepción para validar historias en los primeros sprints.",
+}
+
+
+def _find_deliverable_key(text: str) -> Optional[str]:
+    """Busca una clave conocida de entregable en el texto (normalizado).
+    Devuelve la clave tal y como aparece en DELIVERABLE_DEFINITIONS o None.
+    """
+    if not text:
+        return None
+    t = _norm_simple(text)
+    for k in DELIVERABLE_DEFINITIONS.keys():
+        if _norm_simple(k) in t or t in _norm_simple(k):
+            return k
+    # intento por tokens: buscar palabras clave por entregable
+    for k in DELIVERABLE_DEFINITIONS.keys():
+        tokens = _phase_tokens(k)
+        if all(tok in t for tok in tokens):
+            return k
+    return None
+
+
+def _determine_phase_question_type(text: str) -> Optional[str]:
+    """Clasifica una pregunta sobre una fase en un tipo simple para devolver
+    una respuesta corta y dirigida.
+    Devuelve por ejemplo: 'definition','objective','deliverables','practices','kpis','checklist','owners','timeline','risks'
+    """
+    t = _norm(text)
+    # Priorizar preguntas explícitas
+    # Si el usuario pregunta 'qué es X' y X es un entregable conocido, priorizar esa definición
+    if any(k in t for k in ("qué es", "que es", "definici", "definicion", "definición", "en qué consiste", "en que consiste")):
+        try:
+            if _find_deliverable_key(t):
+                return "deliverable_def"
+        except Exception:
+            pass
+        return "definition"
+    if any(k in t for k in ("objetivo", "propósito", "para qué")):
+        return "objective"
+    if any(k in t for k in ("entregables", "artefacto", "documentación", "documentacion", "deliverable")):
+        return "deliverables"
+
+    # Si la pregunta es del tipo 'qué es <entregable>' devolvemos una clasificación específica
+    if any(k in t for k in ("qué es", "que es", "qué significa", "que significa", "define", "definición", "definicion")):
+        # buscar si menciona algún entregable conocido
+        try:
+            if _find_deliverable_key(t):
+                return "deliverable_def"
+        except Exception:
+            pass
+    if any(k in t for k in ("prácticas", "practicas", "sugerencias prácticas", "sugerencias practicas", "cómo hacerlo", "cómo abordar", "como abordar")):
+        return "practices"
+    if any(k in t for k in ("kpi", "kpis", "métricas", "metricas", "indicadores")):
+        return "kpis"
+    if any(k in t for k in ("checklist", "lista", "tareas inmediatas", "qué hacer", "que hacer")):
+        return "checklist"
+    if any(k in t for k in ("responsable", "owner", "owners", "roles", "quién", "quien")):
+        return "owners"
+    if any(k in t for k in ("duración", "duracion", "semanas", "timeline", "plazo", "tiempo")):
+        return "timeline"
+    if any(k in t for k in ("riesgo", "riesgos", "risk", "mitig")):
+        return "risks"
+    # fallback: short queries with few words likely ask 'what is'
+    if len(text.split()) <= 6 or "?" in text:
+        return "definition"
+    return None
+
+
+def _short_phase_response(method: str, phase_name: str, qtype: str, proposal: Optional[Dict[str, Any]] = None, user_text: Optional[str] = None) -> str:
+    """Devuelve una respuesta corta y enfocada basada en PHASE_SHORT_RESPONSES,
+    con fallback a generadores más largos si no existe la entrada.
+    """
+    method_norm = normalize_method_name((method or "").strip()) if method else method
+    # Manejar definiciones puntuales de entregables
+    if qtype == "deliverable_def":
+        # intentamos detectar el entregable en el texto o en la fase
+        key = _find_deliverable_key(user_text or phase_name or "")
+        if key and key in DELIVERABLE_DEFINITIONS:
+            return DELIVERABLE_DEFINITIONS[key]
+        # intentar buscar en los deliverables de la propuesta/phase
+        try:
+            if proposal:
+                dels = proposal.get("deliverables") or proposal.get("entregables") or []
+                txt = _norm_simple(user_text or "")
+                for d in dels:
+                    if d and (_norm_simple(d) in txt or txt in _norm_simple(d)):
+                        # devolver definición corta basada en el nombre
+                        return f"{d}: (entregable definido en la propuesta)."
+        except Exception:
+            pass
+        # fallback genérico
+        return (f"{(user_text or phase_name)} — Entregable definido como artefacto de la fase. "
+                f"Puedo detallar si confirmas cuál de los entregables quieres que explique.")
+    # intentar por metodología explícita
+    if method_norm and method_norm in PHASE_SHORT_RESPONSES:
+        # buscar la fase más parecida por tokens
+        phases_map = PHASE_SHORT_RESPONSES[method_norm]
+        # match exact or by normalized tokens
+        key = None
+        for ph in phases_map.keys():
+            if _norm_simple(ph) in _norm_simple(phase_name) or _norm_simple(phase_name) in _norm_simple(ph):
+                key = ph
+                break
+        if not key:
+            # try direct lookup
+            key = next((p for p in phases_map.keys() if _norm_simple(p) == _norm_simple(phase_name)), None)
+        if key:
+            resp = phases_map[key].get(qtype)
+            if resp:
+                return resp
+
+    # fallback: usar la explicación genérica breve basada en _explain_specific_phase
+    try:
+        short = _explain_specific_phase(phase_name, proposal or {"methodology": method or ""})
+        # _explain_specific_phase returns a multi-block text; take the first paragraph as concise fallback
+        first = short.split("\n\n")[0]
+        return first
+    except Exception:
+        return f"{phase_name} — fase del proyecto (detalle breve no disponible)."
+
+
 def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
     text = message.strip()
+    try:
+        logger = logging.getLogger(__name__)
+        logger.debug(f"generate_reply session={session_id} message={text[:200]!r}")
+    except Exception:
+        pass
     proposal, req_text = get_last_proposal(session_id)
 
     # 0) Cambio pendiente → sí/no (metodología o parches de propuesta)
@@ -3639,6 +3868,18 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             return "¡Hasta luego! Si quieres, deja aquí los requisitos y seguiré trabajando en la propuesta.", "Despedida (intent)."
         if intent == "thanks":
             return "¡A ti! Si necesitas presupuesto o plan de equipo, dime los requisitos.", "Agradecimiento (intent)."
+
+    # Respuesta rápida: si el usuario pregunta "qué es <entregable>" devolver definición aunque no haya proposal/fase
+    try:
+        quick_q = _determine_phase_question_type(text)
+        if quick_q == "deliverable_def":
+            k = _find_deliverable_key(text)
+            if k:
+                return DELIVERABLE_DEFINITIONS.get(k, f"{k} — definición no disponible."), "Definición de entregable."
+            else:
+                return ("¿Qué entregable quieres que defina? Por ejemplo: 'backlog priorizado', 'roadmap de releases', 'Definition of Done'."), "Pregunta: definición entregable"
+    except Exception:
+        pass
 
     # ——— Aceptación de propuesta: pedir plantilla del equipo para asignar personas
     if proposal and _accepts_proposal(text):
@@ -3967,6 +4208,10 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
     # PREGUNTAS ESPECÍFICAS DE SEGUIMIENTO sobre fases
     ntext = _norm(text)
     phase_mentioned = _match_phase_name(text, proposal)
+    try:
+        logging.getLogger(__name__).debug(f"phase_mentioned={phase_mentioned!r} ntext={ntext[:120]!r}")
+    except Exception:
+        pass
 
     # Preguntas del tipo "¿qué fase es esta?", "en qué fase estamos", "qué fase estoy"
     def _is_which_phase_query(nt: str) -> bool:
@@ -4185,6 +4430,76 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
                         else:
                             pieces.append('\nNo hay una duración típica definida para esta fase.')
 
+                    elif intent == 'budget_change':
+                        # detail puede ser un int (pct) o None
+                        try:
+                            if not proposal:
+                                pieces.append('\nNecesito una propuesta base para calcular el impacto presupuestario.')
+                            else:
+                                if isinstance(detail, int):
+                                    patch = {"type": "budget", "contingency_pct": int(detail)}
+                                    eval_text, verdict = _evaluate_patch(proposal, patch, req_text)
+                                    pieces.append('\nEvaluación del cambio de contingencia:')
+                                    pieces.append(eval_text)
+                                else:
+                                    pieces.append('\nIndica el nuevo porcentaje de contingencia (p. ej. "contingencia 15%") para que calcule el impacto en el presupuesto.')
+                        except Exception:
+                            pieces.append('\n(No pude calcular el impacto presupuestario en este momento.)')
+
+                    elif intent == 'add_employee':
+                        try:
+                            if not proposal:
+                                pieces.append('\nNecesito la propuesta para estimar el impacto de añadir personal.')
+                            else:
+                                # detail viene como 'count:Role' o 'count:unknown'
+                                cnt_role = str(detail or '')
+                                parts = cnt_role.split(":")
+                                try:
+                                    cnt = float(parts[0])
+                                except Exception:
+                                    cnt = 1.0
+                                role = parts[1] if len(parts) > 1 else None
+                                role_name = _canonical_role(role) if role and role != 'unknown' else 'Unknown'
+                                ops = [{"op": "add", "role": role_name, "count": cnt}]
+                                patch = {"type": "team", "ops": ops}
+                                eval_text, verdict = _evaluate_patch(proposal, patch, req_text)
+                                pieces.append('\nEvaluación al añadir personal:')
+                                pieces.append(eval_text)
+                        except Exception:
+                            pieces.append('\n(No pude evaluar el cambio de equipo en este momento.)')
+
+                    elif intent == 'change_phase_weeks':
+                        try:
+                            if not proposal:
+                                pieces.append('\nNecesito la propuesta para calcular el efecto del cambio de duración de la fase.')
+                            else:
+                                if isinstance(detail, int):
+                                    ph_name = phase_info.get('name')
+                                    ops = [{"op": "set_weeks", "name": ph_name, "weeks": int(detail)}]
+                                    patch = {"type": "phases", "ops": ops}
+                                    eval_text, verdict = _evaluate_patch(proposal, patch, req_text)
+                                    pieces.append('\nEvaluación del cambio de duración:')
+                                    pieces.append(eval_text)
+                                else:
+                                    pieces.append('\nIndica el número de semanas (p. ej. "aumentar 2 semanas") para que calcule el impacto.')
+                        except Exception:
+                            pieces.append('\n(No pude evaluar el cambio de duración en este momento.)')
+
+                    elif intent == 'can_change':
+                        # Guidance: how to request changes and what the assistant can do within a phase
+                        try:
+                            guidance = [
+                                "Sí — puedes proponer cambios relacionados con presupuesto, equipo o duración de fases.",
+                                "Ejemplos de preguntas que puedo atender en el contexto de esta fase:",
+                                "  - 'Si aumento la contingencia a 15% ¿cómo cambia el presupuesto?'",
+                                "  - 'Quiero añadir 1 QA ¿qué impacto tiene en coste y duración?'",
+                                "  - 'Podemos reducir esta fase 1 semana? ¿qué riesgos añadiría?'",
+                                "Para aplicar un cambio pídemelo y yo generaré una evaluación; si la confirmas, lo aplicaré a la propuesta."
+                            ]
+                            pieces.append('\n' + "\n".join(guidance))
+                        except Exception:
+                            pieces.append('\n(No puedo generar la guía sobre cambios en este momento.)')
+
                     else:
                         # fallback genérico
                         pieces.append(_render_phase_rich_response(ntext, phase_info, method, phase_mentioned))
@@ -4222,18 +4537,28 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
     
     # si preguntan por una fase concreta: explicarla en detalle (caso general)
     phase_detail = _match_phase_name(text, proposal)
-    if phase_detail and (any(k in _norm(text) for k in [
-        "qué es","que es","explica","explícame","explicame",
-        "en qué consiste","en que consiste","para qué sirve","para que sirve",
-        "definición","definicion"
-    ]) or "?" in text or len(text.split()) <= 6):
+    if phase_detail:
         try:
             set_last_area(session_id, "phases")
         except Exception:
             pass
+
         # Preferir contexto de la proposal: combinar datos de la proposal con el catálogo
         method = (proposal or {}).get('methodology') or 'Scrum'
         merged = _merge_proposal_and_catalog_phase(proposal, phase_detail, method)
+
+        # Si la pregunta es corta o corresponde a un tipo específico, devolver
+        # una respuesta concisa y dirigida (solo lo pedido).
+        qtype = _determine_phase_question_type(text)
+        if qtype:
+            try:
+                short = _short_phase_response(method, phase_detail, qtype, merged if proposal else None, text)
+                return short, f"Fase concreta: {phase_detail}."
+            except Exception:
+                # si falla el formato corto, caer al rich response
+                pass
+
+        # Fallback: devolver respuesta rica si no era una consulta corta
         try:
             resp = _render_phase_rich_response(_norm(text), merged, method, phase_detail)
             try:
