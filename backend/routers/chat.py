@@ -11,14 +11,25 @@ router = APIRouter()
 class ChatIn(BaseModel):
     message: str
     session_id: Optional[str] = None
+    # Optional phase context sent by the frontend when the chat is scoped to a phase
+    phase: Optional[str] = None
 
 def _reply(payload: ChatIn) -> Dict[str, Any]:
     sid = payload.session_id or "default"
+    # Si el frontend proporciona el contexto de fase, anteponerlo al texto
+    # para que el motor (brain) lo use en su proceso de matching.
+    msg = payload.message or ""
+    if getattr(payload, 'phase', None):
+        try:
+            msg = f"Fase seleccionada: {payload.phase}\n" + msg
+        except Exception:
+            pass
+
     # Aquí delego en el "brain" para que piense la respuesta.
-    # generate_reply devuelve una tupla (texto, info_debug) 
+    # generate_reply devuelve una tupla (texto, info_debug)
     # es el texto para mostrar al usuario y algo de info por si el frontend
     # quiere mostrar detalles de diagnóstico.
-    text, debug = generate_reply(sid, payload.message)
+    text, debug = generate_reply(sid, msg)
     # Si hay una propuesta asociada a la sesión, añadimos un resumen de contexto
     try:
         prop, _ = get_last_proposal(sid)
@@ -65,8 +76,21 @@ async def chat_ws(ws: WebSocket):
         pass
     try:
         while True:
-            msg = await ws.receive_text()
-            text, _ = generate_reply(sid, msg)
+            raw = await ws.receive_text()
+            # aceptar tanto texto plano como JSON con {message, phase}
+            msg_text = raw
+            try:
+                import json as _json
+                parsed = _json.loads(raw)
+                if isinstance(parsed, dict) and 'message' in parsed:
+                    msg_text = parsed.get('message') or ''
+                    if parsed.get('phase'):
+                        msg_text = f"Fase seleccionada: {parsed.get('phase')}\n" + msg_text
+            except Exception:
+                # no es JSON, tratamos como texto plano
+                msg_text = raw
+
+            text, _ = generate_reply(sid, msg_text)
             # añadir contexto si existe propuesta para esta sesión
             try:
                 prop, _ = get_last_proposal(sid)

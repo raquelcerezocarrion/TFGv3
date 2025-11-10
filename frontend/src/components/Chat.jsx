@@ -15,7 +15,7 @@ async function detectApiBase() {
   return null
 }
 
-export default function Chat({ token, loadedMessages = null, selectedChatId = null, onSaveCurrentChat = null, onSaveExistingChat = null, sessionId: externalSessionId = null, externalMessage = null, externalMessageId = null }) {
+export default function Chat({ token, loadedMessages = null, selectedChatId = null, onSaveCurrentChat = null, onSaveExistingChat = null, sessionId: externalSessionId = null, externalMessage = null, externalMessageId = null, phase = null }) {
   const [apiBase, setApiBase] = useState(null)
   const [sessionId, setSessionId] = useState(() => 'demo-' + Math.random().toString(36).slice(2, 8))
   // Start empty; if parent doesn't provide `loadedMessages` we'll show a friendly greeting.
@@ -136,10 +136,22 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
 
     // WS si está abierto; si no, HTTP
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(text)
+      try {
+        // Enviar JSON si tenemos contexto de fase, para que el backend lo reciba
+        if (phase) {
+          wsRef.current.send(JSON.stringify({ message: text, phase }))
+        } else {
+          wsRef.current.send(text)
+        }
+      } catch (e) {
+        // Fallback a texto plano
+        wsRef.current.send(text)
+      }
     } else {
       try {
-        const { data } = await axios.post(`${apiBase}/chat/message`, { session_id: sessionId, message: text }, { headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, timeout: 5000 })
+  const payload = { session_id: sessionId, message: text }
+  if (phase) payload.phase = phase
+  const { data } = await axios.post(`${apiBase}/chat/message`, payload, { headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, timeout: 5000 })
         setMessages(prev => [...prev, { role: 'assistant', content: data.reply, ts: new Date().toISOString() }])
       } catch (e) {
         const msg = e?.response?.data?.detail || e?.message || 'Error enviando mensaje.'

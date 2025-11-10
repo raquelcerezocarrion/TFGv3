@@ -6,6 +6,23 @@ import copy
 import unicodedata
 from typing import Tuple, Dict, Any, List, Optional
 
+# Context helpers for session proposal state
+try:
+    from backend.engine.context import (
+        get_last_proposal, set_last_proposal,
+        get_pending_change, set_pending_change, clear_pending_change,
+        set_last_area, get_last_area
+    )
+except Exception:
+    # Fallback stubs if context module isn't available (should not happen in normal env)
+    def get_last_proposal(*a, **k): return (None, None)
+    def set_last_proposal(*a, **k): return None
+    def get_pending_change(*a, **k): return None
+    def set_pending_change(*a, **k): return None
+    def clear_pending_change(*a, **k): return None
+    def set_last_area(*a, **k): return None
+    def get_last_area(*a, **k): return None
+
 # Memoria de usuario 
 try:
     from backend.memory.state_store import get_client_prefs, upsert_client_pref
@@ -13,108 +30,9 @@ except Exception:  # pragma: no cover
     def get_client_prefs(*a, **k): return {}
     def upsert_client_pref(*a, **k): return None
 
-from backend.engine.planner import generate_proposal
-from backend.engine.context import (
-    get_last_proposal, set_last_proposal,
-    get_pending_change, set_pending_change, clear_pending_change
-)
-from backend.engine.actions import (
-    handle_discovery_tasks,
-    handle_risk_analysis,
-    handle_kpis_definition,
-    handle_qa_plan, 
-    handle_deployment_strategy,
-    handle_deliverables
-)
 
-# set_last_area es opcional (para “fuentes” por área); si no existe, hacemos no-op
-try:
-    from backend.engine.context import set_last_area
-except Exception:  # pragma: no cover
-    def set_last_area(*a, **k):  # no-op si no existe
-        return None
-
-# get_staff_roster es opcional; si no existe devolvemos lista vacía
-try:
-    from backend.engine.context import get_staff_roster
-except Exception:  # pragma: no cover
-    def get_staff_roster(*a, **k):
-        return []
-# Conocimiento de metodologías (explicaciones y comparativas + fuentes)
-from backend.knowledge.methodologies import (
-    explain_methodology_choice,
-    recommend_methodology,
-    compare_methods,
-    normalize_method_name,
-    METHODOLOGIES,
-    get_method_phases,
-    get_phase_detail,
-)
-
-# Persistencia opcional
-try:
-    from backend.memory.state_store import save_proposal, log_message
-    from backend.memory.state_store import list_messages
-except Exception:  # pragma: no cover
-    def save_proposal(*a, **k): return None
-    def log_message(*a, **k): return None
-    def list_messages(*a, **k): return []
-
-# NLU opcional
-try:
-    from backend.nlu.intents import IntentsRuntime
-    _INTENTS = IntentsRuntime()
-except Exception:  # pragma: no cover
-    _INTENTS = None
-
-# Recuperación de casos similares 
-try:
-    from backend.retrieval.similarity import get_retriever
-    _SIM = get_retriever()
-except Exception:  # pragma: no cover
-    _SIM = None
-
-
-# ===================== utilidades =====================
-
-def _norm(text: Optional[str]) -> str:
-    """
-    Normaliza texto para comparaciones: None -> '', pasa a minúsculas,
-    quita acentos y colapsa espacios y puntuación razonable.
-    Diseñado para ser defensiva ante entradas raras del usuario.
-    """
-    if not text:
-        return ""
-    # Asegurarnos que sea str
-    t = str(text).strip().lower()
-    # Quitar marcas de acento/componer a forma ASCII simple
-    t = unicodedata.normalize('NFKD', t)
-    t = ''.join(ch for ch in t if not unicodedata.combining(ch))
-    # Reemplazar puntuación por espacios y colapsar múltiples espacios
-    # Use a simple regex to remove common punctuation; keep alphanum and percent/decimal
-    t = re.sub(r"[^\w\s%.,]", ' ', t)
-    t = re.sub(r"\s+", ' ', t).strip()
-    return t
-
-def _is_yes(text: Optional[str]) -> bool:
-    """Detecta respuestas afirmativas en variantes comunes.
-    Es tolerante con espacios, acentos y frases cortas.
-    """
-    t = _norm(text)
-    if not t:
-        return False
-    yes_set = {"si", "sí", "s", "ok", "vale", "dale", "confirmo", "correcto", "claro", "perfecto", "adelante"}
-    if t in yes_set:
-        return True
-    # Buscar frases o verbos que indiquen confirmación
-    if any(tok in t for tok in ("adelante", "aplicar", "aplico", "aplica", "de acuerdo", "confirmar", "confirmo", "sigue", "sí aplica", "si aplica")):
-        return True
-    return False
-
-def _is_no(text: Optional[str]) -> bool:
-    """Detecta respuestas negativas / cancelaciones.
-    Maneja 'no', 'mejor no', 'cancelar', 'cancela', y variantes.
-    """
+def _is_no(text: str) -> bool:
+    """Detecta respuestas negativas del usuario: 'no', 'mejor no', 'cancelar'..."""
     t = _norm(text)
     if not t:
         return False
@@ -124,6 +42,17 @@ def _is_no(text: Optional[str]) -> bool:
     if any(tok in t for tok in ("cancel", "cancela", "anula", "nunca", "no lo hagas", "no aplicar")):
         return True
     return False
+
+
+def _norm(s: str) -> str:
+    """Normalize text: lowercase, strip accents and extra spaces for robust matching."""
+    if s is None:
+        return ""
+    try:
+        nk = unicodedata.normalize('NFKD', s.lower())
+        return ''.join(c for c in nk if not unicodedata.combining(c)).strip()
+    except Exception:
+        return (s or '').lower().strip()
 
 
 # ===================== detectores =====================
@@ -659,9 +588,23 @@ def _match_phase_name(query: str, proposal: Optional[Dict[str, Any]]) -> Optiona
         for a in aliases:
             if a in tq:
                 if proposal:
+                    # Preferir una fase de la proposal que contenga exactamente el alias
+                    # (por ejemplo, si el usuario dice 'discovery' y la propuesta tiene
+                    # una fase llamada 'Discovery', devolver esa fase). Si no se encuentra
+                    # una coincidencia exacta con el alias, caer atrás a la búsqueda por
+                    # la forma canónica (p.ej. 'incepcion').
                     for ph in proposal.get('phases', []):
-                        if canon.split()[0] in _norm_simple(ph.get('name', '')):
-                            return ph['name']
+                        try:
+                            if a in _norm_simple(ph.get('name', '') or ''):
+                                return ph['name']
+                        except Exception:
+                            continue
+                    for ph in proposal.get('phases', []):
+                        try:
+                            if canon.split()[0] in _norm_simple(ph.get('name', '') or ''):
+                                return ph['name']
+                        except Exception:
+                            continue
                 return canon.title()
 
     return best
@@ -3126,6 +3069,33 @@ def _render_phase_rich_response(ntext: str, phase_info: Dict, method: str, phase
         for d in phase_info.get('deliverables', [])[:8]:
             lines.append(f"  - {d}")
 
+    # Si el usuario pide 'amplía', 'detalla', 'desglosa' o 'más' sobre KPIs/entregables/prácticas
+    expand_triggers = ["amplia", "ampliar", "amplía", "detalla", "detallar", "desglosa", "desglosar", "más", "mas", "explica", "profundiza", "profundizar", "describir", "desglosar"]
+    if any(tok in ntext for tok in expand_triggers):
+        # KPIs
+        if _asks_kpis(ntext) or any(k in ntext for k in ["kpi", "kpis", "indicador", "indicadores", "objetivo", "metrica", "métrica"]):
+            try:
+                kblocks = _expand_kpis_for_phase(phase_info)
+                lines.append('\n' + "\n".join(kblocks))
+            except Exception:
+                lines.append('\n(No pude generar el desglose de KPIs en este momento.)')
+
+        # Entregables
+        if _asks_deliverables(ntext) or any(k in ntext for k in ["entregable", "entregables", "artefacto", "artefactos", "documentación", "documentacion"]):
+            try:
+                dblocks = _expand_deliverables_for_phase(phase_info)
+                lines.append('\n' + "\n".join(dblocks))
+            except Exception:
+                lines.append('\n( No pude generar el desglose de entregables en este momento.)')
+
+        # Sugerencias prácticas / checklist / owners
+        if any(k in ntext for k in ["sugerencia", "sugerencias", "práctica", "practica", "prácticas", "practicas", "checklist", "acciones", "pasos", "responsable", "owner", "owners", "propietario"]):
+            try:
+                pblocks = _expand_practices_for_phase(phase_info, method)
+                lines.append('\n' + "\n".join(pblocks))
+            except Exception:
+                lines.append('\n(No pude generar sugerencias prácticas en este momento.)')
+
     # Si el usuario pregunta 'qué pasa si...' o escenarios
     if any(k in ntext for k in ["si", "y si", "qué pasa", "que pasa"]):
         lines.append('\nESCENARIOS COMUNES Y RESPUESTAS:')
@@ -3141,6 +3111,283 @@ def _render_phase_rich_response(ntext: str, phase_info: Dict, method: str, phase
         lines.append(f"\nDuración típica: {phase_info.get('typical_weeks')} semanas")
 
     return "\n".join(lines)
+
+
+def _expand_kpis_for_phase(phase_info: Dict, proposal: Optional[Dict[str, Any]] = None) -> List[str]:
+    """Genera un desglose detallado de cada KPI sugerido: cómo medirlo, frecuencia, owner y objetivo inicial."""
+    out: List[str] = []
+    kpis = phase_info.get('kpis') or []
+    if not kpis:
+        return ["(No hay KPIs sugeridos para esta fase en el catálogo/propuesta.)"]
+    out.append('DETALLE DE KPIs (medición, frecuencia, owner, objetivo inicial):')
+    # Owner heuristics: prefer roles declared in the phase if present
+    phase_roles = []
+    try:
+        phase_roles = list((phase_info.get('roles_responsibilities') or {}).keys())
+    except Exception:
+        phase_roles = []
+
+    for k in kpis:
+        # heurística: intentar inferir tipo y unidad
+        kk = k.strip()
+        meas = 'Métrica (ej. porcentaje / tiempo / ratio)'
+        freq = 'Semanal'
+        owner = 'PM / Tech Lead'
+        target = 'Objetivo inicial a definir (ej. referencia basada en primer sprint)'
+        # asignar owner por heurística usando roles de la fase si existen
+        if phase_roles:
+            # preferir PO, PM, Tech Lead, QA
+            for pref in ('Product Owner', 'PO', 'PM', 'Tech Lead', 'QA', 'DevOps'):
+                for r in phase_roles:
+                    if pref.lower() in r.lower():
+                        owner = r
+                        break
+                if owner != 'PM / Tech Lead':
+                    break
+        if any(tok in _norm(kk) for tok in ['lead time', 'leadtime', 'lead-time']):
+            meas = 'Tiempo medio (días) desde creación hasta despliegue'
+            freq = 'Diaria / semanal agregada'
+            owner = 'Tech Lead / DevOps'
+            target = 'Reducir un 10–20% en 2–3 sprints'
+        if any(tok in _norm(kk) for tok in ['velocidad', 'velocity', 'sprint completion']):
+            meas = 'Puntos de historia completados por sprint'
+            freq = 'Por sprint'
+            owner = 'PO / Scrum Master'
+            target = 'Establecer baseline y estabilizar (+/- 10%)'
+        if any(tok in _norm(kk) for tok in ['defect', 'defecto', 'escape rate']):
+            meas = 'Número de defectos críticos en producción por release'
+            freq = 'Por release / semanal para trending'
+            owner = 'QA / Tech Lead'
+            if phase_roles:
+                owner = next((r for r in phase_roles if 'qa' in _norm(r) or 'quality' in _norm(r)), owner)
+            target = 'Minimizar a 0–1 críticos por release'
+        # sugerencia de objetivo numérico ejemplo según tipo
+        example_target = target
+        if 'lead time' in _norm(kk):
+            example_target = 'Reducir a < X días (ej. 2–4 días) en 4 semanas'
+        if 'velocidad' in _norm(kk) or 'velocity' in _norm(kk):
+            example_target = 'Establecer baseline en los 2 primeros sprints y mejorar ~10% en 3 sprints'
+        if 'defect' in _norm(kk) or 'defecto' in _norm(kk):
+            example_target = '0–1 defectos críticos por release'
+
+        out.append(f"- {kk}: {meas}; Frecuencia: {freq}; Owner sugerido: {owner}; Objetivo sugerido: {example_target}")
+    return out
+
+
+def _expand_deliverables_for_phase(phase_info: Dict, proposal: Optional[Dict[str, Any]] = None) -> List[str]:
+    """Para cada entregable, devuelve descripción, criterios de aceptación y responsible sugerido."""
+    dels = phase_info.get('deliverables') or []
+    if not dels:
+        return ["(No hay entregables definidos para esta fase.)"]
+    out: List[str] = []
+    out.append('ENTREGABLES — descripción, criterios de aceptación y responsable sugerido:')
+    for d in dels:
+        name = d if isinstance(d, str) else str(d)
+        desc = f'Descripción breve de {name}.'
+        criteria = 'Criterios de aceptación: entregable completo, pruebas asociadas, documentación mínima, revisión por stakeholder.'
+        owner = 'PM / Equipo responsable (según alcance)'
+        # heurística: si parece roadmap o backlog, proponer PO/PM
+        if 'roadmap' in _norm(name) or 'backlog' in _norm(name):
+            owner = 'Product Owner (PO)'
+            criteria = 'Priorizar ítems, estimar historias y validar alcance con stakeholders.'
+        if 'definition of done' in _norm(name) or 'definition of ready' in _norm(name):
+            owner = 'Tech Lead + PO'
+            criteria = 'Documento firmado por PO y Tech Lead con checklist verificable.'
+        # Construir criterios de aceptación más concretos según tipo de entregable
+        ac_lines = [criteria]
+        if any(tok in _norm(name) for tok in ['roadmap','release','plan']):
+            ac_lines = [
+                'Criterios de aceptación: roadmap aprobado por stakeholders clave',
+                'Contiene hitos y dependencias con owners',
+                'Incluye criterio de salida (Go/No-Go) para cada release'
+            ]
+        if any(tok in _norm(name) for tok in ['backlog','historias','story','epic']):
+            ac_lines = [
+                'Criterios de aceptación: historias estimadas y priorizadas',
+                'Cada historia con DoR y criterios de aceptación claros',
+                'Historias pequeñas (<= 3 días) para la primera iteración'
+            ]
+        if any(tok in _norm(name) for tok in ['informe','report','pruebas','test','evidence']):
+            ac_lines = [
+                'Criterios de aceptación: evidencia reproducible de pruebas',
+                'Resultados con umbrales claros (p. ej. p95 < X ms)',
+                'Observaciones y responsables de fallo/accion'
+            ]
+
+        ac_text = ' | '.join(ac_lines)
+        out.append(f"- {name}: {desc} \n  • {ac_text} \n  • Responsable sugerido: {owner}")
+    return out
+
+
+def _expand_practices_for_phase(phase_info: Dict, method: str, proposal: Optional[Dict[str, Any]] = None) -> List[str]:
+    """Expande las sugerencias prácticas en pasos concretos, checklist mínima y tiempos estimados."""
+    pract = phase_info.get('practices') or phase_info.get('practicas') or []
+    # fallback to questions_to_ask or checklist if practices not present
+    if not pract:
+        pract = phase_info.get('questions_to_ask') or []
+    if not pract and phase_info.get('checklist'):
+        pract = phase_info.get('checklist')[:5]
+
+    if not pract:
+        return ["(No hay sugerencias prácticas estructuradas para esta fase.)"]
+
+    out: List[str] = []
+    out.append('SUGERENCIAS PRÁCTICAS DETALLADAS — pasos, checklist mínima y estimación:')
+    for i, p in enumerate(pract[:8], start=1):
+        title = p if isinstance(p, str) else str(p)
+        step_desc = f'Paso {i}: {title}.\n  • Acción 1: Preparar artefactos necesarios.\n  • Acción 2: Ejecutar con stakeholders clave.\n  • Acción 3: Registrar decisiones (ADR) y owners.'
+        est = 'Estimación: 0.5–2 días' if len(title) < 60 else 'Estimación: 1–5 días'
+        owner = 'PM / Facilitador'
+        # heurística para QA/testing
+        if any(tok in _norm(title) for tok in ['test', 'qa', 'prueba', 'aceptación']):
+            owner = 'QA'
+            est = 'Estimación: 1–3 días (depende de cobertura)'
+        out.append(f"- {title}: {step_desc} \n  • Tiempo estimado: {est} \n  • Responsable sugerido: {owner}")
+    return out
+
+
+def _format_practices_only(phase_info: Dict, method: str, proposal: Optional[Dict[str, Any]] = None) -> str:
+    """Devuelve solo las sugerencias prácticas detalladas en un formato compacto y estructurado.
+
+    Cada práctica incluye: título, pasos claros, checklist mínima, estimación y responsable sugerido.
+    """
+    pract = phase_info.get('practices') or phase_info.get('practicas') or []
+    if not pract:
+        # fallback a questions_to_ask o checklist
+        pract = phase_info.get('questions_to_ask') or []
+    if not pract and phase_info.get('checklist'):
+        pract = phase_info.get('checklist')[:8]
+
+    if not pract:
+        return "(No hay sugerencias prácticas estructuradas para esta fase.)"
+
+    lines: List[str] = []
+    lines.append('SUGERENCIAS PRÁCTICAS DETALLADAS:')
+    phase_roles = list((phase_info.get('roles_responsibilities') or {}).keys())
+
+    for i, p in enumerate(pract[:12], start=1):
+        title = p if isinstance(p, str) else str(p)
+        # pasos concretos
+        steps = [
+            f"1) Preparar: reunir artefactos necesarios (doc, prototipos, datos, accesos).",
+            f"2) Ejecutar: sesión/acción con stakeholders clave y recoger decisiones.",
+            f"3) Formalizar: registrar decisiones (ADR), asignar owners y actualizar backlog/runbook."
+        ]
+        # checklist derivada
+        checklist = [
+            "Artefactos preparados (si aplica): templates/comunicaciones/PRs/boards)",
+            "Owners asignados para cada punto crítico",
+            "Criterios de aceptación definidos y documentados",
+            "Evidencias o métricas iniciales para medir progreso"
+        ]
+        # estimación y owner heurística
+        est = '0.5–2 días' if len(title) < 60 else '1–5 días'
+        owner = 'PM / Facilitador'
+        if any(tok in _norm(title) for tok in ['test', 'qa', 'prueba', 'aceptación']):
+            owner = 'QA'
+            est = '1–3 días (depende de cobertura)'
+        elif any(tok in _norm(title) for tok in ['workshop','workshop','entrevistas','interview','stakeholder']):
+            owner = next((r for r in phase_roles if 'owner' in _norm(r) or 'product' in _norm(r) or 'pm' in _norm(r)), owner)
+
+        lines.append(f"\n{i}. {title}")
+        lines.append("  Pasos:")
+        for s in steps:
+            lines.append(f"   - {s}")
+        lines.append("  Checklist mínima:")
+        for c in checklist:
+            lines.append(f"   - {c}")
+        lines.append(f"  Estimación: {est}")
+        lines.append(f"  Responsable sugerido: {owner}")
+
+    return "\n".join(lines)
+
+
+def _generate_phase_suggested_questions(phase_info: Dict) -> List[str]:
+    """Genera una lista de preguntas sugeridas (varias formulaciones) que el asistente podrá entender.
+
+    Esto ayuda a orientar al usuario y también sirve como base para mapear la intención
+    del usuario a una expansión concreta (KPIs, entregables, checklist, riesgos, owners...).
+    """
+    qs: List[str] = []
+    name = phase_info.get('name') or 'esta fase'
+
+    # General
+    qs += [
+        f"¿Cuáles son los KPIs clave para {name}?",
+        f"¿Puedes detallar los entregables de {name}?",
+        f"¿Qué checklist mínima recomiendas para {name}?",
+        f"¿Qué riesgos hay en {name} y cómo mitigarlos?",
+        f"¿Qué prácticas concretas sugieres para ejecutar {name}?",
+        f"¿Quiénes deberían ser los owners en {name}?",
+        f"¿Qué criterios de aceptación aplica cada entregable de {name}?",
+        f"¿Cómo medir si {name} fue exitoso?",
+        f"Dame pasos prácticos para empezar con {name}.",
+        f"¿Qué dependencias debo vigilar durante {name}?",
+    ]
+
+    # Por KPIs concretos
+    for k in (phase_info.get('kpis') or [])[:6]:
+        qs.append(f"¿Cómo medir '{k}' en {name}?")
+        qs.append(f"¿Cuál sería un objetivo inicial para '{k}'?")
+
+    # Por entregables concretos
+    for d in (phase_info.get('deliverables') or [])[:6]:
+        qs.append(f"¿Cuál es el criterio de aceptación para '{d}'?")
+        qs.append(f"¿Quién debería ser el responsable de '{d}'?")
+
+    # Por prácticas/checklist
+    for p in (phase_info.get('practices') or phase_info.get('practicas') or [])[:6]:
+        qs.append(f"¿Cómo ejecutar '{p}' en {name}?")
+
+    # Deduplicate and normalize length
+    seen = set(); out = []
+    for q in qs:
+        nq = q.strip()
+        if nq.lower() in seen:
+            continue
+        seen.add(nq.lower())
+        out.append(nq)
+        if len(out) >= 20:
+            break
+    return out
+
+
+def _match_phase_user_intent(ntext: str, phase_info: Dict) -> Optional[Tuple[str, Optional[str]]]:
+    """Intent matching simple: devuelve (intent, detail) donde intent ∈ {kpis, deliverables, practices, risks, owners, checklist, roles, timeline}
+
+    detail puede contener el nombre concreto (p.ej. nombre del KPI o entregable) si se detecta.
+    """
+    t = _norm(ntext)
+    # palabras clave simples
+    if any(k in t for k in ["kpi", "kpis", "indicador", "indicadores", "objetivo", "metrica", "métrica"]):
+        # buscar si menciona un KPI concreto
+        for k in (phase_info.get('kpis') or []):
+            if _norm(k) in t or _norm(k).split()[0] in t:
+                return ("kpis", k)
+        return ("kpis", None)
+    if any(k in t for k in ["entregable", "entregables", "artefacto", "artefactos", "documentación", "documentacion", "deliverable"]):
+        for d in (phase_info.get('deliverables') or []):
+            if _norm(d) in t or _norm(d).split()[0] in t:
+                return ("deliverables", d)
+        return ("deliverables", None)
+    if any(k in t for k in ["práctica", "practica", "prácticas", "practicas", "pasos", "checklist", "acciones", "cómo hacer", "como hacer", "cómo ejecutar", "como ejecutar"]):
+        for p in (phase_info.get('practices') or phase_info.get('practicas') or []):
+            if _norm(p) in t or _norm(p).split()[0] in t:
+                return ("practices", p)
+        return ("practices", None)
+    if any(k in t for k in ["riesgo", "riesgos", "mitig", "mitigar", "riesgo crítico", "blocking"]):
+        return ("risks", None)
+    if any(k in t for k in ["owner", "propietario", "responsable", "quien", "quién", "a cargo", "encargado"]):
+        # si menciona un entregable o rol concreto, devolver detail
+        for d in (phase_info.get('deliverables') or []):
+            if _norm(d) in t:
+                return ("owners", d)
+        return ("owners", None)
+    if any(k in t for k in ["roles", "responsab", "perfil", "perfil requerido", "quién participa", "quién debería"]):
+        return ("roles", None)
+    if any(k in t for k in ["duración", "semanas", "plazo", "tiempo", "estimación", "estimado"]):
+        return ("timeline", None)
+    return None
 
 
 # ------------------ Especialistas por metodología (Scrum primero) ------------------
@@ -3849,6 +4096,117 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
         # Construir respuesta contextual basada en el conocimiento de la fase
         if phase_info:
             try:
+                # Intent match: si el usuario pregunta algo concreto sobre KPIs/entregables/prácticas/riesgos/owners
+                intent_match = _match_phase_user_intent(ntext, phase_info)
+                if intent_match:
+                    intent, detail = intent_match
+                    pieces: List[str] = [f">> Sobre la fase {phase_info.get('name', phase_mentioned)} (metodología: {method}):\n"]
+                    # Responder según intención detectada
+                    if intent == 'kpis':
+                        try:
+                            kblocks = _expand_kpis_for_phase(phase_info, proposal)
+                            # si hay detail (nombre del KPI), filtrar
+                            if detail:
+                                kblocks = [b for b in kblocks if detail.lower() in b.lower() or detail in b]
+                                if not kblocks:
+                                    kblocks = [f"No he encontrado detalles para el KPI '{detail}', pero aquí tienes los KPIs generales:"] + _expand_kpis_for_phase(phase_info, proposal)
+                            pieces.append("\n" + "\n".join(kblocks))
+                        except Exception:
+                            pieces.append('\n(No pude generar el desglose de KPIs en este momento.)')
+
+                    elif intent == 'deliverables':
+                        try:
+                            dblocks = _expand_deliverables_for_phase(phase_info, proposal)
+                            if detail:
+                                dblocks = [b for b in dblocks if detail.lower() in b.lower() or detail in b]
+                                if not dblocks:
+                                    dblocks = [f"No encontré el entregable '{detail}' exacto; aquí los entregables principales:"] + _expand_deliverables_for_phase(phase_info, proposal)
+                            pieces.append("\n" + "\n".join(dblocks))
+                        except Exception:
+                            pieces.append('\n(No pude generar el desglose de entregables en este momento.)')
+
+                    elif intent == 'practices':
+                        try:
+                            # Return ONLY the detailed practical suggestions, as requested
+                            if detail:
+                                # Try to find a matching practice by name
+                                all_practs = phase_info.get('practices') or phase_info.get('practicas') or phase_info.get('questions_to_ask') or phase_info.get('checklist') or []
+                                match = None
+                                for pr in all_practs:
+                                    if detail.lower() in _norm(pr) or _norm(pr) in detail.lower():
+                                        match = pr
+                                        break
+                                if match:
+                                    mini_phase = dict(phase_info)
+                                    mini_phase['practices'] = [match]
+                                    formatted = _format_practices_only(mini_phase, method, proposal)
+                                    return formatted, f"Seguimiento de fase: {phase_mentioned}"
+                                # si no hay match, caemos a devolver todas las prácticas
+                            formatted = _format_practices_only(phase_info, method, proposal)
+                            return formatted, f"Seguimiento de fase: {phase_mentioned}"
+                        except Exception:
+                            return '\n(No pude generar sugerencias prácticas en este momento.)', f"Seguimiento de fase: {phase_mentioned}"
+
+                    elif intent == 'risks':
+                        try:
+                            # usar _expand_risks basado en req_text y metodología
+                            rlist = _expand_risks(req_text or '', method)
+                            pieces.append('\nRIESGOS SUGERIDOS:')
+                            for r in rlist:
+                                pieces.append(f"  - {r}")
+                        except Exception:
+                            pieces.append('\n(No pude enumerar los riesgos en este momento.)')
+
+                    elif intent in ('owners', 'roles'):
+                        try:
+                            rr = phase_info.get('roles_responsibilities') or {}
+                            if intent == 'owners' and detail:
+                                # intentar adivinar owner para el entregable concreto
+                                candidates = [r for r, desc in rr.items() if _norm(detail) in _norm(r) or _norm(detail) in _norm(desc)]
+                                if candidates:
+                                    pieces.append(f"Responsable(s) sugerido(s) para '{detail}':")
+                                    for c in candidates:
+                                        pieces.append(f"  - {c}: {rr.get(c)}")
+                                else:
+                                    pieces.append(f"Responsables en esta fase:")
+                                    for r, desc in rr.items():
+                                        pieces.append(f"  - {r}: {desc}")
+                            else:
+                                pieces.append(f"Roles y responsabilidades en {phase_info.get('name','esta fase')}:")
+                                for r, desc in rr.items():
+                                    pieces.append(f"  - {r}: {desc}")
+                        except Exception:
+                            pieces.append('\n(No pude obtener owners/roles en este momento.)')
+
+                    elif intent == 'timeline':
+                        tw = phase_info.get('typical_weeks') or phase_info.get('weeks') or None
+                        if tw:
+                            pieces.append(f"\nDuración típica estimada: {tw} semanas")
+                        else:
+                            pieces.append('\nNo hay una duración típica definida para esta fase.')
+
+                    else:
+                        # fallback genérico
+                        pieces.append(_render_phase_rich_response(ntext, phase_info, method, phase_mentioned))
+
+                    # añadir preguntas sugeridas al final para orientar follow-ups
+                    try:
+                        sug = _generate_phase_suggested_questions(phase_info)
+                        if sug:
+                            pieces.append('\nPreguntas que puedes hacerme sobre esta fase:')
+                            for q in sug[:8]:
+                                pieces.append(f"  - {q}")
+                    except Exception:
+                        pass
+
+                    base_out = "\n".join(pieces)
+                    try:
+                        base_out = _apply_method_specialist(method, ntext, phase_info, base_out, proposal)
+                    except Exception:
+                        pass
+                    return base_out, f"Seguimiento de fase: {phase_mentioned}"
+
+                # Si no hay intención clara, devolver la respuesta rica por defecto
                 resp = _render_phase_rich_response(ntext, phase_info, method, phase_mentioned)
                 try:
                     resp = _apply_method_specialist(method, ntext, phase_info, resp, proposal)

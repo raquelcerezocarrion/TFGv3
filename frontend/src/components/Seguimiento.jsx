@@ -615,6 +615,7 @@ export default function Seguimiento({ token, chats, onContinue, onSaveCurrentCha
                     sessionId={projectChatSession} 
                     externalMessage={externalMessage} 
                     externalMessageId={externalMessageId} 
+                    phase={phases[selectedPhaseIdx]?.name || null}
                     onSaveCurrentChat={onSaveCurrentChat}
                     onSaveExistingChat={onSaveExistingChat}
                     selectedChatId={selectedChat?.id || null}
@@ -781,7 +782,7 @@ export default function Seguimiento({ token, chats, onContinue, onSaveCurrentCha
 
               {followUpView === 'chat' && (
               <div>
-                <Chat token={token} loadedMessages={projectChatMessages} sessionId={projectChatSession} externalMessage={externalMessage} externalMessageId={externalMessageId} onSaveCurrentChat={onSaveCurrentChat} onSaveExistingChat={onSaveExistingChat} selectedChatId={selectedChat?.id || null} />
+                <Chat token={token} loadedMessages={projectChatMessages} sessionId={projectChatSession} externalMessage={externalMessage} externalMessageId={externalMessageId} phase={phases[selectedPhaseIdx]?.name || null} onSaveCurrentChat={onSaveCurrentChat} onSaveExistingChat={onSaveExistingChat} selectedChatId={selectedChat?.id || null} />
               </div>
             )}
           </div>

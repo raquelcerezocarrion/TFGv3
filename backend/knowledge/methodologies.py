@@ -348,6 +348,12 @@ METHODOLOGY_PHASES: Dict[str, List[Dict]] = {
                 "Crear backlog inicial y priorizar epics",
                 "Asignar roles: PO, SM, equipo dev"
             ],
+                "practices": [
+                    "Facilitar un workshop de 2h para alinear visión y formular hypotheses claras (3 hipótesis máximo)",
+                    "Definir 3 KPIs principales y una métrica leading para cada uno (ej. conversión, retención, tiempo de respuesta)",
+                    "Mapear dependencias técnicas y externas en un board visual (Miro/Confluence)",
+                    "Crear backlog inicial con épicas + 5 historias de prioridad alta para primer sprint"
+                ],
             "common_issues": [
                 "Expectativas vagas del negocio sobre alcance",
                 "Falta de compromiso de stakeholders para prioridades"
@@ -381,6 +387,13 @@ METHODOLOGY_PHASES: Dict[str, List[Dict]] = {
             "kpis": ["Velocity (historia puntos) por sprint", "% historias completadas vs comprometidas", "Defect escape rate"],
             "deliverables": ["Incremento potencialmente desplegable", "Reporte de sprint (learnings)"],
             "questions_to_ask": ["¿Qué impedimentos frecuentes están bloqueando el flujo?","¿Las historias cumplen DoR/DoD?","¿Qué automatizaciones faltan para garantizar calidad?"]
+            ,
+            "practices": [
+                "Durante el Sprint Planning: descomponer épicas en historias de 1–3 días y asignar criterios de aceptación claros",
+                "Daily: foco en impedimentos; el Scrum Master registra y asigna owners a cada impedimento con SLA de 48h",
+                "Pull request + code review: regla mínima 1 revisor y test unitario asociado para cada PR",
+                "Pipeline CI: fallo bloqueante para merge si los tests críticos fallan; automatizar smoke tests en staging"
+            ],
         },
         {
             "name": "Hardening & Pruebas de aceptación",
@@ -393,6 +406,13 @@ METHODOLOGY_PHASES: Dict[str, List[Dict]] = {
             "kpis": ["Tiempo medio para resolver regresiones", "% pruebas automatizadas"],
             "deliverables": ["Informe de pruebas", "Checklist de readiness para release"],
             "questions_to_ask": ["¿Qué fallos críticos quedan?","¿Tenemos métricas de rendimiento aceptables?","¿La automatización cubre escenarios críticos?"]
+            ,
+            "practices": [
+                "Priorizar bugs por severidad: bloquear release si hay 1 bug crítico no resuelto",
+                "Ejecutar suites e2e automatizadas nightly y revisar fallos al inicio del día",
+                "Definir gates de performance: p95 respuesta < X ms, CPU/memory thresholds para pasar a release",
+                "Simular cargas básicas en staging y documentar resultados en el informe de pruebas"
+            ],
         },
         {
             "name": "Release & Handover",
@@ -405,6 +425,13 @@ METHODOLOGY_PHASES: Dict[str, List[Dict]] = {
             "kpis": ["MTTR post-release", "% deployments con rollback"],
             "deliverables": ["Deployment artefacts", "Runbooks", "Report post-release"],
             "questions_to_ask": ["¿Cuál es el plan de rollback?","¿Qué alertas monitorizaremos tras el release?","¿Quién actúa en primera línea ante incidentes?"]
+            ,
+            "practices": [
+                "Ejecutar un despliegue canario o por feature flags para minimizar blast radius",
+                "Probar rollback en staging y documentar pasos con tiempos estimados",
+                "Comprobar dashboards y establecer alertas principales (errores 5xx, latencia, saturación de cola)",
+                "Realizar verificación post-release en 30/60/120 minutos y reportar estado al PO/operaciones"
+            ]
         }
     ],
     "Kanban": [
