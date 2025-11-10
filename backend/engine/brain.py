@@ -3582,6 +3582,10 @@ PHASE_SHORT_RESPONSES: Dict[str, Dict[str, Dict[str, str]]] = {
             "deliverables": "ENTREGABLES PRINCIPALES:\n- Backlog priorizado\n- Roadmap de releases\n- Definition of Done inicial",
             "practices": "Workshops con stakeholders, mapping de alcance y priorización por valor/riesgo.",
             "kpis": "% historias listas para sprint; claridad del alcance; aprobación de stakeholders.",
+            "checklist": "Checklist inicial: 1) Entrevistas con stakeholders; 2) Mapa de alcance; 3) Priorización inicial; 4) Backlog con épicas/historias; 5) Criterios de aceptación y DoD preliminar.",
+            "owners": "Responsables típicos: PM (coordinación), Product Owner (priorización), Tech Lead (viabilidad técnica), UX (research & flows).",
+            "timeline": "Duración típica: 1–2 semanas para Incepción en proyectos medianos; puede ser 2–4 semanas si el alcance es complejo.",
+            "risks": "Riesgos comunes: alcance insuficiente o mal definido, dependencias externas no identificadas, falta de stakeholder engagement y supuestos no validados.",
         },
         "Sprints de Desarrollo (2w)": {
             "definition": "Sprints de Desarrollo: ciclos iterativos (normalmente 2 semanas) para entregar incrementos de valor.",
@@ -3619,6 +3623,35 @@ DELIVERABLE_DEFINITIONS: Dict[str, str] = {
     "definition of done": "Definition of Done: conjunto de criterios mínimos que debe cumplir una historia para considerarse completa (tests, documentación, revisión de código, despliegue, etc.).",
     "definition of done inicial": "Definition of Done inicial: versión inicial de los criterios de 'done' acordada en Incepción para validar historias en los primeros sprints.",
 }
+
+# Más definiciones comunes
+DELIVERABLE_DEFINITIONS.update({
+    "runbook operativo": "Runbook operativo: documento paso a paso para operar el servicio en producción (checks, comandos de restauración, responsables y contactos).",
+    "checklist de release": "Checklist de release: lista de verificación previa al despliegue que incluye backups, migrations, variables de entorno, pruebas smoke y pasos de rollback.",
+    "evidencias de pruebas": "Evidencias de pruebas: resultados y artefactos que demuestran la ejecución de pruebas (logs, screenshots, reportes de test).",
+    "acta de aceptación": "Acta de aceptación: documento firmado por stakeholders que valida que los entregables cumplen criterios acordados y acepta el alcance entregado.",
+})
+
+# Mapeo de ejemplos rápidos a respuestas concretas (ejemplos en la ayuda)
+QUICK_EXAMPLES_RESPONSES: Dict[str, str] = {
+    "añade 0.5 qa": "Puedes proponer un cambio al equipo: por ejemplo escribe 'patch: team add 0.5 QA' o utiliza el comando '/cambiar:' para ajustar la propuesta. También puedo preparar un parche si me dices en qué fase lo quieres aplicar.",
+    "contingencia a 15%": "Para cambiar la contingencia puedes decir: 'contingency 15' como parte de un parche o usar '/propuesta:' para regenerar y luego aplicar un parche de presupuesto. ¿Quieres que lo aplique ahora a la propuesta actual?",
+    "cambia a kanban": "Puedo reajustar el plan a Kanban: escribe '/cambiar: Kanban' y recalcularé fases y presupuesto. ¿Confirmo el cambio?",
+    "entregables discovery": "ENTREGABLES PRINCIPALES:\n- Backlog priorizado\n- Roadmap de releases\n- Definition of Done inicial",
+}
+
+
+def _match_quick_example(text: str) -> Optional[str]:
+    """Matching simple de ejemplos rápidos: devuelve la respuesta si hay coincidencia.
+    Normaliza el texto y busca claves por inclusión.
+    """
+    if not text:
+        return None
+    t = _norm(text)
+    for k, v in QUICK_EXAMPLES_RESPONSES.items():
+        if k in t:
+            return v
+    return None
 
 
 def _find_deliverable_key(text: str) -> Optional[str]:
@@ -3878,6 +3911,14 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
                 return DELIVERABLE_DEFINITIONS.get(k, f"{k} — definición no disponible."), "Definición de entregable."
             else:
                 return ("¿Qué entregable quieres que defina? Por ejemplo: 'backlog priorizado', 'roadmap de releases', 'Definition of Done'."), "Pregunta: definición entregable"
+    except Exception:
+        pass
+
+    # Quick examples mapping: si el texto coincide con alguno de los ejemplos, devolver su respuesta específica
+    try:
+        quick = _match_quick_example(text)
+        if quick:
+            return quick, "Ejemplo rápido"
     except Exception:
         pass
 
@@ -4198,31 +4239,18 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
         return "¡A ti! Si necesitas presupuesto o plan de equipo, dime los requisitos.", "Agradecimiento."
     if _is_help(text):
         return (
-            "Puedo ayudarte en varias áreas. Aquí tienes una lista de cosas que puedes preguntarme:\n\n"
-            "1) Propuestas y presupuestos:\n"
-            "   - Generar una propuesta completa: '/propuesta: <requisitos del cliente>'.\n"
-            "   - Ajustar tarifas/contingencia y recalcular presupuesto.\n\n"
-            "2) Seguimiento por fases (preguntas cortas y enfocadas):\n"
-            "   - Definición: 'qué es discovery' / 'qué es Incepción'.\n"
-            "   - Entregables: 'entregables discovery' / 'qué entregables tiene Incepción'.\n"
-            "   - Buenas prácticas: 'sugerencias prácticas discovery'.\n"
-            "   - KPIs: 'kpis discovery'.\n"
-            "   - Checklist / acciones inmediatas: 'qué hacer en discovery'.\n"
-            "   - Responsables: 'quién lidera discovery'.\n\n"
-            "3) Definiciones de artefactos y entregables:\n"
-            "   - 'qué es el backlog priorizado', 'qué es roadmap de releases', 'qué es Definition of Done'\n\n"
-            "4) Cambios y parches a la propuesta:\n"
-            "   - Proponer cambios estructurados (equipo, fases, presupuesto) y aplicarlos con confirmación 'sí/no'.\n"
-            "   - Comandos: '/cambiar: <metodología>' o '/propuesta:' para regenerar desde requisitos.\n\n"
-            "5) Plantilla de equipo y asignación:\n"
-            "   - Pega tu plantilla (una línea por persona) y te sugiero asignaciones y plan de formación.\n\n"
-            "6) Modo formación:\n"
-            "   - Di 'quiero formarme' para entrar en modo formación por nivel (principiante/intermedio/experto).\n\n"
-            "Extras y ejemplos rápidos:\n"
-            "   - Ejemplos: 'entregables discovery', 'sugerencias prácticas discovery', 'qué es el backlog priorizado',\n"
-            "     'añade 0.5 QA', 'contingencia a 15%', 'cambia a Kanban'.\n\n"
-            "Consejo: si usas la vista Seguimiento en la UI, selecciona la fase y el frontend enviará metadata 'phase' para respuestas aún más precisas."
-        ), "Ayuda."
+            "Puedo ayudarte exclusivamente con la fase Incepción / Discovery. Puedes preguntarme específicamente:\n\n"
+            "- 'qué es discovery' → definición breve de la fase.\n"
+            "- 'entregables discovery' → lista de entregables principales.\n"
+            "- 'qué es el backlog priorizado' → definición del entregable.\n"
+            "- 'sugerencias prácticas discovery' → buenas prácticas y cómo abordarlo.\n"
+            "- 'kpis discovery' → métricas sugeridas para medir éxito.\n"
+            "- 'checklist discovery' → acciones inmediatas y checklist inicial.\n"
+            "- 'quién lidera discovery' → roles y responsables típicos.\n"
+            "- 'duración discovery' → estimación de timeline típico.\n"
+            "- 'riesgos discovery' → riesgos comunes y cómo mitigarlos (puedo detallar más si generas una propuesta con '/propuesta: ...').\n\n"
+            "Copia cualquiera de las preguntas anteriores en el chat para obtener una respuesta directa y concisa sobre Discovery."
+        ), "Ayuda (Discovery)."
 
     # PREGUNTAS ESPECÍFICAS DE SEGUIMIENTO sobre fases
     ntext = _norm(text)
