@@ -63,7 +63,10 @@ _SIM = None
 
 # Importar catálogo de metodologías (datos estructurados sobre fases/prácticas)
 try:
-    from backend.knowledge.methodologies import METHODOLOGIES, get_method_phases, normalize_method_name
+    from backend.knowledge.methodologies import (
+        METHODOLOGIES, get_method_phases, normalize_method_name,
+        get_definition, search_glossary
+    )
 except Exception:
     # Fallbacks para entornos de test donde el módulo no esté disponible
     METHODOLOGIES = {}
@@ -3911,6 +3914,23 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
                 return DELIVERABLE_DEFINITIONS.get(k, f"{k} — definición no disponible."), "Definición de entregable."
             else:
                 return ("¿Qué entregable quieres que defina? Por ejemplo: 'backlog priorizado', 'roadmap de releases', 'Definition of Done'."), "Pregunta: definición entregable"
+        # Pregunta tipo 'qué es X' general: intentar buscar en el glosario integrado
+        if quick_q == "definition":
+            # probar en el glosario de methodologies (definiciones por término)
+            try:
+                # extraer el posible término quitando prefijos comunes de pregunta
+                term = text.strip()
+                term = re.sub(r'^(qué|que)\s+(es|significa|es\s+|significa\s+|es\s+la\s+definici[oó]n\s+de|definici[oó]n\s+de)\s*', '', term, flags=re.I)
+                term = term.strip(" ?¿")
+                d = get_definition(term)
+                if d:
+                    return d, "Definición (glosario)"
+                # intentar buscar coincidencias parciales y sugerir términos
+                matches = search_glossary(term)
+                if matches:
+                    return f"{matches[0]}: {get_definition(matches[0])}", "Definición (glosario, parcial)"
+            except Exception:
+                pass
     except Exception:
         pass
 

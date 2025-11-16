@@ -1,7 +1,7 @@
 # backend/knowledge/methodologies.py
 # Conocimiento “humano” sobre metodologías + reglas de decisión explicables
 from __future__ import annotations
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 import re
 
 def _norm(s: str) -> str:
@@ -658,4 +658,146 @@ def get_phase_detail(method: str, phase_idx: int) -> Dict | None:
     if not phases or phase_idx < 0 or phase_idx >= len(phases):
         return None
     return phases[phase_idx]
+
+
+# --- Glosario integrado para respuestas concretas sobre fases y términos ---
+GLOSSARY: Dict[str, str] = {
+    "workshop con stakeholders": "Sesión facilitada con las partes interesadas (stakeholders) para alinear visión, objetivos, prioridades y supuestos. Incluye actividades como entrevistas rápidas, priorización por valor/riesgo, identificación de dependencias y acuerdos sobre siguientes pasos.",
+    "workshop de visión": "Taller breve (1–2h) para describir la visión del producto, público objetivo, problemas a resolver y las hipótesis clave a validar. Resultado típico: un statement de visión y 2–3 hipótesis prioritarias.",
+    "mapping de alcance": "Técnica para representar visualmente el alcance del producto o release: se identifican features/epics, se agrupan por prioridad y se mapean dependencias y límites (qué entra/qué no entra). Herramientas: story maps, Miro, matrices de alcance.",
+    "mapear dependencias": "Listar y visualizar dependencias técnicas, de negocio y externas que afectan entregas. Incluye identificar owners, riesgo asociado y mitigar con buffers o replanificación.",
+    "definition of done inicial": "Conjunto mínimo verificable de criterios para considerar una entrega como completada en la fase inicial: código implementado, pruebas unitarias e integración, criterios de aceptación cumplidos, despliegue en staging y documentación mínima. Debe ser acordada por PO y equipo.",
+    "definition of ready": "Condiciones que una historia debe cumplir antes de entrar a un sprint: descripción clara, criterios de aceptación, estimación, dependencias identificadas y aceptación del PO.",
+    "mvp": "Producto Mínimo Viable: la versión más reducida del producto que permite validar hipótesis de valor con usuarios reales y obtener aprendizaje rápido.",
+    "roadmap de releases": "Plan que organiza releases en el tiempo, indicando objetivos y alcance aproximado de cada release para alinear expectativas de stakeholders.",
+    "backlog priorizado": "Lista de ítems ordenada por prioridad (valor para el negocio, riesgo, dependencia) lista para extracción en sprints o flujo de trabajo.",
+    "kpi": "Indicador Clave de Rendimiento (KPI): métrica que monitoriza el progreso hacia un objetivo de negocio o éxito del proyecto (p. ej. lead time, tasa de aceptación).",
+    "lead time": "Tiempo total desde que un ítem es solicitado hasta que está entregado en producción. Indicador de rapidez del flujo end-to-end.",
+    "cycle time": "Tiempo desde que el equipo comienza a trabajar en un ítem hasta que lo termina (fase de ejecución).",
+    "checklist": "Lista de verificación con pasos concretos a validar para asegurar calidad o completitud de una fase/entrega.",
+    "entregable": "Producto o resultado concreto entregado al final de una fase o sprint (p. ej. backlog priorizado, prototipo, informe de pruebas).",
+    "seguimiento": "Actividad de monitorizar estado, riesgos y KPIs del proyecto para asegurar cumplimiento y tomar acciones correctivas.",
+    "exportar pdf": "Funcionalidad para generar una versión estática e imprimible de la conversación o propuesta, útil para compartir con stakeholders.",
+}
+
+# Extender glosario con términos frecuentes usados en explicaciones y respuestas
+GLOSSARY.update({
+    "product owner": "Product Owner (PO): rol responsable de maximizar el valor del producto; gestiona y prioriza el backlog, define criterios de aceptación y valida entregas con stakeholders.",
+    "scrum master": "Scrum Master: facilitador del marco Scrum que ayuda al equipo a seguir prácticas, eliminar impedimentos y mejorar la cadencia.",
+    "tech lead": "Tech Lead: referencia técnica del equipo que define decisiones de arquitectura, estándares y guía técnica; apoya revisiones y mentoring.",
+    "pm": "Project Manager / PM: rol enfocado en coordinación, planificación, riesgos, comunicación con stakeholders y cumplimiento de plazos.",
+    "user story": "Historia de usuario: descripción breve de una funcionalidad desde la perspectiva del usuario: 'Como <rol>, quiero <acción> para <beneficio>'. Incluye criterios de aceptación.",
+    "epic": "Epic: historia amplia o agrupador de funcionalidades que se divide en varias historias de usuario más pequeñas para planificar y priorizar.",
+    "criterios de aceptación": "Criterios de aceptación: condiciones concretas y verificables que debe cumplir una historia para considerarse aceptada por el Product Owner.",
+    "architecture decision record": "ADR (Architecture Decision Record): documento que registra decisiones arquitectónicas importantes, alternativas y su justificación.",
+    "runbook": "Runbook operativo: guía paso a paso para operar y recuperar un servicio en producción (checks, comandos, contactos, rollback).",
+    "feature flag": "Feature flag / feature toggle: mecanismo para activar/desactivar funcionalidades en producción sin desplegar código nuevo, usado para lanzamientos controlados.",
+    "canary deployment": "Despliegue canario: estrategia de lanzamiento donde una pequeña porción de tráfico recibe la nueva versión para validar comportamiento antes de aumentar el despliegue.",
+    "blue-green deployment": "Blue-green deployment: estrategia con dos entornos (blue y green) donde se cambia el tráfico al entorno nuevo para reducir el riesgo y permitir rollback rápido.",
+    "ci/cd": "CI/CD: prácticas de Integración Continua (CI) y Entrega/Despliegue Continuo (CD) que automatizan build, tests y despliegues para acelerar y asegurar releases.",
+    "integración continua": "Integración Continua (CI): práctica de integrar cambios de código frecuentemente y ejecutar tests automatizados para detectar regresiones pronto.",
+    "despliegue continuo": "Despliegue Continuo (CD): práctica de automatizar la entrega de artefactos a entornos (staging/producción) con gates y controles.",
+    "tdd": "TDD (Test-Driven Development): práctica de escribir tests automatizados antes del código, con ciclos cortos 'red-green-refactor' para mejorar calidad.",
+    "pair programming": "Pair programming: técnica donde dos desarrolladores trabajan juntos en la misma tarea (driver y navigator) para mejorar calidad y transferencia de conocimiento.",
+    "sprint": "Sprint: iteración fija (por ejemplo 1–4 semanas) en Scrum durante la cual el equipo entrega un incremento de producto potencialmente desplegable.",
+    "sprint planning": "Sprint Planning: reunión para seleccionar ítems del backlog para el sprint y planificar cómo se entregarán.",
+    "daily stand-up": "Daily (stand-up): reunión diaria breve (habitualmente 15 min) para sincronizar progreso, identificar impedimentos y coordinar el trabajo.",
+    "review": "Sprint Review / demo: reunión al final del sprint para mostrar el incremento a stakeholders y recoger feedback.",
+    "retrospectiva": "Retrospectiva (Retro): reunión al final de la iteración para reflexionar sobre qué fue bien, qué no y acordar mejoras.",
+    "backlog": "Backlog: lista de trabajo pendiente del producto (épicas, historias, bugs), generalmente priorizada por el Product Owner.",
+    "backlog priorizado": "Backlog priorizado: backlog ordenado por valor, riesgo y dependencia; fuente para planificar sprints o pull en Kanban.",
+    "spike": "Spike: historia técnica de investigación o prototipo cuyo objetivo es reducir incertidumbre o estimar complejidad.",
+    "velocity": "Velocity: medida de la cantidad de trabajo (puntos de historia) que un equipo completa por sprint; útil para prever capacidad.",
+    "throughput": "Throughput: número de ítems completados en un periodo de tiempo (usado en Kanban para medir salida de valor).",
+    "mttr": "MTTR (Mean Time To Recovery): tiempo medio para recuperar el servicio tras un incidente; métrica de resiliencia operacional.",
+    "wip": "WIP (Work In Progress): cantidad de trabajo en curso simultáneamente; límites WIP ayudan a reducir multitarea y mejorar flujo.",
+    "spike story": "Historia tipo 'spike' enfocada en investigación o validación técnica para reducir riesgo o estimar una futura historia.",
+    "definition of ready": "Definition of Ready (DoR): condiciones que una historia debe cumplir antes de que el equipo la tome (descripción, criterios, estimación, dependencias).",
+    "pruebas automatizadas": "Pruebas automatizadas: tests ejecutables (unitarios, integración, e2e) que validan funcionalidades y previenen regresiones.",
+    "observabilidad": "Observabilidad: capacidad de medir el comportamiento del sistema en producción mediante métricas, logs y trazas para diagnosticar y actuar.",
+    "rollback": "Rollback: acción de volver a una versión anterior del sistema cuando una nueva versión causa problemas en producción.",
+    "runbook operativo": "Runbook operativo: guía paso a paso para operar y recuperar servicios (ver también 'runbook').",
+    "stakeholders": "Stakeholders: personas o grupos con interés o impacto en el proyecto (clientes, usuarios, patrocinadores, reguladores).",
+    "priorización": "Priorización: proceso de ordenar ítems por valor, riesgo, dependencia y costo para decidir qué hacer primero.",
+    "kpi": "KPI (Indicador Clave de Rendimiento): métrica que monitoriza el progreso hacia objetivos estratégicos o de proyecto.",
+    "tasa de aceptación de stakeholders": "Porcentaje de entregables que son validados y aceptados por stakeholders respecto a los presentados; mide alineamiento y calidad.",
+    "defect escape rate": "Tasa de defectos escapados: proporción de bugs detectados en producción frente a los detectados en pruebas; indicador de calidad.",
+    "aceptación": "Aceptación: acto formal de validar que un entregable cumple criterios de aceptación y requisitos por parte del stakeholder/PO.",
+    "checklist de release": "Lista de verificación previa al despliegue para asegurar pasos críticos (backups, variables, smoke tests, migraciones, rollback).",
+    "epic mapping": "Story mapping / epic mapping: técnica visual para organizar funcionalidades por flujo de usuario y prioridad, útil para planear releases.",
+    "moscow": "MoSCoW: técnica de priorización que clasifica requisitos en Must, Should, Could, Won't para negociar alcance en timeboxes.",
+})
+
+# Entradas específicas de la fase Discovery (incepción y plan de releases)
+GLOSSARY.update({
+    "incepción": "Fase inicial de alineación donde se establece la visión, el alcance preliminar, riesgos y criterios de éxito; incluye workshops con stakeholders, levantamiento de requerimientos y definición de entregables iniciales.",
+    "plan de releases": "Planificación temporal de versiones que define releases, hitos y calendario; considera dependencias, criterios de promoción entre entornos y estrategia de despliegue.",
+    "metodología scrum": "Marco ágil basado en sprints con roles (Product Owner, Scrum Master, equipo), eventos (planning, daily, review, retro) y artefactos (product backlog, sprint backlog, increment).",
+    "visión": "Declaración concisa del propósito del producto: problema a resolver, usuarios objetivo y beneficios esperados; guía la priorización y roadmap.",
+    "alcance del mvp": "Conjunto mínimo de funcionalidades que permiten validar la propuesta de valor en producción; incluye lo esencial y deja fuera funciones no críticas para el lanzamiento inicial.",
+    "roadmap de releases": "Documento/plan que organiza epics y releases en el tiempo, mostrando prioridades y dependencias para los próximos ciclos de entrega.",
+    "criterios de éxito": "Condiciones y métricas que determinan si los objetivos del proyecto o fase se han alcanzado; pueden ser KPIs cuantitativos o criterios cualitativos (feedback).",
+    "kpis sugeridos": "Métricas recomendadas para medir el progreso y éxito en Discovery: por ejemplo lead time del backlog inicial, porcentaje de historias listas para el primer sprint y tasa de aceptación de stakeholders.",
+    "lead time del backlog inicial": "Tiempo medio desde que una petición o idea se registra en el backlog hasta que se entrega o se valida en producción; ayuda a estimar tiempos de entrega.",
+    "porcentaje historias listas primer sprint": "Porcentaje de historias del backlog que cumplen la Definition of Ready antes de comenzar el primer sprint (descripción clara, criterios de aceptación, estimación y dependencias resueltas).",
+    "tasa de aceptación de stakeholders": "Porcentaje de entregables presentados que son validados y aceptados por los stakeholders; indicador de alineamiento y calidad percibida.",
+    "entregables principales": "Artefactos esperados al finalizar Discovery: backlog priorizado, roadmap preliminar, visión, definición de alcance, criterios de éxito y posibles prototipos o POC.",
+    "backlog priorizado": "Listado de ítems de producto ordenados por prioridad (valor, riesgo y dependencia) que sirve como fuente para planificar sprints y releases.",
+    "definition of done inicial": "Conjunto mínimo verificable de criterios que una entrega debe cumplir para considerarse terminada en la fase inicial (ej.: código integrado, pruebas unitarias, revisión, documentación mínima).",
+    "checklist": "Lista de verificación con ítems críticos (técnicos, legales, de validación) para asegurar que no faltan pasos antes de presentar o entregar artefactos.",
+    "descripción": "Campo descriptivo del proyecto/propuesta que resume contexto, objetivos y alcance; sirve como referencia rápida para stakeholders y el equipo.",
+})
+
+def get_definition(term: str) -> Optional[str]:
+    """Return a short definition for a given term (case-insensitive). Tries exact and partial matches.
+
+    Examples:
+        get_definition('workshop con stakeholders')
+        get_definition('mapping de alcance')
+    """
+    t = term.lower().strip()
+    # exact match
+    if t in GLOSSARY:
+        return GLOSSARY[t]
+    # common synonyms / simple normalizations
+    alt = t.replace('-', ' ').replace('_', ' ')
+    if alt in GLOSSARY:
+        return GLOSSARY[alt]
+    # try basic singularization: remove trailing 's' from last token and from all tokens
+    try:
+        parts = alt.split()
+        # remove trailing 's' from last token
+        if parts and parts[-1].endswith('s'):
+            cand = ' '.join(parts[:-1] + [parts[-1][:-1]])
+            if cand in GLOSSARY:
+                return GLOSSARY[cand]
+        # remove trailing 's' from all tokens
+        cand2 = ' '.join([p[:-1] if p.endswith('s') else p for p in parts])
+        if cand2 in GLOSSARY:
+            return GLOSSARY[cand2]
+        # try removing trailing 's' from any single token (handle plurals like 'workshops con stakeholders')
+        for i in range(len(parts)):
+            if parts[i].endswith('s'):
+                cand3 = parts.copy()
+                cand3[i] = parts[i][:-1]
+                cand3s = ' '.join(cand3)
+                if cand3s in GLOSSARY:
+                    return GLOSSARY[cand3s]
+    except Exception:
+        pass
+    # substring search
+    for k, v in GLOSSARY.items():
+        if t in k or k in t:
+            return v
+    return None
+
+
+def search_glossary(query: str) -> List[str]:
+    """Return matching glossary keys for a query (case-insensitive)."""
+    q = query.lower().strip()
+    matches: List[str] = []
+    for k in GLOSSARY.keys():
+        if q in k or k in q:
+            matches.append(k)
+    return matches
 
