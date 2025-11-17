@@ -26,10 +26,12 @@ except Exception:
 
 # Memoria de usuario 
 try:
-    from backend.memory.state_store import get_client_prefs, upsert_client_pref
+    from backend.memory.state_store import get_client_prefs, upsert_client_pref, log_message, save_proposal
 except Exception:  # pragma: no cover
     def get_client_prefs(*a, **k): return {}
     def upsert_client_pref(*a, **k): return None
+    def log_message(*a, **k): return None
+    def save_proposal(*a, **k): return None
 
 
 def _is_no(text: str) -> bool:
@@ -55,6 +57,19 @@ def _norm(s: str) -> str:
     except Exception:
         return (s or '').lower().strip()
 
+
+def _is_yes(text: str) -> bool:
+    """Detecta respuestas afirmativas del usuario: 'sí', 'ok', 'vale', 'adelante', 'acepto'..."""
+    t = _norm(text)
+    if not t:
+        return False
+    yes_set = {"si", "s", "ok", "vale", "claro", "adelante", "acepto", "confirmo", "confirmar", "proceder"}
+    if t in yes_set:
+        return True
+    # detectar formas más largas como 'sí, aplica', 'sí, adelante', 'por favor aplica'
+    affirm_tokens = ("si", "vale", "ok", "adelante", "acepto", "confirm", "proceder", "aplica", "aplicar")
+    return any(tok in t for tok in affirm_tokens)
+
 # Intents classifier (optional). If no model is available, keep None.
 _INTENTS = None
 
@@ -65,7 +80,8 @@ _SIM = None
 try:
     from backend.knowledge.methodologies import (
         METHODOLOGIES, get_method_phases, normalize_method_name,
-        get_definition, search_glossary
+        get_definition, search_glossary,
+        recommend_methodology, explain_methodology_choice
     )
 except Exception:
     # Fallbacks para entornos de test donde el módulo no esté disponible
@@ -74,6 +90,18 @@ except Exception:
         return []
     def normalize_method_name(n: str) -> str:
         return (n or '').strip().title()
+    def recommend_methodology(text: str):
+        return ("Scrum", [], [])
+    def explain_methodology_choice(text: str, method: str):
+        return [f"Explicación generada por defecto para {method}."]
+
+# Importar generador de propuestas desde el planner (si existe)
+try:
+    from backend.engine.planner import generate_proposal
+except Exception:
+    # Fallback: funcion stub que lanza excepción cuando se usa (mejor que NameError)
+    def generate_proposal(*a, **k):
+        raise RuntimeError("generate_proposal no está disponible: fallo al importar backend.engine.planner")
 
 
 # ===================== detectores =====================
