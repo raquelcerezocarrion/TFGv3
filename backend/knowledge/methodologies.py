@@ -220,20 +220,98 @@ def detect_signals(text: str) -> Dict[str, float]:
     t = _norm(text)
     def has(*words): return any(w in t for w in words)
     return {
-        "uncertainty": 1.0 if has("incertidumbre","cambiante","mvp","hipótesis","descubrimiento","prototipo") else 0.0,
-        "ops_flow": 1.0 if has("operación","soporte","24/7","flujo continuo","incidencias","tickets") else 0.0,
-        "fixed_deadline": 1.0 if has("fecha límite","plazo fijo","deadline") else 0.0,
-        "fixed_budget": 1.0 if has("presupuesto fijo","tope de presupuesto","coste cerrado") else 0.0,
-        "regulated": 1.0 if has("pci","gdpr","hipaa","iso 27001","regulado","auditor") else 0.0,
-        "realtime": 1.0 if has("tiempo real","realtime","websocket","baja latencia") else 0.0,
-        "payments": 1.0 if has("pagos","stripe","redsys","paypal") else 0.0,
-        "integrations": 1.0 if has("api","apis","webhook","integración") else 0.0,
-        "mobile": 1.0 if has("app","android","ios","móvil","mobile") else 0.0,
-        "ml_ai": 1.0 if has("ml","machine learning","ia","modelo") else 0.0,
-        "large_org": 1.0 if has("varios equipos","escala","portafolio","program increment","safe") else 0.0,
-        "many_features": 1.0 if has("módulos","features","catálogo","muchas funcionalidades") else 0.0,
-        "quality_critical": 1.0 if has("seguridad","fraude","crítico","alta calidad","tdd") else 0.0,
-        "small_project": 1.0 if has("proyecto pequeño","alcance reducido","equipo pequeño") else 0.0,
+        "uncertainty": 1.0 if has("incertidumbre","cambiante","mvp","hipótesis","hipotesis","descubrimiento","prototipo","validar","experimento") else 0.0,
+        "ops_flow": 1.0 if has("operación","operacion","soporte","24/7","flujo continuo","incidencias","tickets","mantenimiento continuo") else 0.0,
+        "fixed_deadline": 1.0 if has("fecha límite","fecha limite","plazo fijo","deadline","entrega fija") else 0.0,
+        "fixed_budget": 1.0 if has("presupuesto fijo","tope de presupuesto","coste cerrado","precio cerrado") else 0.0,
+        "regulated": 1.0 if has("pci","gdpr","hipaa","iso 27001","rgpd","regulado","auditor","compliance","normativa","sox","mifid") else 0.0,
+        "realtime": 1.0 if has("tiempo real","realtime","websocket","baja latencia","notificaciones push","chat","mensajería","mensajeria","instantáneo","instantaneo") else 0.0,
+        "payments": 1.0 if has("pagos","stripe","redsys","paypal","checkout","subscripciones","suscripciones","billing","facturación","facturacion","cobros") else 0.0,
+        "integrations": 1.0 if has("api","apis","webhook","integración","integracion","terceros","conectar con","sincronización","sincronizacion") else 0.0,
+        "mobile": 1.0 if has("app","android","ios","móvil","movil","mobile","nativa","flutter","react native") else 0.0,
+        "ml_ai": 1.0 if has("ml","machine learning","ia","modelo","recomendaciones","matching","algoritmo","predicciones","deep learning","nlp","computer vision") else 0.0,
+        "large_org": 1.0 if has("varios equipos","escala","portafolio","program increment","safe","enterprise","multinacional","corporativo") else 0.0,
+        "many_features": 1.0 if has("módulos","modulos","features","catálogo","catalogo","muchas funcionalidades","complejo","multifuncional") else 0.0,
+        "quality_critical": 1.0 if has("seguridad","fraude","crítico","critico","alta calidad","tdd","fiabilidad","disponibilidad","sla","misión crítica","mision critica") else 0.0,
+        "small_project": 1.0 if has("proyecto pequeño","proyecto pequeno","alcance reducido","equipo pequeño","equipo pequeno","poc","landing","sitio simple") else 0.0,
+        
+        # Dominios genéricos
+        "marketplace": 1.0 if has("marketplace","segunda mano","compraventa","vendedores","compradores","comisiones","plataforma de intercambio") else 0.0,
+        "booking_reservation": 1.0 if has("reservas","reserva","booking","citas","agenda","calendario","disponibilidad","turnos","appointments") else 0.0,
+        "matching_dating": 1.0 if has("citas","dating","matching","match","perfiles","preferencias","swipe","likes","conexiones") else 0.0,
+        "b2b": 1.0 if has("b2b","empresas","clientes corporativos","pedidos","órdenes","ordenes","proveedores","distribuidores","mayoristas") else 0.0,
+        "saas": 1.0 if has("saas","multitenancy","multi-tenant","suscripciones","subscripciones","planes","freemium","software as a service") else 0.0,
+        "ecommerce": 1.0 if has("ecommerce","e-commerce","tienda","carrito","checkout","inventario","stock","catálogo de productos","catalogo de productos") else 0.0,
+        "social": 1.0 if has("red social","comunidad","feeds","comentarios","likes","seguir","seguidores","timeline","posts") else 0.0,
+        
+        # Contexto organizacional
+        "startup": 1.0 if has("startup","emprendimiento","lanzar","mvp","validar mercado","product market fit","semilla","serie a") else 0.0,
+        "high_availability": 1.0 if has("alta disponibilidad","24/7","uptime","redundancia","failover","disaster recovery","99.9","sla garantizado") else 0.0,
+        "ux_heavy": 1.0 if has("experiencia de usuario","ux","diseño","usabilidad","prototipo","wireframes","figma","user journey","ui/ux") else 0.0,
+        "distributed_team": 1.0 if has("remoto","distribuido","diferentes zonas","asíncrono","asincrono","global","offshore") else 0.0,
+        "content_heavy": 1.0 if has("contenido","cms","publicaciones","artículos","articulos","blog","editorial","redacción","redaccion") else 0.0,
+        
+        # ========== TEMÁTICAS ESPECÍFICAS POR INDUSTRIA ==========
+        
+        # FINTECH - Tecnología financiera
+        "fintech": 1.0 if has("fintech","banco","bancario","banca","cuenta","cuentas","transferencia","transferencias","préstamo","prestamo","crédito","credito","wallet","monedero","neobank","neobanco","open banking","psd2","inversiones","trading","bolsa","criptomoneda","crypto","blockchain") else 0.0,
+        
+        # INSURTECH - Seguros
+        "insurtech": 1.0 if has("seguro","seguros","aseguradora","póliza","poliza","siniestro","reclamación","reclamacion","prima","cobertura","indemnización","indemnizacion","asegurado","beneficiario") else 0.0,
+        
+        # HEALTHTECH - Salud y telemedicina
+        "healthtech": 1.0 if has("salud","médico","medico","hospital","clínica","clinica","paciente","telemedicina","receta","diagnóstico","diagnostico","historia clínica","historia clinica","farmacia","medicamento","consulta médica","consulta medica","cita médica","cita medica","enfermería","enfermeria") else 0.0,
+        
+        # EDTECH - Educación
+        "edtech": 1.0 if has("educación","educacion","escuela","colegio","universidad","curso","cursos","formación","formacion","e-learning","elearning","lms","estudiante","profesor","aula virtual","examen","exámenes","examenes","calificaciones","campus virtual") else 0.0,
+        
+        # LOGISTICS - Logística y transporte
+        "logistics": 1.0 if has("logística","logistica","transporte","envío","envio","paquete","paquetería","paqueteria","almacén","almacen","warehouse","tracking","seguimiento","última milla","ultima milla","flota","ruta","entrega","delivery","courier","mensajería","mensajeria") else 0.0,
+        
+        # RETAIL - Comercio minorista
+        "retail": 1.0 if has("retail","minorista","punto de venta","pos","tpv","tienda física","tienda fisica","franquicia","cadena de tiendas","supermercado","hipermercado","moda","ropa","calzado","accesorios") else 0.0,
+        
+        # TRAVEL - Viajes y turismo
+        "travel": 1.0 if has("viaje","viajes","turismo","hotel","hoteles","vuelo","vuelos","aerolínea","aerolinea","alojamiento","hospedaje","tour","tours","agencia de viajes","destino","itinerario","vacaciones") else 0.0,
+        
+        # FOOD DELIVERY - Delivery de comida
+        "food_delivery": 1.0 if has("comida","restaurante","restaurantes","delivery","reparto","pedido de comida","menú","menu","gastronomía","gastronomia","cocina","chef","domicilio","food delivery","take away","rider","repartidor") else 0.0,
+        
+        # REAL ESTATE - Inmobiliaria
+        "real_estate": 1.0 if has("inmobiliaria","inmueble","propiedad","propiedades","vivienda","piso","apartamento","casa","alquiler","venta","compra","hipoteca","arrendamiento","inquilino","propietario","tasación","tasacion") else 0.0,
+        
+        # GAMING - Videojuegos
+        "gaming": 1.0 if has("juego","videojuego","gaming","gamer","jugador","multijugador","partida","avatar","nivel","score","leaderboard","ranking","torneo","esport","streaming") else 0.0,
+        
+        # MEDIA & ENTERTAINMENT - Medios y entretenimiento
+        "media": 1.0 if has("streaming","vídeo","video","audio","música","musica","podcast","película","pelicula","serie","contenido multimedia","canal","emisión","emision","broadcast","suscripción de contenido","suscripcion de contenido") else 0.0,
+        
+        # IOT - Internet de las cosas
+        "iot": 1.0 if has("iot","internet of things","sensor","sensores","dispositivo","dispositivos","domótica","domotica","smart home","wearable","telemetría","telemetria","edge computing","gateway") else 0.0,
+        
+        # CRM - Gestión de relaciones con clientes
+        "crm": 1.0 if has("crm","customer relationship","gestión de clientes","gestion de clientes","lead","oportunidad","pipeline","ventas","sales","prospecto","contacto","campaña","campana") else 0.0,
+        
+        # ERP - Planificación de recursos empresariales
+        "erp": 1.0 if has("erp","enterprise resource","planificación empresarial","planificacion empresarial","recursos humanos","contabilidad","finanzas","compras","producción","produccion","manufactura") else 0.0,
+        
+        # HR TECH - Recursos humanos
+        "hr_tech": 1.0 if has("recursos humanos","rrhh","hr","nómina","nomina","payroll","empleado","trabajador","contratación","contratacion","onboarding","offboarding","vacaciones","ausencias","fichaje","talento") else 0.0,
+        
+        # LEGAL TECH - Tecnología legal
+        "legal_tech": 1.0 if has("legal","jurídico","juridico","abogado","despacho","contrato","tribunal","juicio","demanda","litigio","compliance legal","normativa legal","derecho") else 0.0,
+        
+        # PROPTECH - Tecnología inmobiliaria avanzada
+        "proptech": 1.0 if has("proptech","gestión de propiedades","gestion de propiedades","facility management","mantenimiento de edificios","smart building","construcción","construccion","arquitectura") else 0.0,
+        
+        # AGRITECH - Agricultura y tecnología
+        "agritech": 1.0 if has("agricultura","agrícola","agricola","cultivo","cosecha","granja","ganado","campo","siembra","riego","maquinaria agrícola","maquinaria agricola","fertilizante") else 0.0,
+        
+        # PERSONAL FINANCE - Finanzas personales
+        "personal_finance": 1.0 if has("finanzas personales","presupuesto personal","ahorro","gastos personales","control de gastos","economía doméstica","economia domestica","planificación financiera","planificacion financiera") else 0.0,
+        
+        # EVENTS - Eventos
+        "events": 1.0 if has("evento","eventos","conferencia","congreso","seminario","taller","workshop","inscripción","inscripcion","registro","asistente","organizador","ponente","agenda de eventos") else 0.0,
     }
 
 # Puntuación explicable por metodología (reglas sencillas)
@@ -250,45 +328,87 @@ def score_methodologies(text: str) -> List[Tuple[str, float, List[str]]]:
 
     add("Scrum", 0.0, [
         (s["uncertainty"]==1.0, +2.0, "Requisitos cambiantes/descubrimiento"),
+        (s["startup"]==1.0, +1.5, "Startup/MVP con validación iterativa"),
         (s["ml_ai"]==1.0, +0.5, "Prototipos/validación iterativa"),
+        (s["ux_heavy"]==1.0, +0.8, "Iteraciones con feedback de diseño"),
+        (s["social"]==1.0, +1.2, "Redes sociales con evolución rápida"),
+        (s["edtech"]==1.0, +1.0, "EdTech con iteraciones de contenido educativo"),
+        (s["gaming"]==1.0, +1.5, "Gaming con sprints de desarrollo de features"),
+        (s["media"]==1.0, +0.7, "Media con releases frecuentes de contenido"),
+        (s["events"]==1.0, +0.6, "Eventos con planificación iterativa"),
         (s["fixed_deadline"]==1.0, -0.8, "Plazo rígido reduce flexibilidad"),
         (s["ops_flow"]==1.0, -0.5, "Operación 24/7 encaja mejor con Kanban")
     ])
     add("Kanban", 0.0, [
         (s["ops_flow"]==1.0, +2.0, "Operación/soporte con flujo continuo"),
+        (s["b2b"]==1.0, +1.2, "B2B con pedidos/incidencias variables"),
+        (s["logistics"]==1.0, +2.5, "Logística con flujo continuo de envíos"),
+        (s["food_delivery"]==1.0, +2.0, "Delivery con flujo constante de pedidos"),
         (s["realtime"]==1.0, +0.7, "Lead time corto con variabilidad"),
+        (s["high_availability"]==1.0, +0.6, "Alta disponibilidad con cambios frecuentes"),
+        (s["distributed_team"]==1.0, +0.4, "Equipo distribuido con asincronía"),
+        (s["crm"]==1.0, +0.8, "CRM con flujo continuo de leads"),
         (s["fixed_deadline"]==1.0, -0.4, "Fechas rígidas piden timeboxing")
     ])
     add("Scrumban", 0.0, [
         (s["uncertainty"]==1.0 and s["ops_flow"]==1.0, +2.0, "Mix desarrollo+operación"),
+        (s["saas"]==1.0, +1.0, "SaaS con features nuevas + soporte continuo"),
+        (s["healthtech"]==1.0 and s["realtime"]==1.0, +1.2, "HealthTech con desarrollo + operación 24/7"),
         (s["uncertainty"]==1.0 and s["ops_flow"]==0.0, +0.8, "Cambios frecuentes con control de flujo"),
         (s["ops_flow"]==1.0 and s["uncertainty"]==0.0, +0.6, "WIP + planificación ligera")
     ])
     add("XP", 0.0, [
         (s["quality_critical"]==1.0, +2.0, "Calidad/fiabilidad crítica"),
-        (s["payments"]==1.0 or s["realtime"]==1.0, +1.0, "Dominios sensibles"),
+        (s["fintech"]==1.0, +2.5, "Fintech requiere máxima calidad y testing (TDD)"),
+        (s["insurtech"]==1.0, +2.3, "InsurTech con cálculos críticos y compliance"),
+        (s["healthtech"]==1.0, +2.0, "HealthTech con datos sensibles (HIPAA)"),
+        (s["payments"]==1.0, +1.5, "Pagos requieren alta calidad y tests"),
+        (s["matching_dating"]==1.0, +1.2, "Matching/citas con algoritmos sensibles"),
+        (s["iot"]==1.0, +1.8, "IoT con firmware crítico y edge computing"),
+        (s["realtime"]==1.0, +1.0, "Tiempo real requiere tests robustos"),
+        (s["regulated"]==1.0, +1.5, "Dominios regulados necesitan TDD/pair programming"),
+        (s["ml_ai"]==1.0, +0.5, "ML con TDD para prevenir regresiones"),
+        (s["legal_tech"]==1.0, +1.0, "LegalTech con precisión crítica")
     ])
     add("Lean", 0.0, [
         (s["uncertainty"]==1.0, +1.5, "Hipótesis y aprendizaje"),
-        (s["small_project"]==1.0, +0.3, "Experimentación ligera")
+        (s["startup"]==1.0, +2.0, "Startup con validación rápida"),
+        (s["small_project"]==1.0, +0.5, "Experimentación ligera"),
+        (s["marketplace"]==1.0, +1.5, "Marketplace con hipótesis de mercado"),
+        (s["personal_finance"]==1.0, +1.0, "Finanzas personales con MVPs rápidos")
     ])
     add("Crystal", 0.0, [
         (s["small_project"]==1.0, +1.0, "Equipos pequeños, foco en personas")
     ])
     add("FDD", 0.0, [
         (s["many_features"]==1.0, +1.2, "Dominio modelable por features"),
+        (s["ecommerce"]==1.0, +1.5, "Ecommerce con catálogo extenso de features"),
+        (s["retail"]==1.0, +1.3, "Retail con múltiples módulos (POS, inventario, CRM)"),
+        (s["travel"]==1.0, +1.2, "Travel con features complejas (vuelos, hoteles, tours)"),
+        (s["content_heavy"]==1.0, +0.5, "Contenido con features claras"),
+        (s["real_estate"]==1.0, +0.8, "PropTech con features bien definidas"),
         (s["uncertainty"]==1.0, -0.5, "Descubrimiento continuo no encaja")
     ])
     add("DSDM", 0.0, [
         (s["fixed_deadline"]==1.0 or s["fixed_budget"]==1.0, +2.0, "Timeboxing y alcance negociable"),
-        (s["regulated"]==1.0, +0.5, "Más gobernanza")
+        (s["regulated"]==1.0, +0.5, "Más gobernanza"),
+        (s["proptech"]==1.0, +0.6, "PropTech con plazos contractuales")
     ])
     add("SAFe", 0.0, [
         (s["large_org"]==1.0, +2.0, "Coordinación multi-equipo/portafolio"),
-        (s["regulated"]==1.0, +0.5, "Necesidad de gobernanza")
+        (s["erp"]==1.0, +2.5, "ERP enterprise requiere SAFe para coordinar módulos"),
+        (s["regulated"]==1.0, +0.8, "Necesidad de gobernanza"),
+        (s["distributed_team"]==1.0, +0.4, "Equipos distribuidos con sincronización"),
+        (s["hr_tech"]==1.0, +0.7, "HR Tech enterprise con múltiples equipos")
     ])
     add("DevOps", 0.0, [
-        (s["integrations"]==1.0 or s["realtime"]==1.0, +0.5, "Despliegues y feedback continuos"),
+        (s["integrations"]==1.0, +0.8, "Integraciones y despliegues continuos"),
+        (s["saas"]==1.0, +1.5, "SaaS con releases frecuentes"),
+        (s["gaming"]==1.0, +1.3, "Gaming con deploys continuos y A/B testing"),
+        (s["media"]==1.0, +1.2, "Media/Streaming con CD para nuevo contenido"),
+        (s["high_availability"]==1.0, +1.0, "Alta disponibilidad con CI/CD"),
+        (s["realtime"]==1.0, +0.5, "Feedback continuo necesario"),
+        (s["agritech"]==1.0, +0.6, "AgriTech con sensores y actualizaciones OTA"),
         (True, +0.3, "Prácticas compatibles con Scrum/Kanban/SAFe")
     ])
 

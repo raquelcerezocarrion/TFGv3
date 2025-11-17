@@ -70,6 +70,53 @@ def _is_yes(text: str) -> bool:
     affirm_tokens = ("si", "vale", "ok", "adelante", "acepto", "confirm", "proceder", "aplica", "aplicar")
     return any(tok in t for tok in affirm_tokens)
 
+
+# ------------------ Detección de nueva propuesta ------------------
+def _detect_new_proposal_intent(session_id: str, text: str, llm_client=None):
+    """
+    Devuelve (wants_new_proposal: bool, flags: dict)
+    - Combina heurísticas locales con una señal opcional de un clasificador LLM.
+    - No lanza excepciones si el módulo de LLM no está disponible.
+    """
+    norm_text = _norm(text or "")
+    flags = {}
+
+    # Señal LLM (opcional)
+    try:
+        from backend.engine.intent_llm import classify_intent  # puede no existir
+        try:
+            flags = classify_intent(text, llm_client) or {}
+        except Exception:
+            flags = {}
+    except Exception:
+        flags = {}
+
+    # Heurística local existente
+    heuristic = _looks_like_requirements(text)
+
+    # Frases directas para solicitud de propuesta (con tolerancia a typos)
+    direct_phrases = [
+        "hazme una propuesta", "necesito una propuesta", "quiero una propuesta",
+        "quiero una app", "queremos una app", "queremos hacer", "necesitamos una plataforma",
+        "propuesta para", "propón", "propon", "presupuesto para", "presupuesto de", "hacer una app",
+        "hazme una propuest", "propuest para", "propuest a",  # typos comunes
+        "quiero un", "necesito un", "queremos un", "hacer un"  # variantes cortas
+    ]
+    direct = any(p in norm_text for p in direct_phrases)
+    
+    # Detección adicional fuzzy: si tiene "haz" + "propuest" (con typo) en cualquier orden
+    if not direct:
+        if ("haz" in norm_text or "hacer" in norm_text) and "propuest" in norm_text:
+            direct = True
+        # O si tiene verbo de intención + "para" + keyword de dominio
+        if any(v in norm_text for v in ["quiero", "queremos", "necesito", "necesitamos"]) and "para" in norm_text:
+            domain_kw = ["app", "plataforma", "web", "saas", "sistema", "portal", "marketplace"]
+            if any(k in norm_text for k in domain_kw):
+                direct = True
+
+    wants = bool(heuristic or flags.get("asks_new_proposal", False) or direct)
+    return wants, flags
+
 # Intents classifier (optional). If no model is available, keep None.
 _INTENTS = None
 
@@ -230,11 +277,52 @@ def _asks_why_role_count(text: str) -> Optional[Tuple[str, float]]:
 
 def _looks_like_requirements(text: str) -> bool:
     kw = [
+        # Tecnología base
         "app","web","api","panel","admin","pagos","login","usuarios","microservicios",
-        "ios","android","realtime","tiempo real","ml","ia","modelo","dashboard","reportes","integraci"
+        "ios","android","realtime","tiempo real","ml","ia","modelo","dashboard","reportes","integraci",
+        "plataforma","saas","marketplace","ecommerce","e-commerce","sistema","red social","mvp",
+        "startup","soporte","tickets","reservas","booking","citas","gimnasio","tienda","carrito",
+        "pedidos","empresas","b2b","inventario","proveedores","clientes","landing","page","sitio","cms","blog",
+        # Fintech
+        "banco","bancario","banca","fintech","cuenta","transferencia","prestamo","credito","wallet","monedero",
+        "neobank","neobanco","inversiones","trading","bolsa","criptomoneda","crypto","blockchain",
+        # Insurtech
+        "seguro","seguros","aseguradora","poliza","siniestro","reclamacion","prima","cobertura","insurtech",
+        # Healthtech
+        "salud","medico","hospital","clinica","paciente","telemedicina","receta","diagnostico","farmacia","medicamento",
+        # Edtech
+        "educacion","escuela","colegio","universidad","curso","formacion","e-learning","elearning","lms","estudiante","profesor",
+        # Logistics
+        "logistica","transporte","envio","paquete","paqueteria","almacen","warehouse","tracking","seguimiento","delivery","flota","ruta",
+        # Retail
+        "retail","minorista","punto de venta","pos","tpv","franquicia","supermercado","moda","ropa",
+        # Travel
+        "viaje","viajes","turismo","hotel","vuelo","aerolinea","alojamiento","hospedaje","tour","agencia de viajes","vacaciones",
+        # Food delivery
+        "comida","restaurante","delivery","reparto","menu","gastronomia","domicilio","food delivery","rider","repartidor",
+        # Real Estate
+        "inmobiliaria","inmueble","propiedad","vivienda","piso","apartamento","casa","alquiler","hipoteca","proptech",
+        # Gaming
+        "juego","videojuego","gaming","gamer","jugador","multijugador","partida","avatar","esport",
+        # Media
+        "streaming","video","audio","musica","podcast","pelicula","serie","contenido multimedia","canal","emision","broadcast",
+        # IoT
+        "iot","sensor","sensores","dispositivo","domotica","smart home","wearable","telemetria",
+        # CRM/ERP/HR
+        "crm","erp","rrhh","recursos humanos","nomina","payroll","empleado","contabilidad","ventas","sales",
+        # Legal/Agri/Events
+        "legal","juridico","abogado","contrato","agricultura","cultivo","granja","evento","conferencia","congreso"
     ]
     score = sum(1 for k in kw if k in _norm(text))
-    return score >= 2 or len(text.split()) >= 12
+    # Reducir umbral: 1 keyword si el texto tiene palabras de intención + dominio
+    if score >= 2 or len(text.split()) >= 12:
+        return True
+    # Si solo tiene 1 keyword pero menciona verbos de construcción/necesidad, aceptar
+    t = _norm(text)
+    intent_verbs = ["hacer", "construir", "desarrollar", "crear", "necesit", "quier", "montar", "lanzar", "validar"]
+    if score >= 1 and any(v in t for v in intent_verbs):
+        return True
+    return False
 
 def _asks_similar(text: str) -> bool:
     # palabras clave sencillas
@@ -3934,31 +4022,42 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             return "¡A ti! Si necesitas presupuesto o plan de equipo, dime los requisitos.", "Agradecimiento (intent)."
 
     # Respuesta rápida: si el usuario pregunta "qué es <entregable>" devolver definición aunque no haya proposal/fase
+    # PERO solo si NO es una intención de nueva propuesta
     try:
-        quick_q = _determine_phase_question_type(text)
-        if quick_q == "deliverable_def":
-            k = _find_deliverable_key(text)
-            if k:
-                return DELIVERABLE_DEFINITIONS.get(k, f"{k} — definición no disponible."), "Definición de entregable."
-            else:
-                return ("¿Qué entregable quieres que defina? Por ejemplo: 'backlog priorizado', 'roadmap de releases', 'Definition of Done'."), "Pregunta: definición entregable"
-        # Pregunta tipo 'qué es X' general: intentar buscar en el glosario integrado
-        if quick_q == "definition":
-            # probar en el glosario de methodologies (definiciones por término)
-            try:
-                # extraer el posible término quitando prefijos comunes de pregunta
-                term = text.strip()
-                term = re.sub(r'^(qué|que)\s+(es|significa|es\s+|significa\s+|es\s+la\s+definici[oó]n\s+de|definici[oó]n\s+de)\s*', '', term, flags=re.I)
-                term = term.strip(" ?¿")
-                d = get_definition(term)
-                if d:
-                    return d, "Definición (glosario)"
-                # intentar buscar coincidencias parciales y sugerir términos
-                matches = search_glossary(term)
-                if matches:
-                    return f"{matches[0]}: {get_definition(matches[0])}", "Definición (glosario, parcial)"
-            except Exception:
-                pass
+        # Verificar primero si es intención de nueva propuesta para no interceptar
+        llm_client_quick = None
+        try:
+            from backend.engine.intent_llm import get_llm_client
+            llm_client_quick = get_llm_client()
+        except Exception:
+            pass
+        wants_new_now, _ = _detect_new_proposal_intent(session_id, text, llm_client_quick)
+        
+        if not wants_new_now:  # Solo buscar definiciones si NO es nueva propuesta
+            quick_q = _determine_phase_question_type(text)
+            if quick_q == "deliverable_def":
+                k = _find_deliverable_key(text)
+                if k:
+                    return DELIVERABLE_DEFINITIONS.get(k, f"{k} — definición no disponible."), "Definición de entregable."
+                else:
+                    return ("¿Qué entregable quieres que defina? Por ejemplo: 'backlog priorizado', 'roadmap de releases', 'Definition of Done'."), "Pregunta: definición entregable"
+            # Pregunta tipo 'qué es X' general: intentar buscar en el glosario integrado
+            if quick_q == "definition":
+                # probar en el glosario de methodologies (definiciones por término)
+                try:
+                    # extraer el posible término quitando prefijos comunes de pregunta
+                    term = text.strip()
+                    term = re.sub(r'^(qué|que)\s+(es|significa|es\s+|significa\s+|es\s+la\s+definici[oó]n\s+de|definici[oó]n\s+de)\s*', '', term, flags=re.I)
+                    term = term.strip(" ?¿")
+                    d = get_definition(term)
+                    if d:
+                        return d, "Definición (glosario)"
+                    # intentar buscar coincidencias parciales y sugerir términos
+                    matches = search_glossary(term)
+                    if matches:
+                        return f"{matches[0]}: {get_definition(matches[0])}", "Definición (glosario, parcial)"
+                except Exception:
+                    pass
     except Exception:
         pass
 
@@ -3969,6 +4068,88 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             return quick, "Ejemplo rápido"
     except Exception:
         pass
+
+    # ------------------ Nueva rama: generar propuesta desde requisitos libres ------------------
+    # Colocada aquí tras ejemplos/ayuda, y ANTES de ramas específicas (staffing, /propuesta:, riesgos, etc.).
+    try:
+        # Evitar colisión con comando explícito ya soportado más abajo
+        if not text.lower().startswith("/propuesta:"):
+            llm_client = None
+            try:
+                from backend.engine.intent_llm import get_llm_client  # opcional
+                llm_client = get_llm_client()
+            except Exception:
+                llm_client = None
+
+            wants_new, _flags = _detect_new_proposal_intent(session_id, text, llm_client)
+            if wants_new:
+                try:
+                    try:
+                        p = generate_proposal(text, llm=llm_client)
+                    except TypeError:
+                        p = generate_proposal(text)
+                except Exception:
+                    logging.getLogger(__name__).exception("Error al generar propuesta")
+                    return ("No he podido generar la propuesta ahora mismo. ¿Puedes intentarlo de nuevo en unos minutos?"), "Error generación propuesta"
+
+                # Añadir fuentes de metodología si están disponibles
+                try:
+                    info = METHODOLOGIES.get(p.get("methodology", ""), {})
+                    p["methodology_sources"] = info.get("sources", [])
+                except Exception:
+                    pass
+
+                # Guardar en contexto y persistir sin romper si falla
+                try:
+                    set_last_proposal(session_id, p, text)
+                except Exception:
+                    pass
+                try:
+                    set_last_area(session_id, "overview")
+                except Exception:
+                    pass
+                try:
+                    save_proposal(session_id, text, p)
+                except Exception:
+                    pass
+                try:
+                    log_message(session_id, "user", f"[REQ] {text}")
+                    log_message(session_id, "assistant", f"[PROPUESTA {p.get('methodology','?')}] {p.get('budget',{}).get('total_eur','?')} €")
+                except Exception:
+                    pass
+
+                try:
+                    pretty = _pretty_proposal(p)
+                except Exception:
+                    team = ", ".join(f"{r.get('role')} x{r.get('count')}" for r in (p.get("team") or []))
+                    phases = " → ".join(f"{ph.get('name','')} ({ph.get('weeks',0)}s)" for ph in (p.get("phases") or []))
+                    total = (p.get("budget", {}) or {}).get("total_eur", "(no estimado)")
+                    risks = "; ".join(p.get("risks") or [])
+                    pretty = (
+                        f"Metodología: {p.get('methodology','(no definida)')}\n"
+                        f"Equipo: {team}\nFases: {phases}\nPresupuesto: {total} €\nRiesgos: {risks}"
+                    )
+
+                answer = (
+                    "He generado una propuesta para tu proyecto a partir de lo que me has contado:\n\n"
+                    f"{pretty}\n\n"
+                    "Si quieres, puedo entrar más en detalle en el equipo, las fases, el presupuesto, los riesgos o los KPIs."
+                )
+
+                # Postprocesado opcional con LLM (si existe)
+                try:
+                    from backend.engine.styler_llm import postprocess_answer_with_llm
+                    if llm_client is not None:
+                        answer = postprocess_answer_with_llm(answer, llm_client)
+                except Exception:
+                    pass
+
+                return answer, "Propuesta generada."
+    except Exception:
+        try:
+            logging.getLogger(__name__).exception("Error en rama de nueva propuesta")
+        except Exception:
+            pass
 
     # ——— Aceptación de propuesta: pedir plantilla del equipo para asignar personas
     if proposal and _accepts_proposal(text):
