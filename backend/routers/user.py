@@ -32,6 +32,34 @@ class SavedChatOut(BaseModel):
     created_at: str
     updated_at: str
 
+
+class EmployeeIn(BaseModel):
+    name: str = Field(..., min_length=1)
+    role: str = Field(..., min_length=1)
+    skills: str = Field(..., min_length=1)  # CSV: "Python, Django, AWS"
+    seniority: Optional[str] = None  # "Junior", "Mid", "Senior", etc.
+    availability_pct: int = Field(default=100, ge=0, le=100)
+
+
+class EmployeeUpdate(BaseModel):
+    name: Optional[str] = None
+    role: Optional[str] = None
+    skills: Optional[str] = None
+    seniority: Optional[str] = None
+    availability_pct: Optional[int] = Field(default=None, ge=0, le=100)
+
+
+class EmployeeOut(BaseModel):
+    id: int
+    name: str
+    role: str
+    skills: str
+    seniority: Optional[str]
+    availability_pct: int
+    created_at: str
+    updated_at: str
+
+
 def _decode_token(token: str):
     # Intento decodificar el JWT con la clave de la app. Si algo falla, devuelvo None
     # para que el flujo de autenticación lo capture y responda con 401.
@@ -115,3 +143,97 @@ def continue_chat(chat_id: int, current_user = Depends(get_current_user)):
     from datetime import datetime
     session_id = f"saved-{chat_id}-{int(datetime.utcnow().timestamp())}"
     return { 'session_id': session_id }
+
+
+# --- Employees endpoints ---
+@router.get('/employees', response_model=List[EmployeeOut])
+def list_employees(current_user = Depends(get_current_user)):
+    """Devuelve todos los empleados del usuario."""
+    rows = state_store.list_employees(current_user.id)
+    return [{
+        'id': e.id,
+        'name': e.name,
+        'role': e.role,
+        'skills': e.skills,
+        'seniority': e.seniority,
+        'availability_pct': e.availability_pct,
+        'created_at': e.created_at.isoformat(),
+        'updated_at': e.updated_at.isoformat()
+    } for e in rows]
+
+
+@router.post('/employees', response_model=EmployeeOut)
+def create_employee(payload: EmployeeIn, current_user = Depends(get_current_user)):
+    """Crea un nuevo empleado."""
+    emp = state_store.create_employee(
+        user_id=current_user.id,
+        name=payload.name,
+        role=payload.role,
+        skills=payload.skills,
+        seniority=payload.seniority,
+        availability_pct=payload.availability_pct
+    )
+    return {
+        'id': emp.id,
+        'name': emp.name,
+        'role': emp.role,
+        'skills': emp.skills,
+        'seniority': emp.seniority,
+        'availability_pct': emp.availability_pct,
+        'created_at': emp.created_at.isoformat(),
+        'updated_at': emp.updated_at.isoformat()
+    }
+
+
+@router.get('/employees/{employee_id}', response_model=EmployeeOut)
+def get_employee(employee_id: int, current_user = Depends(get_current_user)):
+    """Recupera un empleado específico."""
+    emp = state_store.get_employee(current_user.id, employee_id)
+    if not emp:
+        raise HTTPException(status_code=404, detail='Employee not found')
+    return {
+        'id': emp.id,
+        'name': emp.name,
+        'role': emp.role,
+        'skills': emp.skills,
+        'seniority': emp.seniority,
+        'availability_pct': emp.availability_pct,
+        'created_at': emp.created_at.isoformat(),
+        'updated_at': emp.updated_at.isoformat()
+    }
+
+
+@router.put('/employees/{employee_id}', response_model=EmployeeOut)
+def update_employee(employee_id: int, payload: EmployeeUpdate, current_user = Depends(get_current_user)):
+    """Actualiza un empleado existente."""
+    emp = state_store.update_employee(
+        user_id=current_user.id,
+        employee_id=employee_id,
+        name=payload.name,
+        role=payload.role,
+        skills=payload.skills,
+        seniority=payload.seniority,
+        availability_pct=payload.availability_pct
+    )
+    if not emp:
+        raise HTTPException(status_code=404, detail='Employee not found')
+    return {
+        'id': emp.id,
+        'name': emp.name,
+        'role': emp.role,
+        'skills': emp.skills,
+        'seniority': emp.seniority,
+        'availability_pct': emp.availability_pct,
+        'created_at': emp.created_at.isoformat(),
+        'updated_at': emp.updated_at.isoformat()
+    }
+
+
+@router.delete('/employees/{employee_id}')
+def delete_employee(employee_id: int, current_user = Depends(get_current_user)):
+    """Elimina un empleado."""
+    ok = state_store.delete_employee(current_user.id, employee_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail='Employee not found')
+    return { 'status': 'deleted' }
+

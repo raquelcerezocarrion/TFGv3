@@ -81,6 +81,20 @@ class SavedChat(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
+# --- Empleados (employees) por usuario
+class Employee(Base):
+    __tablename__ = "employees"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, index=True, nullable=False)
+    name = Column(String, nullable=False)
+    role = Column(String, nullable=False)  # Backend, QA, Frontend, etc.
+    skills = Column(Text, nullable=False)  # CSV o JSON de skills
+    seniority = Column(String, nullable=True)  # Junior, Mid, Senior, etc.
+    availability_pct = Column(Integer, nullable=False, default=100)  # 0-100
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 Base.metadata.create_all(engine)
 
 # Creo las tablas si no existen. Es práctico en desarrollo; en producción
@@ -195,6 +209,61 @@ def delete_saved_chat(user_id: int, chat_id: int) -> bool:
     # Borra un chat si pertenece al usuario; devuelve True si borró algo.
     with SessionLocal() as db:
         row = db.query(SavedChat).filter(SavedChat.user_id == user_id, SavedChat.id == chat_id).first()
+        if not row:
+            return False
+        db.delete(row); db.commit()
+        return True
+
+
+# --- Employee helpers ---
+def create_employee(user_id: int, name: str, role: str, skills: str, seniority: Optional[str] = None, availability_pct: int = 100) -> Employee:
+    """Crea un nuevo empleado para el usuario."""
+    with SessionLocal() as db:
+        emp = Employee(
+            user_id=user_id,
+            name=name,
+            role=role,
+            skills=skills,
+            seniority=seniority,
+            availability_pct=availability_pct
+        )
+        db.add(emp); db.commit(); db.refresh(emp)
+        return emp
+
+
+def list_employees(user_id: int, limit: int = 100) -> List[Employee]:
+    """Devuelve todos los empleados del usuario."""
+    with SessionLocal() as db:
+        return db.query(Employee).filter(Employee.user_id == user_id).order_by(Employee.created_at.desc()).limit(limit).all()
+
+
+def get_employee(user_id: int, employee_id: int) -> Optional[Employee]:
+    """Recupera un empleado si pertenece al usuario."""
+    with SessionLocal() as db:
+        return db.query(Employee).filter(Employee.user_id == user_id, Employee.id == employee_id).first()
+
+
+def update_employee(user_id: int, employee_id: int, name: Optional[str] = None, role: Optional[str] = None, 
+                   skills: Optional[str] = None, seniority: Optional[str] = None, availability_pct: Optional[int] = None) -> Optional[Employee]:
+    """Actualiza un empleado del usuario."""
+    with SessionLocal() as db:
+        row = db.query(Employee).filter(Employee.user_id == user_id, Employee.id == employee_id).first()
+        if not row:
+            return None
+        if name is not None: row.name = name
+        if role is not None: row.role = role
+        if skills is not None: row.skills = skills
+        if seniority is not None: row.seniority = seniority
+        if availability_pct is not None: row.availability_pct = availability_pct
+        row.updated_at = datetime.utcnow()
+        db.add(row); db.commit(); db.refresh(row)
+        return row
+
+
+def delete_employee(user_id: int, employee_id: int) -> bool:
+    """Borra un empleado si pertenece al usuario."""
+    with SessionLocal() as db:
+        row = db.query(Employee).filter(Employee.user_id == user_id, Employee.id == employee_id).first()
         if not row:
             return False
         db.delete(row); db.commit()

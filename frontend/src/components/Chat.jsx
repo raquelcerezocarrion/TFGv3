@@ -68,8 +68,66 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
         const wsUrl = `${proto}://${u.host}/chat/ws?session_id=${sessionId}`
         const ws = new WebSocket(wsUrl)
         wsRef.current = ws
-        ws.onmessage = (evt) =>
-          setMessages(prev => [...prev, { role: 'assistant', content: evt.data, ts: new Date().toISOString() }])
+        ws.onmessage = async (evt) => {
+          const content = evt.data
+          setMessages(prev => [...prev, { role: 'assistant', content, ts: new Date().toISOString() }])
+          
+          // 🔥 Auto-detectar si el backend pide JSON de empleados y cargarlos automáticamente
+          const normalized = content.toLowerCase()
+          if (normalized.includes('envíame la lista de empleados') || 
+              normalized.includes('enviame la lista de empleados') ||
+              normalized.includes('envíame json') ||
+              (normalized.includes('empleados') && normalized.includes('json'))) {
+            
+            // Cargar empleados de la API
+            try {
+              const headers = token ? { Authorization: `Bearer ${token}` } : {}
+              const { data } = await axios.get(`${base}/user/employees`, { headers })
+              
+              if (Array.isArray(data) && data.length > 0) {
+                // Convertir al formato esperado por el backend
+                const employeesJson = data.map(emp => ({
+                  name: emp.name,
+                  role: emp.role,
+                  skills: emp.skills,
+                  seniority: emp.seniority || 'Mid',
+                  availability_pct: emp.availability_pct || 100
+                }))
+                
+                // Enviar automáticamente el JSON
+                const jsonString = JSON.stringify(employeesJson, null, 2)
+                
+                // Mostrar mensaje del usuario indicando que se están cargando empleados
+                setTimeout(() => {
+                  setMessages(prev => [...prev, { 
+                    role: 'user', 
+                    content: `📋 Cargando ${employeesJson.length} empleados guardados...`, 
+                    ts: new Date().toISOString() 
+                  }])
+                  
+                  // Enviar el JSON después de un breve delay
+                  setTimeout(() => {
+                    if (ws.readyState === WebSocket.OPEN) {
+                      ws.send(jsonString)
+                    }
+                  }, 500)
+                }, 300)
+              } else {
+                // No hay empleados guardados
+                setTimeout(() => {
+                  setMessages(prev => [...prev, { 
+                    role: 'assistant', 
+                    content: '⚠️ No tienes empleados guardados en la sección "Empleados". Puedes introducir la plantilla manualmente escribiendo "manual".', 
+                    ts: new Date().toISOString() 
+                  }])
+                }, 500)
+              }
+            } catch (error) {
+              console.error('Error cargando empleados:', error)
+              // Silencioso - el usuario puede escribir "manual" si quiere
+            }
+          }
+        }
         ws.onerror = () =>
           setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ No se pudo conectar por WebSocket. Usaré HTTP.', ts: new Date().toISOString() }])
       } catch {

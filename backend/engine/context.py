@@ -29,3 +29,13 @@ def set_last_area(session_id: str, area: Optional[str]) -> None:
 
 def get_last_area(session_id: str) -> Optional[str]:
     return _SESS.get(session_id, {}).get("last_area")
+
+# ---- NUEVO: valores genéricos de contexto
+def set_context_value(session_id: str, key: str, value: Any) -> None:
+    _SESS.setdefault(session_id, {})[key] = value
+
+def get_context_value(session_id: str, key: str, default: Any = None) -> Any:
+    return _SESS.get(session_id, {}).get(key, default)
+
+def clear_context_value(session_id: str, key: str) -> None:
+    _SESS.setdefault(session_id, {}).pop(key, None)

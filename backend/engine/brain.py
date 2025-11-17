@@ -12,7 +12,8 @@ try:
     from backend.engine.context import (
         get_last_proposal, set_last_proposal,
         get_pending_change, set_pending_change, clear_pending_change,
-        set_last_area, get_last_area
+        set_last_area, get_last_area,
+        set_context_value, get_context_value, clear_context_value
     )
 except Exception:
     # Fallback stubs if context module isn't available (should not happen in normal env)
@@ -23,6 +24,9 @@ except Exception:
     def clear_pending_change(*a, **k): return None
     def set_last_area(*a, **k): return None
     def get_last_area(*a, **k): return None
+    def set_context_value(*a, **k): return None
+    def get_context_value(*a, **k): return None
+    def clear_context_value(*a, **k): return None
 
 # Memoria de usuario 
 try:
@@ -222,7 +226,9 @@ def _accepts_proposal(text: str) -> bool:
         "aceptamos la propuesta", "acepto la propuesta", "aprobamos la propuesta", "aprobada la propuesta",
         "adelante con la propuesta", "ok con la propuesta", "conforme con la propuesta",
         "cerramos la propuesta", "aprobamos el plan", "acepto el plan", "ok al plan",
-        "vamos adelante", "arrancamos el proyecto", "empecemos", "comencemos", "seguimos con esta propuesta"
+        "vamos adelante", "arrancamos el proyecto", "empecemos", "comencemos", "seguimos con esta propuesta",
+        # Patrones más cortos que también valen si hay propuesta activa
+        "acepto", "apruebo", "aceptamos", "aprobamos", "adelante", "de acuerdo", "ok", "vale"
     ]
     # Evitamos confundir el 'sí' de confirmaciones parciales: pedimos que aparezca 'propuesta' o 'plan' o un verbo claro
     return any(k in t for k in keys)
@@ -4140,6 +4146,93 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
     except Exception:
         pass
 
+    # ——— ANTES de auto-generar propuesta: verificar si esperamos datos JSON de empleados
+    awaiting_employees = get_context_value(session_id, "awaiting_employees_data", False)
+    if proposal and awaiting_employees:
+        # Intentar parsear como JSON
+        try:
+            import json
+            # Limpiar markdown code blocks si vienen
+            clean_text = text.strip()
+            if clean_text.startswith("```"):
+                # Extraer contenido entre ``` 
+                lines = clean_text.split("\n")
+                clean_text = "\n".join([l for l in lines if not l.startswith("```")])
+            
+            employees_data = json.loads(clean_text)
+            
+            if not isinstance(employees_data, list) or len(employees_data) == 0:
+                return "El formato JSON no es válido o está vacío. Debe ser un array de empleados.", "JSON inválido."
+            
+            # Convertir a formato de staff esperado por las funciones existentes
+            staff = []
+            for emp in employees_data:
+                name = emp.get("name", "Sin nombre")
+                role = emp.get("role", "Unknown")
+                skills_raw = emp.get("skills", "")
+                # skills puede venir como string "Python, Django" o como array
+                if isinstance(skills_raw, list):
+                    skills = skills_raw
+                else:
+                    skills = [s.strip() for s in str(skills_raw).split(",") if s.strip()]
+                
+                availability = emp.get("availability_pct", 100)
+                seniority = emp.get("seniority", "Mid")  # Default si no viene
+                
+                staff.append({
+                    "name": name,
+                    "role": role,
+                    "skills": skills,
+                    "seniority": seniority,
+                    "availability_pct": availability
+                })
+            
+            clear_context_value(session_id, "awaiting_employees_data")
+            clear_context_value(session_id, "awaiting_employee_choice")
+            
+            # Procesar igual que con plantilla manual
+            # 1) Sugerir asignación por rol
+            try:
+                asign = _suggest_staffing(proposal, staff)
+            except Exception:
+                asign = ["Asignación sugerida no disponible por ahora."]
+
+            # 2) Plan de formación
+            try:
+                training = _render_training_plan(proposal, staff)
+            except Exception:
+                training = ["Plan de formación no disponible por ahora."]
+
+            # 3) Desglose de tareas por persona y por fase
+            try:
+                phase_tasks = _render_phase_task_breakdown(proposal, staff)
+            except Exception as e:
+                phase_tasks = [f"No pude generar el desglose de tareas por fase: {e}"]
+
+            try:
+                set_last_area(session_id, "staffing")
+            except Exception:
+                pass
+
+            out = [f"✅ He cargado {len(staff)} empleados de tu base de datos.\n"]
+            if asign:
+                out += asign
+            if training:
+                out += [""] + training
+            if phase_tasks:
+                out += [""] + phase_tasks
+
+            return "\n".join(out), "Asignación desde empleados guardados."
+            
+        except json.JSONDecodeError:
+            return (
+                "No pude interpretar el JSON. Asegúrate de que el formato es correcto.\n\n"
+                "Si prefieres introducir la plantilla manualmente, escribe 'manual'."
+            ), "Error parsing JSON empleados."
+        except Exception as e:
+            logging.getLogger(__name__).exception("Error procesando empleados JSON")
+            return f"Error al procesar empleados: {e}\n\nSi prefieres, escribe 'manual' para introducir la plantilla.", "Error procesando empleados."
+
     # ------------------ Nueva rama: generar propuesta desde requisitos libres ------------------
     # Colocada aquí tras ejemplos/ayuda, y ANTES de ramas específicas (staffing, /propuesta:, riesgos, etc.).
     try:
@@ -4222,21 +4315,79 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
         except Exception:
             pass
 
-    # ——— Aceptación de propuesta: pedir plantilla del equipo para asignar personas
+    # ——— Aceptación de propuesta: preguntar si quiere usar empleados guardados
     if proposal and _accepts_proposal(text):
         try:
             set_last_area(session_id, "staffing")
+            # Marcar que acabamos de aceptar la propuesta para esperar respuesta
+            set_context_value(session_id, "awaiting_employee_choice", True)
         except Exception:
             pass
         prompt = (
-            "¡Genial, propuesta aprobada! Para asignar personas a cada tarea, "
-            "cuéntame tu plantilla (una por línea) con este formato:\n"
-            "Nombre — Rol — Skills clave — Seniority — Disponibilidad%\n"
-            "Ejemplos:\n"
-            "- Ana Ruiz — Backend — Python, Django, AWS — Senior — 100%\n"
-            "- Luis Pérez — QA — Cypress, E2E — Semi Senior — 50%"
+            "¡Genial, propuesta aprobada! 🎉\n\n"
+            "Para asignar las personas más adecuadas a cada rol en cada fase, tengo dos opciones:\n\n"
+            "1️⃣ **Usar empleados guardados** → Si tienes empleados registrados en la sección 'Empleados', "
+            "puedo cargar automáticamente esa información y sugerirte quién encaja mejor en cada rol según "
+            "sus skills, disponibilidad y seniority.\n\n"
+            "2️⃣ **Introducir plantilla manualmente** → Puedes pegarme la lista de personas con este formato:\n"
+            "   Nombre — Rol — Skills — Seniority — Disponibilidad%\n\n"
+            "¿Qué prefieres? Escribe:\n"
+            "- 'usar empleados guardados' o 'cargar empleados'\n"
+            "- 'manual' o 'introducir plantilla'"
         )
-        return prompt, "Solicitud de plantilla."
+        return prompt, "Solicitud de método de staffing."
+
+    # ——— Detectar si el usuario eligió usar empleados guardados o manual
+    awaiting_choice = get_context_value(session_id, "awaiting_employee_choice", False)
+    if proposal and awaiting_choice:
+        normalized = _norm(text)
+        
+        # Opción 1: Usar empleados guardados
+        if any(phrase in normalized for phrase in ["usar empleados", "cargar empleados", "empleados guardados", "usar guardados", "cargar guardados"]):
+            try:
+                clear_context_value(session_id, "awaiting_employee_choice")
+                # Marcar que estamos esperando los empleados del frontend
+                set_context_value(session_id, "awaiting_employees_data", True)
+            except Exception:
+                pass
+            
+            return (
+                "Perfecto, voy a cargar los empleados que tienes guardados.\n\n"
+                "Por favor, envíame la lista de empleados en formato JSON desde la sección 'Empleados'. "
+                "El frontend debería enviar automáticamente estos datos.\n\n"
+                "El formato esperado es:\n"
+                "```json\n"
+                "[\n"
+                "  {\"name\": \"Ana Ruiz\", \"role\": \"Backend\", \"skills\": \"Python, Django\", \"availability_pct\": 100},\n"
+                "  {\"name\": \"Luis Pérez\", \"role\": \"QA\", \"skills\": \"Cypress, E2E\", \"availability_pct\": 50}\n"
+                "]\n"
+                "```"
+            ), "Esperando datos de empleados."
+        
+        # Opción 2: Introducir plantilla manual
+        elif any(phrase in normalized for phrase in ["manual", "introducir", "pegar", "escribir"]):
+            try:
+                clear_context_value(session_id, "awaiting_employee_choice")
+            except Exception:
+                pass
+            
+            return (
+                "Perfecto, puedes introducir la plantilla manualmente.\n\n"
+                "Pégame la lista de personas con este formato (una por línea):\n"
+                "Nombre — Rol — Skills clave — Seniority — Disponibilidad%\n\n"
+                "Ejemplos:\n"
+                "- Ana Ruiz — Backend — Python, Django, AWS — Senior — 100%\n"
+                "- Luis Pérez — QA — Cypress, E2E — Semi Senior — 50%\n"
+                "- María García — Frontend — React, TypeScript — Senior — 80%"
+            ), "Solicitud de plantilla manual."
+        
+        else:
+            # No entendió la respuesta, repetir opciones
+            return (
+                "No entendí tu elección. Por favor, responde:\n\n"
+                "- 'usar empleados guardados' → Para cargar automáticamente los empleados que tienes registrados\n"
+                "- 'manual' → Para introducir la plantilla tú mismo/a"
+            ), "Aclaración de método de staffing."
 
     # ——— Si el usuario pega su plantilla: parsear, asignar, formación y tareas por fase
     if proposal and _looks_like_staff_list(text):
