@@ -209,40 +209,56 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
       const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant')
       const askedToStart = lastAssistant && lastAssistant.content && lastAssistant.content.toLowerCase().includes('quieres comenzar el proyecto')
       if (isAffirmative && askedToStart) {
-        // Auto-guardar el chat antes de navegar
-        setTimeout(async () => {
-          try {
-            const updatedMessages = [...messages, { role: 'user', content: text, ts: new Date().toISOString() }]
-            let chatId = selectedChatId
-            if (!chatId && onSaveCurrentChat) {
-              // Crear chat nuevo y obtener su ID
-              console.log('[Chat] Auto-guardando nuevo chat (navegación a Seguimiento eliminada)')
-              chatId = await onSaveCurrentChat(updatedMessages, `Proyecto ${new Date().toLocaleString()}`)
-              console.log('[Chat] Nuevo chat guardado con ID:', chatId)
-            } else if (chatId && onSaveExistingChat) {
-              // Actualizar chat existente
-              console.log('[Chat] Actualizando chat existente:', chatId)
-              await onSaveExistingChat(chatId, updatedMessages)
-            }
-            // (Anteriormente navegaba a Seguimiento aquí; ya no se realiza)
-            // Additionally, generate phase buttons (with local definitions) from the last assistant proposal
-            try {
-              // find the most recent assistant message that contains a 'Fases:' section
-              const assistantMsg = [...messages].reverse().find(m => m.role === 'assistant' && /fases?:/i.test(m.content || ''))
-              if (assistantMsg) {
-                const phases = extractPhasesFromText(assistantMsg.content)
-                const defs = extractPhaseDefinitionsFromText(assistantMsg.content, phases)
-                const items = phases.map(p => ({ name: p, definition: defs[p] || null }))
-                if (items.length > 0) setPhaseButtons(items)
-              }
-            } catch (e) {
-              // ignore extraction errors
-            }
-          } catch (e) {
-            console.error('Error auto-guardando chat:', e)
-            // fallback: no navigation
+        // User confirmed starting the project: show Phase 1 with employees/roles inside the chat.
+        try {
+          // Find assistant message that contains the proposal phases
+          const assistantMsg = [...messages].reverse().find(m => m.role === 'assistant' && /fases?:/i.test(m.content || ''))
+          const phases = assistantMsg ? extractPhasesFromText(assistantMsg.content) : []
+          const phaseName = phases && phases.length > 0 ? phases[0] : null
+
+          if (!phaseName) {
+            setMessages(prev => [...prev, { role: 'assistant', content: 'He iniciado el proyecto, pero no he encontrado las fases en la propuesta para mostrar la Fase 1.', ts: new Date().toISOString() }])
+            return
           }
-        }, 300)
+
+          // Try to fetch saved employees from backend; if not available, ask user to provide them
+          if (!apiBase) {
+            setMessages(prev => [...prev, { role: 'assistant', content: `Fase 1: ${phaseName}\nNo se ha detectado el backend. Si tienes empleados guardados, por favor utiliza el botón 'Cargar empleados' o pégalos manualmente.`, ts: new Date().toISOString() }])
+            return
+          }
+
+          const headers = token ? { Authorization: `Bearer ${token}` } : {}
+          const { data } = await axios.get(`${apiBase}/user/employees`, { headers })
+          if (!Array.isArray(data) || data.length === 0) {
+            setMessages(prev => [...prev, { role: 'assistant', content: `Fase 1: ${phaseName}\nNo hay empleados guardados. Pulsa 'Cargar empleados' o pega la plantilla manualmente.`, ts: new Date().toISOString() }])
+            return
+          }
+
+          // Group employees by role
+          const groups = {}
+          data.forEach(emp => {
+            const roleKey = emp.role || 'Sin rol'
+            if (!groups[roleKey]) groups[roleKey] = []
+            groups[roleKey].push(emp.name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'Empleado desconocido')
+          })
+
+          const lines = []
+          lines.push(`Fase 1: ${phaseName}`)
+          lines.push('Asignación de personal por rol:')
+          Object.keys(groups).forEach(r => {
+            lines.push(`• ${r}: ${groups[r].join(', ')}`)
+          })
+
+          const content = lines.join('\n')
+          setMessages(prev => [...prev, { role: 'assistant', content, ts: new Date().toISOString() }])
+
+          // Save chat including this assistant message
+          const updated = [...messages, { role: 'user', content: text, ts: new Date().toISOString() }, { role: 'assistant', content, ts: new Date().toISOString() }]
+          await saveChatIfNeeded(updated)
+        } catch (e) {
+          console.error('Error mostrando Fase 1 con empleados:', e)
+          setMessages(prev => [...prev, { role: 'assistant', content: 'Error mostrando la Fase 1. Comprueba el backend o proporciona los empleados manualmente.', ts: new Date().toISOString() }])
+        }
       }
     } catch {}
 
@@ -355,6 +371,18 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
   // Handle CTA button clicks: send a predefined message and attempt to save
   const handleCta = async (type) => {
     try {
+      if (type === 'view_pdf') {
+        // Open export modal to let user generate/download the PDF
+        openExport()
+        setSuggestedCtas([])
+        return
+      }
+      if (type === 'start') {
+        // Replace 'start project' action with suggestion to export PDF
+        setMessages(prev => [...prev, { role: 'assistant', content: 'Si quieres ver la propuesta completa antes de iniciar, pulsa "Exportar PDF" para descargarla.', ts: new Date().toISOString() }])
+        setSuggestedCtas([{ type: 'view_pdf', label: 'Ver propuesta (PDF)' }])
+        return
+      }
       if (type === 'load_employees') {
         await loadEmployeesAndSend()
         setSuggestedCtas([])
