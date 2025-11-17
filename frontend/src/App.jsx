@@ -6,7 +6,6 @@ import Employees from './components/Employees.jsx'   // ← nuevo
 import TopNav from './components/TopNav.jsx'
 import Recommendations from './components/Recommendations.jsx'
 import Sidebar from './components/Sidebar.jsx'
-import Seguimiento from './components/Seguimiento.jsx'
 import axios from 'axios'
 
 export default function App() {
@@ -19,7 +18,7 @@ export default function App() {
   const [loadedMessages, setLoadedMessages] = useState(null)
   const [selectedChatId, setSelectedChatId] = useState(null)
   const [sessionIdForChat, setSessionIdForChat] = useState(null)
-  const [seguimientoInit, setSeguimientoInit] = useState(null) // { chatId }
+  
 
   useEffect(() => { if (token) fetchChats() }, [token])
 
@@ -85,27 +84,7 @@ export default function App() {
   }
   const onProfile   = () => setView('profile')
   const onEmployees = () => setView('employees')
-  const onSeguimiento = () => setView('seguimiento')
-
-  // DEBUG: ayuda a detectar si el click llega correctamente
-  const onSeguimientoDebug = () => { setView('seguimiento') }
-
-  // Chat triggers this to navigate to Seguimiento with context
-  const handleGoSeguimiento = (payload = null) => {
-    try {
-      let chatId = payload?.chatId || selectedChatId || null
-      if (!chatId && chats && chats.length > 0) {
-        try {
-          // pick most recently updated chat as a fallback
-          const latest = [...chats].sort((a,b) => new Date(b.updated_at||b.created_at||0) - new Date(a.updated_at||a.created_at||0))[0]
-          chatId = latest?.id || null
-        } catch {}
-      }
-      console.log('[App] handleGoSeguimiento - chatId:', chatId, 'payload:', payload)
-      setSeguimientoInit(chatId ? { chatId } : null)
-    } catch { setSeguimientoInit(null) }
-    setView('seguimiento')
-  }
+  
 
   const onSaveCurrentChat = async (messages, title = null) => {
     try {
@@ -197,7 +176,6 @@ export default function App() {
             <TopNav
               current={view === 'employees' ? 'employees' : view === 'profile' ? 'profile' : (view === 'recommendations' ? 'recommendations' : 'projects')}
               onGoProjects={() => setView('chat')}
-                onGoSeguimiento={onSeguimientoDebug}
               onGoEmployees={() => setView('employees')}
               onGoProfile={() => setView('profile')}
               onGoRecommendations={() => setView('recommendations')}
@@ -235,17 +213,7 @@ export default function App() {
                   <Employees token={token} />
                 ) : view === 'recommendations' ? (
                   <Recommendations token={token} />
-                  ) : view === 'seguimiento' ? (
-                    <Seguimiento 
-                      token={token}
-                      chats={chats}
-                      onContinue={onContinue}
-                      onSaveCurrentChat={onSaveCurrentChat}
-                      onSaveExistingChat={onSaveExistingChat}
-                      initialChatId={seguimientoInit?.chatId || null}
-                      autoOpenPhasePicker={true}
-                    />
-                  ) : (
+                ) : (
                   <Chat
                     token={token}
                     loadedMessages={loadedMessages}
@@ -253,7 +221,6 @@ export default function App() {
                     onSaveCurrentChat={onSaveCurrentChat}
                     onSaveExistingChat={onSaveExistingChat}
                     sessionId={sessionIdForChat}
-                    onGoSeguimiento={handleGoSeguimiento}
                   />
                 )}
               </div>

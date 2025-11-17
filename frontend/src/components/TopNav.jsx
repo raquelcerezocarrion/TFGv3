@@ -3,7 +3,6 @@ import React from 'react'
 export default function TopNav({
   current = 'projects', // 'projects' | 'employees' | 'profile' | 'recommendations'
   onGoProjects,
-  onGoSeguimiento,
   onGoEmployees,
   onGoProfile,
   onGoRecommendations,
@@ -23,7 +22,6 @@ export default function TopNav({
 
   return (
     <nav className="flex items-center gap-2">
-      {item('seguimiento', 'Seguimiento', onGoSeguimiento)}
       {item('projects', 'Proyectos', onGoProjects)}
       {item('recommendations', 'Recomendaciones', onGoRecommendations)}
       {item('employees', 'Empleados', onGoEmployees)}

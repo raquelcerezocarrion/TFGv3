@@ -15,7 +15,7 @@ async function detectApiBase() {
   return null
 }
 
-export default function Chat({ token, loadedMessages = null, selectedChatId = null, onSaveCurrentChat = null, onSaveExistingChat = null, sessionId: externalSessionId = null, externalMessage = null, externalMessageId = null, phase = null, onGoSeguimiento = null }) {
+export default function Chat({ token, loadedMessages = null, selectedChatId = null, onSaveCurrentChat = null, onSaveExistingChat = null, sessionId: externalSessionId = null, externalMessage = null, externalMessageId = null, phase = null }) {
   const [apiBase, setApiBase] = useState(null)
   const [sessionId, setSessionId] = useState(() => 'demo-' + Math.random().toString(36).slice(2, 8))
   // Start empty; if parent doesn't provide `loadedMessages` we'll show a friendly greeting.
@@ -128,21 +128,7 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
             }
           }
 
-          // 🚀 Auto-navegar a Seguimiento cuando el asistente confirma inicio o instruye abrirlo
-          try {
-            const mentionsSeguimiento = normalized.includes('seguimiento')
-            const looksLikeConfirmation = (
-              normalized.includes('proyecto iniciado') ||
-              normalized.includes('empezamos') ||
-              normalized.includes('comenzamos') ||
-              normalized.includes('listo') ||
-              normalized.includes('abr') // abre/abrir
-            )
-            if (onGoSeguimiento && mentionsSeguimiento && looksLikeConfirmation) {
-              // Pequeño delay para que el mensaje se pinte
-              setTimeout(() => { try { onGoSeguimiento({ chatId: selectedChatId || null }) } catch {} }, 300)
-            }
-          } catch {}
+          // (Eliminada la navegación automática a Seguimiento)
         }
         ws.onerror = () =>
           setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ No se pudo conectar por WebSocket. Usaré HTTP.', ts: new Date().toISOString() }])
@@ -178,13 +164,13 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
     setInput('')
     setUserHasScrolled(false) // Auto-scroll to new message
 
-    // 🧭 Si el usuario responde afirmativamente justo después de la pregunta de inicio, auto-guardar y navegar a Seguimiento
+    // 🧭 (Auto-guardar tras confirmación) — navegación a Seguimiento eliminada
     try {
       const t = text.toLowerCase()
       const isAffirmative = ['si', 'sí', 'vale', 'ok', 'vamos', 'empezar', 'empecemos'].some(k => t === k || t.startsWith(k))
       const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant')
       const askedToStart = lastAssistant && lastAssistant.content && lastAssistant.content.toLowerCase().includes('quieres comenzar el proyecto')
-      if (onGoSeguimiento && isAffirmative && askedToStart) {
+      if (isAffirmative && askedToStart) {
         // Auto-guardar el chat antes de navegar
         setTimeout(async () => {
           try {
@@ -192,7 +178,7 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
             let chatId = selectedChatId
             if (!chatId && onSaveCurrentChat) {
               // Crear chat nuevo y obtener su ID
-              console.log('[Chat] Auto-guardando nuevo chat antes de navegar a Seguimiento')
+              console.log('[Chat] Auto-guardando nuevo chat (navegación a Seguimiento eliminada)')
               chatId = await onSaveCurrentChat(updatedMessages, `Proyecto ${new Date().toLocaleString()}`)
               console.log('[Chat] Nuevo chat guardado con ID:', chatId)
             } else if (chatId && onSaveExistingChat) {
@@ -200,12 +186,10 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
               console.log('[Chat] Actualizando chat existente:', chatId)
               await onSaveExistingChat(chatId, updatedMessages)
             }
-            // Navegar con el chat ID
-            console.log('[Chat] Navegando a Seguimiento con chatId:', chatId)
-            onGoSeguimiento({ chatId: chatId || null })
+            // (Anteriormente navegaba a Seguimiento aquí; ya no se realiza)
           } catch (e) {
             console.error('Error auto-guardando chat:', e)
-            onGoSeguimiento({ chatId: selectedChatId || null })
+            // fallback: no navigation
           }
         }, 300)
       }
