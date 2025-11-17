@@ -2703,9 +2703,15 @@ def _breakdown_by_role_and_activity(p: Dict[str, Any]) -> Tuple[Dict[str, float]
 def _render_budget_detail(p: Dict[str, Any]) -> List[str]:
     weeks_total = _total_weeks(p)
     budget = p.get("budget") or {}
-    cont_pct = float(((budget.get("assumptions") or {}).get("contingency_pct", 10)))
+    assumptions = budget.get("assumptions") or {}
+    cont_pct = float(assumptions.get("contingency_pct", 0.10))
     labor0 = float(budget.get("labor_estimate_eur", 0.0))
-    total0 = float(budget.get("total_eur", labor0 * (1 + cont_pct / 100)))
+    total0 = float(budget.get("total_eur", labor0 * (1 + cont_pct)))
+    
+    # Obtener información de industria y ajustes
+    industry_note = assumptions.get("industry_note", "")
+    rate_multiplier = float(assumptions.get("industry_rate_multiplier", 1.0))
+    base_rates = assumptions.get("base_role_rates_eur_pw", {})
 
     cost_by_role, cost_by_activity, activities = _breakdown_by_role_and_activity(p)
 
@@ -2715,15 +2721,79 @@ def _render_budget_detail(p: Dict[str, Any]) -> List[str]:
     bw = _bucket_weeks(p)
     lines.append(f"- Semanas por fase/actividad: Discovery {bw['discovery']:g}s • Iteraciones {bw['iterations']:g}s • Hardening {bw['hardening']:g}s • Release {bw['release']:g}s")
 
+    # NUEVA SECCIÓN: Explicación de por qué este presupuesto
+    lines.append("\n📋 **¿Por qué esta distribución del presupuesto?**")
+    
+    if industry_note and industry_note != "Industria estándar":
+        lines.append(f"\n🏢 **Tipo de proyecto:** {industry_note}")
+        
+        # Explicaciones específicas por industria
+        if "Fintech" in industry_note or "FinTech" in industry_note:
+            lines.append("  ✓ Tarifas +30% por: Regulación PCI-DSS, prevención de fraude, seguridad crítica")
+            lines.append("  ✓ Contingencia 15%: Mayor riesgo regulatorio y auditorías")
+            lines.append("  ✓ Equipo ampliado: +QA, +Security Engineer, +Compliance Officer")
+            lines.append("  ✓ Más tiempo en Hardening: Testing exhaustivo de transacciones y seguridad")
+        elif "InsurTech" in industry_note:
+            lines.append("  ✓ Tarifas +25% por: Cálculos actuariales críticos, compliance regulatorio")
+            lines.append("  ✓ Contingencia 15%: Complejidad en fórmulas de primas y coberturas")
+            lines.append("  ✓ Equipo ampliado: +QA para validación de cálculos, +Compliance")
+        elif "HealthTech" in industry_note or "Health" in industry_note:
+            lines.append("  ✓ Tarifas +30% por: Cumplimiento HIPAA, datos médicos sensibles")
+            lines.append("  ✓ Contingencia 15%: Certificaciones de seguridad médica requeridas")
+            lines.append("  ✓ Equipo ampliado: +Security Engineer, +HIPAA Compliance Specialist")
+            lines.append("  ✓ Mayor inversión en seguridad: Encriptación E2E, auditorías médicas")
+        elif "LegalTech" in industry_note or "Legal" in industry_note:
+            lines.append("  ✓ Tarifas +20% por: Precisión crítica en contratos y documentos legales")
+            lines.append("  ✓ Equipo ampliado: +Security Engineer para confidencialidad")
+        elif "Gaming" in industry_note:
+            lines.append("  ✓ Tarifas +15% por: Talento especializado en game design y engines")
+            lines.append("  ✓ Equipo ampliado: +Game Designer, +DevOps para deploys continuos")
+            lines.append("  ✓ Sprints más cortos: Releases frecuentes con A/B testing")
+        elif "Media" in industry_note or "Streaming" in industry_note:
+            lines.append("  ✓ Tarifas +10% por: Infraestructura CDN y streaming en tiempo real")
+            lines.append("  ✓ Equipo ampliado: +DevOps para pipeline de contenido")
+        elif "Enterprise" in industry_note or "ERP" in industry_note:
+            lines.append("  ✓ Tarifas +12% por: Experiencia en sistemas complejos multi-módulo")
+            lines.append("  ✓ Duración +40%: Mayor complejidad e integraciones enterprise")
+            lines.append("  ✓ Contingencia 12%: Coordinación entre múltiples equipos")
+            lines.append("  ✓ Equipo ampliado: +PM adicional, +Architect, +Backend Devs")
+        elif "Logistics" in industry_note or "Retail" in industry_note or "Travel" in industry_note:
+            lines.append("  ✓ Tarifas -5%: Mercado competitivo con márgenes ajustados")
+            lines.append("  ✓ Optimización: Metodología Kanban para eficiencia operativa")
+        elif "Startup" in industry_note:
+            lines.append("  ✓ Tarifas -10%: Equity compensation y riesgo compartido")
+            lines.append("  ✓ Duración -20%: MVP rápido para validación de mercado")
+            lines.append("  ✓ Contingencia 20%: Alta incertidumbre en product-market fit")
+            lines.append("  ✓ Equipo reducido: PM/Tech Lead a tiempo parcial (0.25)")
+    else:
+        lines.append("  📊 Proyecto estándar con tarifas de mercado")
+        lines.append("  ✓ Contingencia 10%: Margen estándar para imprevistos")
+    
+    # Mostrar multiplicador de tarifas si es diferente de 1.0
+    if rate_multiplier != 1.0:
+        diff_pct = int((rate_multiplier - 1.0) * 100)
+        sign = "+" if diff_pct > 0 else ""
+        lines.append(f"\n💰 **Ajuste de tarifas:** {sign}{diff_pct}% respecto a base de mercado")
+        if diff_pct > 0:
+            lines.append(f"  → Refleja especialización técnica, riesgo regulatorio y complejidad del dominio")
+        else:
+            lines.append(f"  → Refleja optimización de costes y compensación mediante equity/riesgo compartido")
+
     if cost_by_role:
-        lines.append("\n📊 Coste por rol:")
+        lines.append("\n📊 **Coste por rol:**")
         for role, euros in sorted(cost_by_role.items(), key=lambda x: x[1], reverse=True):
-            lines.append(f"- {role}: {_eur(euros)}")
+            # Mostrar tarifa base si está disponible
+            base_rate = base_rates.get(role, 0)
+            if base_rate > 0:
+                adjusted_rate = base_rate * rate_multiplier
+                lines.append(f"- {role}: {_eur(euros)} ({adjusted_rate:.0f} €/sem × {weeks_total:g} sem)")
+            else:
+                lines.append(f"- {role}: {_eur(euros)}")
     else:
         lines.append("\n(No encuentro equipo/tarifas para desglosar por rol.)")
 
     if any(cost_by_activity.values()):
-        lines.append("\n🔎 Coste por actividad/fase:")
+        lines.append("\n🔎 **Coste por actividad/fase:**")
         names = {"discovery":"Discovery / Historias","iterations":"Iteraciones (build)","hardening":"Hardening & Aceptación","release":"Release & Handover"}
         for b in ("iterations","discovery","hardening","release"):
             lines.append(f"- {names[b]}: {_eur(cost_by_activity.get(b, 0.0))}")
@@ -2736,9 +2806,10 @@ def _render_budget_detail(p: Dict[str, Any]) -> List[str]:
         for (b, role, euros) in activities[:5]:
             lines.append(f"- {names[b]} — {role}: {_eur(euros)}")
 
-    lines.append(f"\nContingencia: {cont_pct:.0f}%")
-    lines.append(f"Total mano de obra (estimado): {_eur(labor0) if labor0 > 0 else '—'}")
-    lines.append(f"**Total con contingencia: {_eur(total0)}**")
+    lines.append(f"\n💵 **Resumen financiero:**")
+    lines.append(f"- Total mano de obra: {_eur(labor0) if labor0 > 0 else '—'}")
+    lines.append(f"- Contingencia ({int(cont_pct*100)}%): {_eur(total0 - labor0)}")
+    lines.append(f"- **TOTAL PROYECTO: {_eur(total0)}**")
 
     lines.append("\n¿Quieres ajustar el presupuesto? Prueba:")
     lines.append("- «contingencia a 15%»")
