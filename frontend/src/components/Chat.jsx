@@ -87,6 +87,8 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
 
   // CTA buttons suggested by assistant (e.g., aceptar propuesta, pedir cambios, iniciar proyecto)
   const [suggestedCtas, setSuggestedCtas] = useState([])
+  // Phase buttons shown when user confirms start; each item: { name, definition }
+  const [phaseButtons, setPhaseButtons] = useState([])
 
   // descubrir backend + abrir WS
   useEffect(() => {
@@ -223,6 +225,19 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
               await onSaveExistingChat(chatId, updatedMessages)
             }
             // (Anteriormente navegaba a Seguimiento aquí; ya no se realiza)
+            // Additionally, generate phase buttons (with local definitions) from the last assistant proposal
+            try {
+              // find the most recent assistant message that contains a 'Fases:' section
+              const assistantMsg = [...messages].reverse().find(m => m.role === 'assistant' && /fases?:/i.test(m.content || ''))
+              if (assistantMsg) {
+                const phases = extractPhasesFromText(assistantMsg.content)
+                const defs = extractPhaseDefinitionsFromText(assistantMsg.content, phases)
+                const items = phases.map(p => ({ name: p, definition: defs[p] || null }))
+                if (items.length > 0) setPhaseButtons(items)
+              }
+            } catch (e) {
+              // ignore extraction errors
+            }
           } catch (e) {
             console.error('Error auto-guardando chat:', e)
             // fallback: no navigation
@@ -370,6 +385,62 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
     }
   }
 
+  // Extract phases from an assistant message that includes methodology and phases
+  const extractPhasesFromText = (raw) => {
+    try {
+      if (!raw) return []
+      const txt = String(raw)
+      // Try to find a 'Fases: ...' line produced by the proposal endpoint
+      const fasesMatch = txt.match(/Fases:\s*([^\n\r]+)/i) || txt.match(/■\s*Fases:\s*([^\n\r]+)/i)
+      if (!fasesMatch) return []
+      const fasesStr = fasesMatch[1]
+      // Split by common separators (arrow, ->, comma, semicolon)
+      const parts = fasesStr.split(/→|->|,|;/).map(s => s.trim()).filter(Boolean)
+      // Remove trailing week counts like '(3 semanas)'
+      const phases = parts.map(p => p.replace(/\(.*?\)/g, '').trim()).filter(Boolean)
+      return phases
+    } catch (e) {
+      return []
+    }
+  }
+
+  const handlePhaseClick = async (phaseName) => {
+    try {
+      const text = `Sobre la fase: ${phaseName}`
+      await send(text)
+      const updated = [...messages, { role: 'user', content: text, ts: new Date().toISOString() }]
+      await saveChatIfNeeded(updated)
+    } catch (e) {
+      console.error('Error handling phase click:', e)
+    }
+  }
+
+  // Extract small paragraph descriptions for each phase from an assistant message
+  const extractPhaseDefinitionsFromText = (raw, phases) => {
+    try {
+      const out = {}
+      if (!raw || !phases || phases.length === 0) return out
+      // split into paragraphs
+      const paras = String(raw).split(/\n\s*\n/).map(p => p.trim()).filter(Boolean)
+      phases.forEach(ph => {
+        const re = new RegExp('\\b' + ph.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&') + '\\b', 'i')
+        // find paragraph containing the phase name
+        const found = paras.find(p => re.test(p))
+        if (found) {
+          out[ph] = found.length > 400 ? found.slice(0, 400) + '...' : found
+        } else {
+          // fallback: split into sentences without lookbehind
+          const sentences = String(raw).match(/[^.!?]+[.!?]?/g) || []
+          const s = sentences.find(s => re.test(s))
+          out[ph] = s ? s.trim() : null
+        }
+      })
+      return out
+    } catch (e) {
+      return {}
+    }
+  }
+
   // Load employees from backend and send JSON via WebSocket (mirrors earlier auto-load behavior)
   const loadEmployeesAndSend = async () => {
     if (!apiBase) {
@@ -504,17 +575,32 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
                 <div className="whitespace-pre-wrap font-sans text-[12px] leading-relaxed break-words">{m.content}</div>
                 {m.ts && <div className="text-[10px] opacity-60 mt-1">{new Date(m.ts).toLocaleString()}</div>}
 
-                {/* Render CTA buttons for this assistant message (if any) */}
+                {/* Render CTA buttons and phase buttons for this assistant message (if any) */}
                 {m.role === 'assistant' && (() => {
                   const ctas = detectCtas(m.content)
-                  if (!ctas || ctas.length === 0) return null
+                  const phases = extractPhasesFromText(m.content)
+                  if (( !ctas || ctas.length === 0 ) && ( !phases || phases.length === 0 )) return null
                   return (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {ctas.map((c, idx) => (
-                        <button key={idx} className="px-3 py-1 rounded-md border bg-white hover:bg-gray-50 text-sm" onClick={() => handleCta(c.type)}>
-                          {c.label}
-                        </button>
-                      ))}
+                    <div className="mt-2 flex flex-col gap-2">
+                      {ctas && ctas.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {ctas.map((c, idx) => (
+                            <button key={idx} className="px-3 py-1 rounded-md border bg-white hover:bg-gray-50 text-sm" onClick={() => handleCta(c.type)}>
+                              {c.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {phases && phases.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {phases.map((p, idx) => (
+                            <button key={`phase-${idx}`} className="px-3 py-1 rounded-md border bg-sky-50 hover:bg-sky-100 text-sm" onClick={() => handlePhaseClick(p)}>
+                              {p}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )
                 })()}
