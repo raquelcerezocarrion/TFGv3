@@ -23,6 +23,7 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
   const [input, setInput] = useState('')
   const wsRef = useRef(null)
   const listRef = useRef(null)
+  const messagesRef = useRef([])
   const [userHasScrolled, setUserHasScrolled] = useState(false)
 
   // Scroll to bottom, but only if the user hasn't scrolled up
@@ -31,6 +32,38 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
       listRef.current.scrollTop = listRef.current.scrollHeight
     }
   }, [messages, userHasScrolled])
+
+  // keep a ref copy of messages for async helpers to read the latest value
+  useEffect(() => { messagesRef.current = messages }, [messages])
+
+  // Detect assistant prompts and show CTA buttons
+  // Helper: detect CTAs inside a given assistant text
+  const detectCtas = (raw) => {
+    try {
+      if (!raw) return []
+      const txt = String(raw).toLowerCase()
+      const ctas = []
+      if (txt.includes('acept') || txt.includes('acepto la propuesta') || txt.includes('aceptar la propuesta')) {
+        ctas.push({ type: 'accept', label: 'Aceptar propuesta' })
+      }
+      // Employee-related options
+      if (txt.includes('usar empleados') || txt.includes('cargar empleados') || (txt.includes('empleados') && txt.includes('guardad')) || txt.includes('usar empleados guardados')) {
+        ctas.push({ type: 'load_employees', label: 'Cargar empleados' })
+      }
+      if (txt.includes('manual') || txt.includes('introducir plantilla') || txt.includes('introducir plantilla manualmente') || txt.includes('plantilla manual')) {
+        ctas.push({ type: 'manual', label: 'Introducir plantilla' })
+      }
+      if ((txt.includes('quieres comenzar') || txt.includes('quieres iniciar') || txt.includes('comenzamos') || txt.includes('empezamos')) && txt.includes('proyecto')) {
+        ctas.push({ type: 'start', label: 'Iniciar proyecto' })
+      }
+      if (txt.includes('hacer cambios') || txt.includes('modific') || txt.includes('realizar cambios') || txt.includes('quieres que lo modifi')) {
+        ctas.push({ type: 'changes', label: 'Solicitar cambios' })
+      }
+      return ctas
+    } catch {
+      return []
+    }
+  }
 
   // Detect if user scrolls up
   const handleScroll = () => {
@@ -51,6 +84,9 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
   const [title, setTitle] = useState('Informe de la conversación')
   const [reportMeta, setReportMeta] = useState({ project:'', client:'', author:'', session_id:'', subtitle:'Chat + decisiones + propuesta final' })
   const [reportOptions, setReportOptions] = useState({ include_cover:true, include_transcript:true, include_analysis:true, include_final_proposal:true, analysis_depth:'deep', font_name:'Helvetica' })
+
+  // CTA buttons suggested by assistant (e.g., aceptar propuesta, pedir cambios, iniciar proyecto)
+  const [suggestedCtas, setSuggestedCtas] = useState([])
 
   // descubrir backend + abrir WS
   useEffect(() => {
@@ -284,6 +320,146 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
     } finally { setLoadingExport(false) }
   }
 
+  // Auto-save helper used by CTA actions
+  const saveChatIfNeeded = async (messagesToSave) => {
+    try {
+      let chatId = selectedChatId
+      if (!chatId && onSaveCurrentChat) {
+        console.log('[Chat] Auto-guardando nuevo chat (CTA)')
+        chatId = await onSaveCurrentChat(messagesToSave, `Proyecto ${new Date().toLocaleString()}`)
+        console.log('[Chat] Nuevo chat guardado con ID:', chatId)
+      } else if (chatId && onSaveExistingChat) {
+        console.log('[Chat] Actualizando chat existente (CTA):', chatId)
+        await onSaveExistingChat(chatId, messagesToSave)
+      }
+    } catch (e) {
+      console.error('Error guardando chat desde CTA:', e)
+    }
+  }
+
+  // Handle CTA button clicks: send a predefined message and attempt to save
+  const handleCta = async (type) => {
+    try {
+      if (type === 'load_employees') {
+        await loadEmployeesAndSend()
+        setSuggestedCtas([])
+        return
+      }
+      if (type === 'manual') {
+        // send the 'manual' keyword to trigger assistant to ask for manual template
+        await send('manual')
+        const updated = [...messages, { role: 'user', content: 'manual', ts: new Date().toISOString() }]
+        await saveChatIfNeeded(updated)
+        setSuggestedCtas([])
+        return
+      }
+
+      let text = ''
+      if (type === 'accept') text = 'Acepto la propuesta'
+      else if (type === 'start') text = 'Sí, vamos a comenzar el proyecto'
+      else if (type === 'changes') text = 'Solicito cambios en la propuesta'
+      else return
+
+      await send(text)
+      // Ensure the message is saved (either create or update)
+      const updated = [...messages, { role: 'user', content: text, ts: new Date().toISOString() }]
+      await saveChatIfNeeded(updated)
+    } catch (e) {
+      console.error('Error handling CTA:', e)
+      setSuggestedCtas([])
+    }
+  }
+
+  // Load employees from backend and send JSON via WebSocket (mirrors earlier auto-load behavior)
+  const loadEmployeesAndSend = async () => {
+    if (!apiBase) {
+      setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ Backend no detectado. Arranca uvicorn en :8000.', ts: new Date().toISOString() }])
+      return
+    }
+
+    try {
+      const headers = token ? { Authorization: `Bearer ${token}` } : {}
+      const { data } = await axios.get(`${apiBase}/user/employees`, { headers })
+      if (Array.isArray(data) && data.length > 0) {
+        const employeesJson = data.map(emp => ({
+          name: emp.name,
+          role: emp.role,
+          skills: emp.skills,
+          seniority: emp.seniority || 'Mid',
+          availability_pct: emp.availability_pct || 100
+        }))
+        const jsonString = JSON.stringify(employeesJson, null, 2)
+
+        // show user message and then send via WS if available
+        const userMsg = { role: 'user', content: `📋 Cargando ${employeesJson.length} empleados guardados...`, ts: new Date().toISOString() }
+        setMessages(prev => [...prev, userMsg])
+
+        // Also render a readable preview of the saved employees in the chat
+        try {
+          const previewLines = employeesJson.map(emp => {
+            const skills = Array.isArray(emp.skills) ? emp.skills.join(', ') : String(emp.skills || '')
+            return `• ${emp.name} — ${emp.role} — ${skills} — ${emp.seniority} — ${emp.availability_pct}%`
+          })
+          const preview = ['🔎 Empleados guardados: ', ...previewLines].join('\n')
+          setMessages(prev => [...prev, { role: 'assistant', content: preview, ts: new Date().toISOString() }])
+        } catch (e) {
+          // If preview building fails, ignore silently
+        }
+
+        // First, send a textual trigger so the backend sets the "awaiting_employees_data" context
+        // and asks the assistant to request the JSON. This mirrors the previous manual flow.
+        try {
+          await send('cargar empleados')
+        } catch (e) {
+          // ignore send errors here; we'll still attempt to deliver the JSON
+        }
+
+        // Wait briefly for the assistant/back-end to respond asking for the JSON.
+        // Poll messagesRef for up to 3s for an assistant message that indicates readiness.
+        const waitForAssistantReady = async (timeoutMs = 3000) => {
+          const deadline = Date.now() + timeoutMs
+          const initialLen = Array.isArray(messagesRef.current) ? messagesRef.current.length : 0
+          const readyRegex = /env[ií]ame la lista de empleados|enviame la lista de empleados|env[ií]ame json|empleados.*json|env[ií]ame la lista/i
+          while (Date.now() < deadline) {
+            await new Promise(r => setTimeout(r, 200))
+            const msgs = messagesRef.current || []
+            if (msgs.length <= initialLen) continue
+            // search recent messages for readiness
+            for (let i = msgs.length - 1; i >= Math.max(0, initialLen); i--) {
+              const m = msgs[i]
+              if (m && m.role === 'assistant' && typeof m.content === 'string') {
+                if (readyRegex.test(m.content.toLowerCase())) return true
+              }
+            }
+          }
+          return false
+        }
+
+        const isReady = await waitForAssistantReady(3000)
+
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          if (isReady) {
+            wsRef.current.send(jsonString)
+          } else {
+            // fallback: small delay then send anyway
+            setTimeout(() => { if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) wsRef.current.send(jsonString) }, 500)
+          }
+        } else {
+          setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ No hay conexión WebSocket. Pega los empleados manualmente o inicia el servidor.', ts: new Date().toISOString() }])
+        }
+
+        // Attempt to save the chat including the new user message
+        const updated = [...messages, userMsg]
+        await saveChatIfNeeded(updated)
+      } else {
+        setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ No tienes empleados guardados en la sección "Empleados".', ts: new Date().toISOString() }])
+      }
+    } catch (error) {
+      console.error('Error cargando empleados (CTA):', error)
+      setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ Error cargando empleados. Comprueba los permisos o inténtalo manualmente.', ts: new Date().toISOString() }])
+    }
+  }
+
   return (
     <div className="h-full flex flex-col gap-2 min-w-0 min-h-0 box-border text-[13px] relative overflow-hidden">
       {/* acciones superiores */}
@@ -327,10 +503,36 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
               <div key={i} className={`box-border max-w-full md:max-w-[60%] break-words rounded-2xl px-3 py-2 shadow-sm ${m.role === 'user' ? 'ml-auto bg-blue-600 text-white' : 'bg-white border'}`}>
                 <div className="whitespace-pre-wrap font-sans text-[12px] leading-relaxed break-words">{m.content}</div>
                 {m.ts && <div className="text-[10px] opacity-60 mt-1">{new Date(m.ts).toLocaleString()}</div>}
+
+                {/* Render CTA buttons for this assistant message (if any) */}
+                {m.role === 'assistant' && (() => {
+                  const ctas = detectCtas(m.content)
+                  if (!ctas || ctas.length === 0) return null
+                  return (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {ctas.map((c, idx) => (
+                        <button key={idx} className="px-3 py-1 rounded-md border bg-white hover:bg-gray-50 text-sm" onClick={() => handleCta(c.type)}>
+                          {c.label}
+                        </button>
+                      ))}
+                    </div>
+                  )
+                })()}
               </div>
             ))}
           </div>
         </div>
+
+        {/* CTA buttons suggested by assistant */}
+        {suggestedCtas && suggestedCtas.length > 0 && (
+          <div className="w-full flex gap-2 items-center mb-2">
+            {suggestedCtas.map((c, idx) => (
+              <button key={idx} className="px-3 py-2 rounded-xl border bg-white hover:bg-gray-50" onClick={() => handleCta(c.type)}>
+                {c.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="flex items-center gap-2 mt-3 flex-shrink-0 w-full">
           <input
