@@ -11,6 +11,9 @@ from backend.core.config import settings
 import jwt
 from typing import Tuple
 from backend.engine.brain import _pretty_proposal
+from fastapi import Depends
+from backend.routers.user import get_current_user
+from backend.memory import state_store
 
 router = APIRouter()
 
@@ -312,7 +315,26 @@ def list_proposals_from_chat(chat_id: int):
                     continue
 
         out = []
-        if assistant_blocks:
+        # First, query proposals specifically for this chat's sessions (saved-{chat_id}-*)
+        chat_specific = db.query(ProposalLog).filter(
+            ProposalLog.session_id.like(f"saved-{chat_id}-%")
+        ).order_by(ProposalLog.created_at.desc()).all()
+        
+        # If we found chat-specific proposals, use them directly
+        if chat_specific:
+            for r in chat_specific:
+                try:
+                    out.append({
+                        'id': int(r.id),
+                        'requirements': r.requirements,
+                        'created_at': r.created_at.isoformat(),
+                        'methodology': (r.proposal_json or {}).get('methodology'),
+                    })
+                except Exception:
+                    continue
+        
+        # Fallback: if no DB proposals found, parse inline proposals from chat content
+        if not out and assistant_blocks:
             cand_rows = db.query(ProposalLog).order_by(ProposalLog.created_at.desc()).limit(500).all()
             for (txt, ts) in assistant_blocks:
                 snippet = txt.lower().strip()[:160]
@@ -650,3 +672,71 @@ def get_phase_definition(proposal_id: int, phase_idx: int):
         return {"definition": text_def, "structured": structured}
 
     return {"definition": ph.get('description') or f"Descripción de la fase '{ph.get('name')}'."}
+
+
+# ----------------- Tracking: crear run desde propuesta y gestionar tareas -----------------
+class TrackingCreateIn(BaseModel):
+    name: Optional[str] = Field(default=None)
+
+class ToggleTaskIn(BaseModel):
+    completed: bool = Field(...)
+
+
+@router.post("/{proposal_id}/tracking")
+def create_tracking_for_proposal(proposal_id: int, payload: TrackingCreateIn = None, current_user = Depends(get_current_user)):
+    """Crea un seguimiento (run) para una propuesta dada construyendo tareas
+    a partir de las checklists de cada fase.
+    """
+    # Verificar propuesta existente
+    from backend.memory.state_store import SessionLocal, ProposalLog
+    with SessionLocal() as db:
+        row = db.query(ProposalLog).filter(ProposalLog.id == proposal_id).first()
+        if not row:
+            raise HTTPException(status_code=404, detail="Propuesta no encontrada")
+
+    # Construir tareas desde fases
+    try:
+        phases = get_proposal_phases(proposal_id)
+    except HTTPException:
+        raise
+    except Exception:
+        phases = []
+
+    tasks = []
+    for ph in (phases or []):
+        idx = int(ph.get("phase_idx", 0))
+        checklist = ph.get("checklist") or []
+        name = ph.get("name") or f"Fase {idx+1}"
+        if checklist:
+            for item in checklist:
+                tasks.append({"phase_idx": idx, "text": f"{name}: {item}", "completed": False})
+        else:
+            # Añadir un placeholder si no hay checklist
+            tasks.append({"phase_idx": idx, "text": f"{name}: Revisar objetivos de la fase", "completed": False})
+
+    run_name = (payload.name if payload else None) or f"Seguimiento propuesta {proposal_id}"
+    run_id = state_store.create_tracking_run(current_user.id, proposal_id, run_name, tasks)
+    return {"run_id": run_id}
+
+
+@router.get("/tracking/{run_id}")
+def get_tracking(run_id: int, current_user = Depends(get_current_user)):
+    data = state_store.get_tracking_run(run_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="Seguimiento no encontrado")
+    if int(data.get("user_id")) != int(current_user.id):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    return data
+
+
+@router.post("/tracking/{run_id}/tasks/{task_idx}/toggle")
+def toggle_tracking_task(run_id: int, task_idx: int, payload: ToggleTaskIn, current_user = Depends(get_current_user)):
+    data = state_store.get_tracking_run(run_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="Seguimiento no encontrado")
+    if int(data.get("user_id")) != int(current_user.id):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    res = state_store.toggle_task_completion(run_id, int(task_idx), bool(payload.completed))
+    if res is None:
+        raise HTTPException(status_code=404, detail="Tarea no encontrada")
+    return {"completed": bool(res)}

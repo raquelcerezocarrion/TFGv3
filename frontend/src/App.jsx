@@ -19,6 +19,7 @@ export default function App() {
   const [loadedMessages, setLoadedMessages] = useState(null)
   const [selectedChatId, setSelectedChatId] = useState(null)
   const [sessionIdForChat, setSessionIdForChat] = useState(null)
+  const [seguimientoInit, setSeguimientoInit] = useState(null) // { chatId }
 
   useEffect(() => { if (token) fetchChats() }, [token])
 
@@ -87,23 +88,42 @@ export default function App() {
   const onSeguimiento = () => setView('seguimiento')
 
   // DEBUG: ayuda a detectar si el click llega correctamente
-  const onSeguimientoDebug = () => {
-    console.debug('[App] onSeguimiento called — cambio a view=seguimiento')
+  const onSeguimientoDebug = () => { setView('seguimiento') }
+
+  // Chat triggers this to navigate to Seguimiento with context
+  const handleGoSeguimiento = (payload = null) => {
+    try {
+      let chatId = payload?.chatId || selectedChatId || null
+      if (!chatId && chats && chats.length > 0) {
+        try {
+          // pick most recently updated chat as a fallback
+          const latest = [...chats].sort((a,b) => new Date(b.updated_at||b.created_at||0) - new Date(a.updated_at||a.created_at||0))[0]
+          chatId = latest?.id || null
+        } catch {}
+      }
+      console.log('[App] handleGoSeguimiento - chatId:', chatId, 'payload:', payload)
+      setSeguimientoInit(chatId ? { chatId } : null)
+    } catch { setSeguimientoInit(null) }
     setView('seguimiento')
   }
 
   const onSaveCurrentChat = async (messages, title = null) => {
     try {
-  if (!token) { window.alert('Debes iniciar sesión para guardar proyectos.'); return }
+  if (!token) { window.alert('Debes iniciar sesión para guardar proyectos.'); return null }
       const base = `http://${window.location.hostname}:8000`
   const payload = { title: title || `Proyecto ${new Date().toLocaleString()}`, content: JSON.stringify(messages) }
       try {
-        await axios.post(`${base}/user/chats`, payload, { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } })
+        const res = await axios.post(`${base}/user/chats`, payload, { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } })
+        const newChatId = res.data?.id || null
         await fetchChats()
+        // También actualizamos selectedChatId para que esté disponible
+        if (newChatId) setSelectedChatId(newChatId)
+        return newChatId
       } catch (e) {
         if (!handleAuthError(e)) console.error('save chat', e)
+        return null
       }
-    } catch (e) { console.error('save chat', e) }
+    } catch (e) { console.error('save chat', e); return null }
   }
 
   const onSaveExistingChat = async (chatId, messages, title = null) => {
@@ -157,6 +177,7 @@ export default function App() {
         const sid = r.data.session_id
         try { setLoadedMessages(JSON.parse(chat.content)) }
         catch { setLoadedMessages([{ role: 'assistant', content: chat.content, ts: chat.updated_at }]) }
+        setSelectedChatId(chat.id)
         setSessionIdForChat(sid)
         setView('chat')
       } catch (e) {
@@ -215,7 +236,15 @@ export default function App() {
                 ) : view === 'recommendations' ? (
                   <Recommendations token={token} />
                   ) : view === 'seguimiento' ? (
-                    <Seguimiento token={token} chats={chats} onContinue={onContinue} onSaveCurrentChat={onSaveCurrentChat} onSaveExistingChat={onSaveExistingChat} />
+                    <Seguimiento 
+                      token={token}
+                      chats={chats}
+                      onContinue={onContinue}
+                      onSaveCurrentChat={onSaveCurrentChat}
+                      onSaveExistingChat={onSaveExistingChat}
+                      initialChatId={seguimientoInit?.chatId || null}
+                      autoOpenPhasePicker={true}
+                    />
                   ) : (
                   <Chat
                     token={token}
@@ -224,6 +253,7 @@ export default function App() {
                     onSaveCurrentChat={onSaveCurrentChat}
                     onSaveExistingChat={onSaveExistingChat}
                     sessionId={sessionIdForChat}
+                    onGoSeguimiento={handleGoSeguimiento}
                   />
                 )}
               </div>

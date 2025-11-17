@@ -117,10 +117,18 @@ def list_messages(session_id: str, limit: int = 50) -> List[ConversationMessage]
 # --- Propuestas ---
 def save_proposal(session_id: str, requirements: str, proposal: Dict[str, Any]) -> int:
     # Guardamos la propuesta tal cual (JSON) y devolvemos la id de fila.
-    with SessionLocal() as db:
-        row = ProposalLog(session_id=session_id, requirements=requirements, proposal_json=proposal)
-        db.add(row); db.commit(); db.refresh(row)
-        return int(row.id)
+    try:
+        with SessionLocal() as db:
+            row = ProposalLog(session_id=session_id, requirements=requirements, proposal_json=proposal)
+            db.add(row)
+            db.commit()
+            db.refresh(row)
+            return int(row.id)
+    except Exception as e:
+        import traceback
+        print(f"[save_proposal ERROR] {e}", flush=True)
+        print(f"[save_proposal TRACEBACK] {traceback.format_exc()}", flush=True)
+        raise
 
 def get_last_proposal_row(session_id: str) -> Optional[ProposalLog]:
     # Devuelve la última propuesta asociada a la sesión (o None si no hay).

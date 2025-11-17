@@ -30,8 +30,14 @@ except Exception:
 
 # Memoria de usuario 
 try:
-    from backend.memory.state_store import get_client_prefs, upsert_client_pref, log_message, save_proposal
-except Exception:  # pragma: no cover
+    from backend.memory.state_store import log_message, save_proposal
+    # Stubs for functions that don't exist yet
+    def get_client_prefs(*a, **k): return {}
+    def upsert_client_pref(*a, **k): return None
+except Exception as e:  # pragma: no cover
+    import traceback
+    print(f"[BRAIN] ❌ Error importing from state_store: {e}", flush=True)
+    print(traceback.format_exc(), flush=True)
     def get_client_prefs(*a, **k): return {}
     def upsert_client_pref(*a, **k): return None
     def log_message(*a, **k): return None
@@ -4222,6 +4228,17 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             if phase_tasks:
                 out += [""] + phase_tasks
 
+            # Tras asignar, preguntar si desea iniciar el seguimiento
+            try:
+                set_context_value(session_id, "awaiting_start_confirmation", True)
+            except Exception:
+                pass
+            out += [
+                "",
+                "¿Quieres comenzar el proyecto ahora?",
+                "Si respondes ‘sí’, ve al apartado ‘Seguimiento’ de la página para ver las fases y empezar el tracking."
+            ]
+
             return "\n".join(out), "Asignación desde empleados guardados."
             
         except json.JSONDecodeError:
@@ -4232,6 +4249,34 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
         except Exception as e:
             logging.getLogger(__name__).exception("Error procesando empleados JSON")
             return f"Error al procesar empleados: {e}\n\nSi prefieres, escribe 'manual' para introducir la plantilla.", "Error procesando empleados."
+
+    # ——— Confirmación para iniciar seguimiento del proyecto (tras asignar empleados)
+    try:
+        awaiting_start = get_context_value(session_id, "awaiting_start_confirmation", False)
+    except Exception:
+        awaiting_start = False
+    if proposal and awaiting_start:
+        norm = _norm(text)
+        if _is_yes(text) or any(k in norm for k in ["empezar", "comenzar", "arrancar", "iniciar", "sí", "si", "dale", "vamos"]):
+            try:
+                clear_context_value(session_id, "awaiting_start_confirmation")
+            except Exception:
+                pass
+            msg = (
+                "¡Perfecto! He dejado todo listo.\n\n"
+                "Ahora abre el apartado ‘Seguimiento’ en la parte superior.\n"
+                "- Selecciona tu proyecto y pulsa ‘Ver fases’.\n"
+                "- Si quieres checklist y marcaje de tareas, pulsa ‘Empezar seguimiento’.\n\n"
+                "Ahí verás todas las fases de la metodología de tu propuesta con sus checklists."
+            )
+            return msg, "Inicio de seguimiento: instrucciones"
+        if _is_no(text) or any(k in norm for k in ["no", "más tarde", "mas tarde", "luego", "después", "despues"]):
+            try:
+                clear_context_value(session_id, "awaiting_start_confirmation")
+            except Exception:
+                pass
+            return "De acuerdo. Cuando quieras empezar, dime ‘empezar seguimiento’.", "Inicio de seguimiento: pospuesto"
+        return "¿Quieres que empecemos el proyecto ahora? di ‘sí’ o ‘no’.", "Esperando confirmación inicio seguimiento"
 
     # ------------------ Nueva rama: generar propuesta desde requisitos libres ------------------
     # Colocada aquí tras ejemplos/ayuda, y ANTES de ramas específicas (staffing, /propuesta:, riesgos, etc.).
@@ -4246,6 +4291,7 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
                 llm_client = None
 
             wants_new, _flags = _detect_new_proposal_intent(session_id, text, llm_client)
+            print(f"[BRAIN DEBUG] _detect_new_proposal_intent: wants_new={wants_new}, text='{text[:80]}'", flush=True)
             if wants_new:
                 try:
                     try:
@@ -4273,9 +4319,12 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
                 except Exception:
                     pass
                 try:
-                    save_proposal(session_id, text, p)
-                except Exception:
-                    pass
+                    proposal_id = save_proposal(session_id, text, p)
+                    print(f"[BRAIN DEBUG] ✅ Propuesta guardada con ID: {proposal_id} para session {session_id}", flush=True)
+                    logging.getLogger(__name__).info(f"✅ Propuesta guardada con ID: {proposal_id} para session {session_id}")
+                except Exception as e:
+                    print(f"[BRAIN DEBUG] ❌ Error guardando propuesta: {e}", flush=True)
+                    logging.getLogger(__name__).exception(f"❌ Error guardando propuesta: {e}")
                 try:
                     log_message(session_id, "user", f"[REQ] {text}")
                     log_message(session_id, "assistant", f"[PROPUESTA {p.get('methodology','?')}] {p.get('budget',{}).get('total_eur','?')} €")
@@ -4425,6 +4474,16 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             out += [""] + training
         if phase_tasks:
             out += [""] + phase_tasks
+        # Preguntar si desea iniciar el seguimiento
+        try:
+            set_context_value(session_id, "awaiting_start_confirmation", True)
+        except Exception:
+            pass
+        out += [
+            "",
+            "¿Quieres comenzar el proyecto ahora?",
+            "Si respondes ‘sí’, ve al apartado ‘Seguimiento’ de la página para ver las fases y empezar el tracking."
+        ]
 
         return "\n".join(out), "Asignación + formación + tareas por fase."
 

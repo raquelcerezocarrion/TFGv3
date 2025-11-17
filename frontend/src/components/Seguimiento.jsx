@@ -6,7 +6,7 @@ import Chat from './Chat.jsx'
 // - Maintains original endpoints and behavior
 // - Adds improved layout, skeletons, accessibility and clearer empty states
 
-export default function Seguimiento({ token, chats, onContinue, onSaveCurrentChat, onSaveExistingChat }) {
+export default function Seguimiento({ token, chats, onContinue, onSaveCurrentChat, onSaveExistingChat, initialChatId = null, autoOpenPhasePicker = false }) {
   const [loading, setLoading] = useState(false)
   const [selectedChat, setSelectedChat] = useState(null)
   const [step, setStep] = useState(1) // 1: choose project, 2: choose proposal, 3: choose phase, 4: phase view + chat
@@ -28,6 +28,31 @@ export default function Seguimiento({ token, chats, onContinue, onSaveCurrentCha
   const [phaseDefLoading, setPhaseDefLoading] = useState(false)
 
   const base = useMemo(() => `http://${window.location.hostname}:8000`, [])
+
+  // If invoked with an initial chat context, auto-load proposals and open phase picker
+  useEffect(() => {
+    const bootstrapFromChat = async () => {
+      try {
+        if (!autoOpenPhasePicker || !initialChatId || !chats || chats.length === 0) return
+        const chat = chats.find(c => String(c.id) === String(initialChatId))
+        if (!chat) return
+        // Step to proposals view for this chat and fetch proposals
+        setSelectedChat(chat)
+        setStep(2)
+        const data = await fetchProposalsDirectFromChat(chat)
+        // If exactly one proposal, auto-select and go to phase picker
+        if (data && data.length === 1) {
+          await selectProposal(data[0])
+          setSelectedProposal(data[0])
+          setStep(3)
+        }
+      } catch (e) {
+        console.debug('bootstrapFromChat failed', e)
+      }
+    }
+    bootstrapFromChat()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialChatId, autoOpenPhasePicker, JSON.stringify((chats||[]).map(c=>c.id))])
 
   // Helper to parse phases from assistant/proposal text when backend didn't return phases
   function parsePhasesFromText(text) {
@@ -536,31 +561,43 @@ export default function Seguimiento({ token, chats, onContinue, onSaveCurrentCha
 
         {/* Step 3: phase selection - show phases for the chosen proposal */}
         {step === 3 && selectedProposal && (
-          <div className="max-w-3xl">
-            <div className="mb-4 flex items-center justify-between">
+          <div className="max-w-4xl mx-auto">
+            <div className="mb-6 flex items-center justify-between">
               <div>
-                <h3 className="text-xl font-semibold">{selectedProposal.id ? `Propuesta #${selectedProposal.id}` : selectedChat?.title}</h3>
-                <div className="text-xs text-gray-500">Selecciona la fase para hacer seguimiento</div>
+                <h3 className="text-2xl font-semibold">{selectedProposal.id ? `Propuesta #${selectedProposal.id}` : selectedChat?.title}</h3>
+                <div className="text-sm text-gray-600 mt-1">
+                  Metodología: <span className="font-medium">{selectedProposal.methodology || '—'}</span>
+                </div>
+                <div className="text-sm text-gray-500 mt-2">Selecciona la fase a la que quieres hacer seguimiento</div>
               </div>
               <div className="flex items-center gap-2">
-                <button className="px-3 py-1 border rounded text-sm" onClick={() => { setStep(2); setSelectedProposal(null); setPhases([]); setProjectChatSession(null); setProjectChatMessages(null); }}>Volver a propuestas</button>
-                <button className="px-3 py-1 border rounded text-sm" onClick={() => { setStep(1); setSelectedChat(null); setSelectedProposal(null); setPhases([]); setProjectChatSession(null); setProjectChatMessages(null); }}>Volver a proyectos</button>
+                <button className="px-3 py-1 border rounded text-sm hover:bg-gray-50" onClick={() => { setStep(2); setSelectedProposal(null); setPhases([]); setProjectChatSession(null); setProjectChatMessages(null); }}>Volver a propuestas</button>
+                <button className="px-3 py-1 border rounded text-sm hover:bg-gray-50" onClick={() => { setStep(1); setSelectedChat(null); setSelectedProposal(null); setPhases([]); setProjectChatSession(null); setProjectChatMessages(null); }}>Volver a proyectos</button>
               </div>
             </div>
 
-            <div className="space-y-3">
-              {loading && <div className="text-sm text-gray-500">Cargando fases…</div>}
-              {!loading && phases.length === 0 && <div className="text-sm text-gray-500">No se encontraron fases para la propuesta seleccionada.</div>}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {loading && <div className="col-span-2 text-center text-gray-500 py-8">Cargando fases…</div>}
+              {!loading && phases.length === 0 && <div className="col-span-2 text-center text-gray-500 py-8">No se encontraron fases para la propuesta seleccionada.</div>}
               {!loading && phases.map((ph, idx) => (
-                <div key={idx} className="p-3 border rounded-md bg-white shadow-sm flex items-center justify-between">
-                  <div>
-                    <div className="font-medium">{ph.name}</div>
-                    <div className="text-xs text-gray-500">{ph.weeks ? `${ph.weeks} semanas` : ''}</div>
+                <button 
+                  key={idx} 
+                  className="p-5 border-2 rounded-lg bg-white shadow-sm hover:shadow-md hover:border-emerald-400 transition-all text-left group"
+                  onClick={() => openProposalPhaseChat(selectedProposal, idx)}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="font-semibold text-lg text-gray-800 group-hover:text-emerald-600">{ph.name}</div>
+                      <div className="text-xs text-gray-500 mt-1">{ph.weeks ? `Duración: ${ph.weeks} semanas` : ''}</div>
+                      {ph.checklist && ph.checklist.length > 0 && (
+                        <div className="text-xs text-gray-400 mt-2">{ph.checklist.length} tareas</div>
+                      )}
+                    </div>
+                    <div className="ml-3 text-emerald-600 group-hover:translate-x-1 transition-transform">
+                      →
+                    </div>
                   </div>
-                  <div className="flex gap-2">
-                    <button className="px-3 py-1 border rounded text-sm" onClick={() => openProposalPhaseChat(selectedProposal, idx)}>Abrir fase</button>
-                  </div>
-                </div>
+                </button>
               ))}
             </div>
           </div>
