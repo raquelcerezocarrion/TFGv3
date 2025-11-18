@@ -1,8 +1,4 @@
 import { test, expect } from '@playwright/test';
-
-// Replaced the large, stateful E2E with small, non-invasive checks that
-// validate the app is up and the frontend serves the login UI.
-
 const API_BASE = 'http://localhost:8000';
 
 test.describe('Minimal E2E smoke tests', () => {
@@ -14,13 +10,13 @@ test.describe('Minimal E2E smoke tests', () => {
     expect(body).toHaveProperty('app');
   });
 
-  test('Frontend serves login UI', async ({ page }) => {
-    // playwright config sets baseURL to the frontend; navigate to root
+  test('Frontend sirve la UI de login', async ({ page }) => {
+    // la configuración de Playwright establece baseURL al frontend; navegar a la raíz
     await page.goto('/');
-    // The auth component includes an input with placeholder 'Email'
+    // El componente de autenticación incluye un input con placeholder 'Email'
     const emailInput = page.getByPlaceholder('Email');
     await expect(emailInput).toBeVisible({ timeout: 5000 });
-    // Also ensure there is a button to submit the form (Entrar or Registrar)
+    // También comprobar que existe un botón para enviar el formulario (Entrar o Registrar)
     const submitBtn = page.getByRole('button', { name: /Entrar|Registrar/ });
     await expect(submitBtn).toBeVisible();
   });
@@ -35,14 +31,14 @@ test.describe('Minimal E2E smoke tests', () => {
     expect(r.status()).toBe(401);
   });
 
-  test('POST /auth/login with empty body returns 422', async ({ request }) => {
+  test('POST /auth/login con cuerpo vacío devuelve error de validación', async ({ request }) => {
     const r = await request.post(`${API_BASE}/auth/login`, { data: {} }).catch(e => e.response || null);
-    // Playwright request throws on network errors; if response exists, check status
-    if (!r) throw new Error('No response from /auth/login');
+    // Las peticiones de Playwright lanzan en errores de red; si hay respuesta, comprobar el status
+    if (!r) throw new Error('Sin respuesta de /auth/login');
     expect([400, 422, 401]).toContain(r.status());
   });
 
-  test('Auth UI shows register toggle button', async ({ page }) => {
+  test('La UI de auth muestra el botón para alternar registro/login', async ({ page }) => {
     await page.goto('/');
     const toggle = page.getByRole('button', { name: /Crear cuenta|Tengo cuenta/ });
     await expect(toggle).toBeVisible();
