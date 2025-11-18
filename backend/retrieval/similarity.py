@@ -1,11 +1,12 @@
 from __future__ import annotations
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from pathlib import Path
-import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.neighbors import NearestNeighbors
+import threading
 
 from backend.memory.state_store import SessionLocal, ProposalLog
+
 
 class SimilarityRetriever:
     """
@@ -22,22 +23,30 @@ class SimilarityRetriever:
         self.refresh()
 
     def refresh(self) -> None:
-        with SessionLocal() as db:
-            rows = db.query(ProposalLog).order_by(ProposalLog.created_at.desc()).limit(self.max_items).all()
+        # Intentar leer la BD; si falla, dejar el índice vacío
+        try:
+            with SessionLocal() as db:
+                rows = db.query(ProposalLog).order_by(ProposalLog.created_at.desc()).limit(self.max_items).all()
+                self.docs = []
+                self.meta = []
+                for r in rows:
+                    req = r.requirements or ""
+                    pj = r.proposal_json or {}
+                    meta = {
+                        "id": r.id,
+                        "requirements": req,
+                        "methodology": pj.get("methodology"),
+                        "budget": pj.get("budget", {}),
+                        "team": pj.get("team", []),
+                        "phases": pj.get("phases", []),
+                    }
+                    self.docs.append(req)
+                    self.meta.append(meta)
+        except Exception:
+            # si hay problema con la BD, no romper la app; dejar vacío
             self.docs = []
             self.meta = []
-            for r in rows:
-                req = r.requirements or ""
-                meta = {
-                    "id": r.id,
-                    "requirements": req,
-                    "methodology": r.proposal_json.get("methodology"),
-                    "budget": r.proposal_json.get("budget", {}),
-                    "team": r.proposal_json.get("team", []),
-                    "phases": r.proposal_json.get("phases", []),
-                }
-                self.docs.append(req)
-                self.meta.append(meta)
+
         if self.docs:
             X = self.vectorizer.fit_transform(self.docs)
             self.nn.fit(X)
@@ -58,10 +67,15 @@ class SimilarityRetriever:
         return res
 
 # Singleton global para que planner/brain compartan el mismo índice
-_GLOBAL: SimilarityRetriever | None = None
+_GLOBAL: Optional[SimilarityRetriever] = None
+_LOCK = threading.Lock()
+
 
 def get_retriever() -> SimilarityRetriever:
+    """Devuelve un singleton thread-safe del retriever."""
     global _GLOBAL
     if _GLOBAL is None:
-        _GLOBAL = SimilarityRetriever()
+        with _LOCK:
+            if _GLOBAL is None:
+                _GLOBAL = SimilarityRetriever()
     return _GLOBAL
