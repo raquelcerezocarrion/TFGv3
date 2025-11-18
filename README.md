@@ -1,22 +1,4 @@
-# TFGv3
-
-## Para arrancar el frontend
-### npm run dev
-
-## Generar gráfico de desglose del presupuesto
-
-Se incluye un script sencillo para generar un gráfico de pastel similar al adjunto en `scripts/budget_pie.py`.
-
-
-```powershell
-C:/Users/HP/Desktop/TFGv3/.venv/Scripts/python.exe scripts/budget_pie.py
-```
-
-
-### Vista previa
-
-![Desglose del presupuesto](./budget_pie.png)
-# TFGv3
+# TFG
 
 ## Para arrancar el backend :
 ### .\.venv\Scripts\Activate.ps1
