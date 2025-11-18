@@ -7,7 +7,7 @@
 ## Para arrancar el frontend
 ### npm run dev
 
-## TFGv3 — Asistente para generación de propuestas de proyecto
+## TFG- Arquitectura y Desarrollo de un Sistema Conversacional Cognitivo para la Generación Automatizada de Propuestas de Proyecto de Consultoría Estratégica mediante Técnicas de Recuperación Semántica, Modelado de Intenciones y Gestión Dinámica del Estado Conversacional
 
 Última actualización: 2025-11-18
 
