@@ -1,0 +1,12 @@
+{
+  "name": "tfgv3-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "install-playwright": "npx playwright install --with-deps"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.41.0"
+  }
+}
