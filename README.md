@@ -283,3 +283,33 @@ Q: El backend muestra `DeprecationWarning: on_event is deprecated` al arrancar
 ---
 
 Créditos: Proyecto desarrollado como TFG (Trabajo Fin de Grado) — autor/a: raquelcerezocarrion.
+
+**Sistema de Validación y Seguridad (Resumen)**
+
+- **Email:** Se valida con `pydantic.EmailStr` y se normaliza (trim + lowercase) antes de persistir o usar en autenticación.
+- **Contraseñas:** Se almacenan usando hashing seguro `bcrypt` a través de `passlib` (ya no se usan funciones caseras de hashing).
+- **JWT / Tokens:** Los tokens se firman y verifican usando `settings.SECRET_KEY` (definido en `backend/core/config.py`). En producción debe configurarse mediante variables de entorno.
+- **Sugerencias de mejora:** aplicar políticas de contraseñas (longitud mínima, complejidad), limitar intentos de login (rate limiting) y validar/normalizar payloads JSON complejos con modelos Pydantic estrictos.
+
+**Dónde están los tests y cómo ejecutarlos**
+
+- **TDD (unit/integration ligeros):** `TDD/backend_tests/` — pruebas enfocadas a contratos API, state store y lógica del motor.
+	- Ejecutar: `pytest -q TDD/backend_tests`
+- **Tests de Integración:** `Test_Integracion/` — pruebas que combinan varios endpoints y flujos reales del backend.
+	- Ejecutar: `pytest -q Test_Integracion`
+- **E2E (Playwright):** `e2e/tests/` — pruebas UI + API que cubren flujos críticos (registro, crear proyecto, cargar empleados, exportar PDF).
+	- Ejecutar (tras instalar dependencias y navegadores):
+		- `cd e2e`
+		- `npm install`
+		- `npx playwright install --with-deps`
+		- `npx playwright test`
+
+**Nota sobre ejecución completa de pytest**
+
+Se añadió `pytest.ini` para evitar que pytest recoja scripts o carpetas no relacionadas (como `scripts/`, `frontend/` o `e2e/`) que puedan provocar errores de importación o problemas con el capture de pytest. Si tienes problemas con la recogida de tests, ejecuta pytest apuntando a la carpeta de tests deseada (`TDD` o `Test_Integracion`).
+
+**Cómo comprobar la configuración de validación**
+
+- Revisar `backend/core/config.py` para `SECRET_KEY`.
+- Revisar `backend/routers/auth.py` para `EmailStr` y uso de `passlib`.
+- Revisar `TDD/backend_tests/test_validation_auth.py` para casos de prueba de validación de registro/login.
