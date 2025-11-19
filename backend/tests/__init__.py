@@ -1,1 +1,1 @@
-# Package marker for backend tests
+# Marcador de paquete para tests del backend

@@ -9,25 +9,25 @@ def test_register_duplicate_and_login_failure(client):
     email = random_email()
     password = "secret123"
 
-    # First registration should succeed
+    # El primer registro debe tener éxito
     r = client.post("/auth/register", json={"email": email, "password": password, "full_name": "Dup Test"})
     assert r.status_code == 200
 
-    # Duplicate registration should return 400
+    # El registro duplicado debe devolver 400
     r2 = client.post("/auth/register", json={"email": email, "password": password, "full_name": "Dup Test"})
     assert r2.status_code == 400
 
-    # Login with wrong password should return 401
+    # Login con contraseña incorrecta debe devolver 401
     r3 = client.post("/auth/login", json={"email": email, "password": "badpass"})
     assert r3.status_code == 401
 
 
 def test_user_me_requires_auth_and_returns_user(client):
-    # Without auth header -> 401
+    # Sin cabecera de autenticación -> 401
     r = client.get("/user/me")
     assert r.status_code == 401
 
-    # Create user and get token
+    # Crear usuario y obtener token
     email = random_email()
     password = "secret123"
     rreg = client.post("/auth/register", json={"email": email, "password": password, "full_name": "Me Test"})
@@ -43,7 +43,7 @@ def test_user_me_requires_auth_and_returns_user(client):
 
 
 def test_projects_proposal_minimal_payload(client):
-    # This endpoint does not require auth; provide minimal valid payload
+    # Este endpoint no requiere auth; proporcionar payload mínimo válido
     payload = {"session_id": f"itest-{int(time.time())}", "requirements": "Crear una API simple para pruebas"}
     r = client.post("/projects/proposal", json=payload)
     assert r.status_code == 200
@@ -54,7 +54,7 @@ def test_projects_proposal_minimal_payload(client):
 
 
 def test_projects_recommend_basic(client):
-    # POST /projects/recommend expects {query, top_k}
+    # POST /projects/recommend espera {query, top_k}
     payload = {"query": "desarrollo de API REST", "top_k": 3}
     r = client.post("/projects/recommend", json=payload)
     assert r.status_code == 200

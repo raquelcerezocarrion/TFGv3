@@ -1,1 +1,1 @@
-# Package marker for TDD backend tests to avoid pytest module name collisions
+# Marcador de paquete para tests TDD del backend para evitar colisiones de nombres en pytest

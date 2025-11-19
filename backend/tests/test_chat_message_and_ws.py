@@ -9,11 +9,11 @@ def test_chat_message_http_reply(client):
     assert "reply" in data
 
 def test_ws_handshake_and_employee_flow(client):
-    # Use TestClient WebSocket if available
+    # Usar WebSocket de TestClient si está disponible
     with client.websocket_connect(f"/chat/ws?session_id=test-ws") as ws:
-        # Send a trigger that would normally ask for employees
+        # Enviar un trigger que normalmente pediría empleados
         ws.send_text("cargar empleados")
-        # Wait for assistant messages for a short time
+        # Esperar mensajes del asistente por un breve periodo
         start = time.time()
         got = False
         while time.time() - start < 3:
@@ -24,5 +24,5 @@ def test_ws_handshake_and_employee_flow(client):
             if "empleados" in msg.lower() or "envíame" in msg.lower() or "json" in msg.lower():
                 got = True
                 break
-        # We don't assert strict behavior because backend may require auth
+        # No afirmamos un comportamiento estricto porque el backend puede requerir autenticación
         assert got or True

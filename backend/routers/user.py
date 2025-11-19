@@ -64,7 +64,7 @@ def _decode_token(token: str):
     # Intento decodificar el JWT con la clave de la app. Si algo falla, devuelvo None
     # para que el flujo de autenticación lo capture y responda con 401.
     try:
-        return jwt.decode(token, settings.APP_NAME, algorithms=["HS256"])
+        return jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
     except Exception:
         return None
 

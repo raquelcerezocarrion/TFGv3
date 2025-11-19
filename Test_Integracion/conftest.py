@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 import os
 import sys
 
-# Make sure backend package is importable
+# Asegurarse de que el paquete backend sea importable
 ROOT = os.path.dirname(os.path.dirname(__file__))
 sys.path.insert(0, ROOT)
 

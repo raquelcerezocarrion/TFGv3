@@ -2,6 +2,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     APP_NAME: str = "TFG Consultoría Assistant"
+    # Secret used for signing JWTs and other secrets. Override in production via env.
+    SECRET_KEY: str = "dev-secret-change-me"
     BACKEND_HOST: str = "127.0.0.1"
     BACKEND_PORT: int = 8000
     FRONTEND_ORIGIN: str = "http://localhost:5173"

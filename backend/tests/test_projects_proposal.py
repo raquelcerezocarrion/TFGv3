@@ -3,7 +3,7 @@ def test_projects_proposal_structure(client):
     resp = client.post("/projects/proposal", json=payload)
     assert resp.status_code == 200
     data = resp.json()
-    # Basic expected keys
+    # Claves básicas esperadas
     assert "methodology" in data
     assert "phases" in data and isinstance(data["phases"], list)
     assert "team" in data and isinstance(data["team"], list)

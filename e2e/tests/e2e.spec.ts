@@ -43,4 +43,36 @@ test.describe('Minimal E2E smoke tests', () => {
     const toggle = page.getByRole('button', { name: /Crear cuenta|Tengo cuenta/ });
     await expect(toggle).toBeVisible();
   });
+
+  test('POST /auth/register con email inválido devuelve 400 o 422', async ({ request }) => {
+    const r = await request.post(`${API_BASE}/auth/register`, { data: { email: 'bad-email', password: 'secret123', full_name: 'X' } }).catch(e => e.response || null);
+    if (!r) throw new Error('Sin respuesta de /auth/register');
+    expect([400, 422]).toContain(r.status());
+  });
+
+  // --- Tests adicionales añadidos: New E2E ---
+  test('POST /auth/register con contraseña corta devuelve 400/422', async ({ request }) => {
+    const r = await request.post(`${API_BASE}/auth/register`, { data: { email: `itest+shortpw@example.com`, password: '12', full_name: 'Short PW' } }).catch(e => e.response || null);
+    if (!r) throw new Error('Sin respuesta de /auth/register (short pw)');
+    expect([400, 422]).toContain(r.status());
+  });
+
+  test('POST /projects/proposal funciona desde API (E2E)', async ({ request }) => {
+    const payload = { session_id: `e2e-${Date.now()}`, requirements: 'Crear API de ejemplo para E2E' };
+    const r = await request.post(`${API_BASE}/projects/proposal`, { data: payload }).catch(e => e.response || null);
+    if (!r) throw new Error('Sin respuesta de /projects/proposal');
+    expect(r.status()).toBe(200);
+    const body = await r.json();
+    expect(body).toHaveProperty('methodology');
+    expect(body).toHaveProperty('phases');
+  });
+
+  test('POST /export/chat.pdf devuelve PDF (E2E)', async ({ request }) => {
+    const payload = { title: 'E2E Export', messages: [{ role: 'assistant', content: 'Metodología: breve. Equipo: 1 dev.' }] };
+    const r = await request.post(`${API_BASE}/export/chat.pdf`, { data: payload }).catch(e => e.response || null);
+    if (!r) throw new Error('Sin respuesta de /export/chat.pdf');
+    expect(r.status()).toBe(200);
+    const ct = r.headers()['content-type'] || '';
+    expect(ct.includes('application/pdf')).toBeTruthy();
+  });
 });
