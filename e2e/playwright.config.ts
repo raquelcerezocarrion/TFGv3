@@ -13,6 +13,14 @@ export default defineConfig({
     ignoreHTTPSErrors: true,
     baseURL: 'http://localhost:5173'
   },
+  webServer: {
+    // Build the frontend and serve the production `dist` via Vite preview.
+    // This is more stable for CI and avoids relying on dev server behavior.
+    command: 'npm --prefix ../frontend run build --silent && npm --prefix ../frontend run preview -- --port 5173',
+    url: 'http://localhost:5173',
+    timeout: 180000,
+    reuseExistingServer: true,
+  },
   projects: [
     { name: 'chromium', use: { browserName: 'chromium' } }
   ]

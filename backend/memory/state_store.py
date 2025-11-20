@@ -7,6 +7,7 @@ from typing import List, Optional, Dict, Any
 from sqlalchemy import (
     create_engine, Column, Integer, String, DateTime, Text, JSON, ForeignKey, Boolean
 )
+from sqlalchemy.pool import StaticPool
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
 # --- Base de datos y engine ---
@@ -14,9 +15,21 @@ from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 # fuera una app en producción, migraríamos a una base de datos más robusta
 # y usaríamos migraciones (alembic) en lugar de create_all.
 DATA_DIR = Path("data"); DATA_DIR.mkdir(parents=True, exist_ok=True)
-DB_URL = f"sqlite:///{(DATA_DIR / 'app.db').as_posix()}"
+# Allow configuring the database via environment (useful for tests and production).
+# Default continues to be a local SQLite file for easy development.
+DB_URL = os.getenv("DATABASE_URL", f"sqlite:///{(DATA_DIR / 'app.db').as_posix()}")
 
-engine = create_engine(DB_URL, connect_args={"check_same_thread": False})
+# For SQLite we need the `check_same_thread` connect arg in this sync codepath.
+connect_args = {}
+if DB_URL.startswith("sqlite"):
+    connect_args = {"check_same_thread": False}
+
+# If using in-memory SQLite for tests, use StaticPool so the same
+# in-memory database is reused across connections within the process.
+if DB_URL == "sqlite:///:memory:":
+    engine = create_engine(DB_URL, connect_args=connect_args, poolclass=StaticPool)
+else:
+    engine = create_engine(DB_URL, connect_args=connect_args)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 

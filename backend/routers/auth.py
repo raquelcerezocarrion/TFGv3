@@ -27,7 +27,10 @@ class TokenOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Use pbkdf2_sha256 for hashing in tests/environments where bcrypt backend
+# detection can fail due to system-specific bcrypt builds. pbkdf2_sha256 is
+# widely available and secure for this application's testing purposes.
+pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 def _hash_password(password: str) -> str:
     # Use passlib bcrypt for password hashing
