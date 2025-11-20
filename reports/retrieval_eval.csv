@@ -1,0 +1,75 @@
+query,relevant_ids,retrieved_ids,precision_at_k,reciprocal_rank,ndcg_at_k
+sistema de reparto con riders y pedidos,195;180;263,263;314;284;296;289,0.2,1.0,1.0
+ERP enterprise para contabilidad y recursos,201;12;273;307;62,273;280;274;285;286,0.2,1.0,1.0
+apps de reservas con pagos,104;178;239,176;169;179;168;177,0.0,0.0,0.0
+App móvil de reservas con pagos,137;298;11;85;185,17;18;24;23;22,0.0,0.0,0.0
+App móvil de reservas con pagos,25;4;285;222,17;18;24;23;22,0.0,0.0,0.0
+App móvil de reservas con pagos,131;134;139;237;88,17;18;24;23;22,0.0,0.0,0.0
+"Plataforma e-commerce, 3 meses, 4 personas",195;84;182;126,193;194;195;196;192,0.2,0.3333333333333333,1.0
+app de reservas con pagos en stripe,65;212;183;30;159,181;182;183;184;67,0.2,0.3333333333333333,1.0
+App móvil de reservas con pagos,33;186;21,17;18;24;23;22,0.0,0.0,0.0
+sistema de soporte 24/7,296;104;15;239;242,296;284;299;308;7,0.2,1.0,1.0
+tienda online retail con punto de venta,262;46;146;184;315,315;290;258;303;264,0.2,1.0,1.0
+App de pagos,229;168;266;186;61,186;190;185;189;180,0.2,1.0,1.0
+Importada desde chat,320;155;70,240;231;228;227;320,0.2,0.2,1.0
+app de eventos y conferencias,256;72;48;277;285,277;172;170;173;171,0.2,1.0,1.0
+App móvil de reservas con pagos,104;218;44,17;18;24;23;22,0.0,0.0,0.0
+plataforma e-learning,288;19;37;310,288;254;287;300;301,0.2,1.0,1.0
+sistema de soporte 24/7,72;178;284;199,296;284;299;308;7,0.2,0.5,1.0
+App móvil de reservas con pagos,112;272;100;271,17;18;24;23;22,0.0,0.0,0.0
+App móvil de reservas con pagos,193;147;222,17;18;24;23;22,0.0,0.0,0.0
+app bancaria con transferencias y pagos,282;295;270;39,282;278;295;198;236,0.4,1.0,1.0
+"[
+  {
+    ""name"": ""kiko"",
+    ""role"": ""QA"",
+    ""skills"": ""react"",
+    ""seniority"": ""Mid"",
+    ""availability_pct"": 100
+  },
+  {
+    ""name"": ""pepe"",
+    ""role"": ""Tech Lead"",
+    ""skills"": ""csv"",
+    ""s",290;236;211;126;319,215;216;211;213;209,0.2,0.3333333333333333,1.0
+App móvil de reservas con pagos,169;223;209;71,17;18;24;23;22,0.0,0.0,0.0
+App móvil de reservas con pagos,240;291;63,17;18;24;23;22,0.0,0.0,0.0
+App móvil de reservas con pagos,24;16;300;29,17;18;24;23;22,0.2,0.3333333333333333,1.0
+"[
+  {
+    ""name"": ""kiko"",
+    ""role"": ""QA"",
+    ""skills"": ""react"",
+    ""seniority"": ""Mid"",
+    ""availability_pct"": 100
+  },
+  {
+    ""name"": ""pepe"",
+    ""role"": ""Tech Lead"",
+    ""skills"": ""csv"",
+    ""s",216;185;198;160,215;216;211;213;209,0.2,0.5,1.0
+App móvil de reservas con pagos,45;2;283;269,17;18;24;23;22,0.0,0.0,0.0
+apps de pagos con stripe,96;42;166;175,175;174;189;190;180,0.2,1.0,1.0
+app de tours y agencia de viajes,241;37;261;181,261;173;171;172;170,0.2,1.0,1.0
+"Plataforma web de e-commerce con pagos integrados, equipo de 4 personas, 3 meses",192;104;298;273;179,191;192;195;196;193,0.2,0.5,1.0
+App móvil de reservas con pagos,282;316;102;263,17;18;24;23;22,0.0,0.0,0.0
+app educativa para estudiantes y profesores,163;134;137;300;255,255;285;286;281;265,0.2,1.0,1.0
+test,230;109;237;241;308,199;223;238;234;229,0.0,0.0,0.0
+app para gestión de propiedades y tasaciones,265;301;207;80;218,265;272;257;251;259,0.2,1.0,1.0
+app de seguros,152;178;285;222,222;221;220;218;214,0.2,1.0,1.0
+test,185;301;229,199;223;238;234;229,0.2,0.2,1.0
+App móvil de reservas con pagos,123;190;223,17;18;24;23;22,0.0,0.0,0.0
+App móvil de reservas con pagos,160;257;151,17;18;24;23;22,0.0,0.0,0.0
+app de seguros,126;222;231,222;221;220;218;214,0.2,1.0,1.0
+App móvil de reservas con pagos,100;10;82;156;94,17;18;24;23;22,0.0,0.0,0.0
+App móvil de reservas con pagos,162;3;200;205;273,17;18;24;23;22,0.0,0.0,0.0
+startup mvp red social,26;283;108;221,298;293;283;294;307,0.2,0.3333333333333333,1.0
+app de banca,35;295;208;83;55,208;172;170;173;171,0.2,1.0,1.0
+App móvil de reservas con pagos,102;7;40;158;62,17;18;24;23;22,0.0,0.0,0.0
+apps de reservas con pagos,198;72;179;180;95,176;169;179;168;177,0.2,0.3333333333333333,1.0
+startup mvp para red social,202;243;124;279,279;298;283;293;294,0.2,1.0,1.0
+App móvil de reservas con pagos,105;108;121;215,17;18;24;23;22,0.0,0.0,0.0
+App móvil de reservas con pagos,121;12;45;41,17;18;24;23;22,0.0,0.0,0.0
+App móvil de reservas con pagos,2;236;81;113;255,17;18;24;23;22,0.0,0.0,0.0
+App móvil de reservas con pagos,227;84;101;295,17;18;24;23;22,0.0,0.0,0.0
+"Plataforma web de e-commerce con pagos integrados, equipo de 4 personas, 3 meses",80;311;191,191;192;195;196;193,0.2,1.0,1.0

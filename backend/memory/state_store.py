@@ -108,6 +108,18 @@ class Employee(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
+# --- Catálogos genéricos (metodologías, roles, skills, tasks) ---
+class Catalog(Base):
+    __tablename__ = "catalogs"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    kind = Column(String, index=True, nullable=False)   # e.g., 'methodology', 'role', 'skill', 'task'
+    key = Column(String, nullable=False)
+    value = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+
+
 Base.metadata.create_all(engine)
 
 # Creo las tablas si no existen. Es práctico en desarrollo; en producción
@@ -289,6 +301,25 @@ def delete_employee(user_id: int, employee_id: int) -> bool:
             return False
         db.delete(row); db.commit()
         return True
+
+
+def create_catalog_entry(kind: str, key: str, value: Optional[dict] = None):
+    """Crea una entrada de catálogo (idempotente por kind+key)."""
+    with SessionLocal() as db:
+        existing = db.query(Catalog).filter(Catalog.kind == kind, Catalog.key == key).first()
+        if existing:
+            return existing
+        row = Catalog(kind=kind, key=key, value=value or {})
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        return row
+
+
+def list_catalog(kind: str) -> List[Catalog]:
+    """Devuelve todas las entradas de un catálogo concreto."""
+    with SessionLocal() as db:
+        return db.query(Catalog).filter(Catalog.kind == kind).order_by(Catalog.created_at.desc()).all()
 
 
 # Recrear tablas nuevas si añadimos modelos después del create_all inicial

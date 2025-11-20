@@ -1,0 +1,721 @@
+text,intent
+Necesito ayuda con microservicios,help
+Justifica el coste,ask_why_budget
+Necesito una estimación de coste con microservicios,ask_budget
+Chao,goodbye
+Buenas,greet
+Por qué necesitas 2 PMs? en mi organización 61,ask_why_role_count
+Buenos días,greet
+¿Cuántos desarrolladores?,ask_team
+Por qué esa metodología? por favor,ask_why_methodology
+Explica el presupuesto,ask_why_budget
+¿Qué metodología recomiendas?,ask_methodology
+¿Qué puedes hacer?,help
+Por qué ese presupuesto?,ask_why_budget
+Por qué necesitas ese equipo? por favor,ask_why_team
+"Hola, ¿qué tal?",greet
+Buenas,greet
+¿Qué funcionalidades tienes?,help
+Hey en mi organización,greet
+Te lo agradezco por favor,thanks
+Necesito roles para el proyecto si es posible,ask_team
+Hola,greet
+Dame una estimación del presupuesto si es posible,ask_budget
+Por qué necesitas 2 PMs?,ask_why_role_count
+Justifica la metodología propuesta,ask_why_methodology
+¿Cuántos desarrolladores?,ask_team
+Dame una estimación del presupuesto,ask_budget
+Necesito una estimación de coste,ask_budget
+¿Qué riesgos ves? por favor,ask_risks
+Necesito roles para el proyecto con alto rendimiento,ask_team
+Por qué esa metodología?,ask_why_methodology
+Hey por favor 29,greet
+¿Qué riesgos ves? en mi organización,ask_risks
+Necesito ayuda con microservicios,help
+Necesito una estimación de coste por favor,ask_budget
+"Hola, ¿qué tal? si es posible",greet
+Buenas si es posible,greet
+Justifica el coste,ask_why_budget
+¿Cuánto costaría?,ask_budget
+Justifica el coste,ask_why_budget
+Por qué necesitas ese equipo? por favor,ask_why_team
+Explícame tus capacidades,help
+¿Cuánto costaría?,ask_budget
+Gracias con microservicios 47,thanks
+Dame una estimación del presupuesto con microservicios 46,ask_budget
+Justifica la elección de perfiles,ask_why_team
+Por qué necesitas 2 PMs?,ask_why_role_count
+Por qué esa metodología? con microservicios,ask_why_methodology
+Chao en mi organización,goodbye
+Hey,greet
+"Hola, ¿qué tal? por favor",greet
+Te lo agradezco si es posible,thanks
+Necesito roles para el proyecto,ask_team
+Por qué necesitas 2 PMs? con microservicios,ask_why_role_count
+Por qué ese presupuesto?,ask_why_budget
+Por qué necesitas ese equipo? por favor 28,ask_why_team
+¿Qué riesgos ves? si es posible,ask_risks
+Identifica riesgos del proyecto por favor,ask_risks
+Chao con microservicios,goodbye
+Por qué necesitas ese equipo?,ask_why_team
+Por qué esa metodología? si es posible,ask_why_methodology
+Necesito roles para el proyecto,ask_team
+Recomienda una metodología con microservicios,ask_methodology
+¿Qué metodología recomiendas?,ask_methodology
+Identifica riesgos del proyecto si es posible,ask_risks
+¿Qué puedes hacer?,help
+Por qué esa metodología? con microservicios,ask_why_methodology
+Por qué ese presupuesto? en mi organización 27,ask_why_budget
+Justifica la elección de perfiles,ask_why_team
+Riesgos asociados a la entrega si es posible,ask_risks
+¿Usas Scrum o Kanban? si es posible,ask_methodology
+Necesito ayuda,help
+Explica el presupuesto en mi organización,ask_why_budget
+Justifica la metodología propuesta por favor 44,ask_why_methodology
+Necesito roles para el proyecto por favor,ask_team
+Nos vemos,goodbye
+Por qué ese presupuesto?,ask_why_budget
+Justifica la metodología propuesta con microservicios,ask_why_methodology
+Buenas,greet
+Hasta luego si es posible,goodbye
+Por qué necesitas ese equipo? si es posible,ask_why_team
+Gracias por la ayuda,thanks
+Por qué necesitas ese equipo?,ask_why_team
+Hey 83,greet
+Explica el número de roles propuesto con alto rendimiento,ask_why_role_count
+Necesito roles para el proyecto,ask_team
+Por qué necesitas 2 PMs?,ask_why_role_count
+Dame una estimación del presupuesto,ask_budget
+Recomienda una metodología,ask_methodology
+Adiós en mi organización,goodbye
+Necesito una estimación de coste en mi organización,ask_budget
+¿Cuántos desarrolladores? con microservicios,ask_team
+Por qué necesitas ese equipo?,ask_why_team
+Por qué necesitas 2 PMs?,ask_why_role_count
+¿Usas Scrum o Kanban?,ask_methodology
+Riesgos asociados a la entrega,ask_risks
+Identifica riesgos del proyecto,ask_risks
+Identifica riesgos del proyecto con microservicios,ask_risks
+Necesito ayuda en mi organización,help
+Identifica riesgos del proyecto,ask_risks
+Explícame tus capacidades por favor 68,help
+Por qué necesitas 2 PMs? 85,ask_why_role_count
+Justifica la elección de perfiles por favor,ask_why_team
+¿Cuánto costaría? en mi organización,ask_budget
+¿Qué puedes hacer?,help
+¿Qué metodología recomiendas? con alto rendimiento,ask_methodology
+¿Cuántos desarrolladores?,ask_team
+Por qué esa metodología? con alto rendimiento,ask_why_methodology
+¿Qué funcionalidades tienes? por favor,help
+Riesgos asociados a la entrega con alto rendimiento,ask_risks
+Justifica la elección de perfiles con alto rendimiento,ask_why_team
+¿Cuántos desarrolladores?,ask_team
+Dame una estimación del presupuesto en mi organización 68,ask_budget
+Dame una estimación del presupuesto,ask_budget
+Necesito roles para el proyecto en mi organización,ask_team
+Hasta luego con alto rendimiento,goodbye
+Necesito una estimación de coste por favor,ask_budget
+Gracias por la ayuda,thanks
+¿Usas Scrum o Kanban?,ask_methodology
+¿Qué metodología recomiendas?,ask_methodology
+¿Cuánto costaría?,ask_budget
+¿Cuántos desarrolladores? 86,ask_team
+Justifica el coste con microservicios 52,ask_why_budget
+Por qué necesitas 2 PMs? por favor,ask_why_role_count
+Justifica la elección de perfiles por favor,ask_why_team
+Necesito roles para el proyecto por favor,ask_team
+Buenos días en mi organización,greet
+Justifica la metodología propuesta,ask_why_methodology
+¿Qué riesgos ves?,ask_risks
+Necesito una estimación de coste,ask_budget
+¿Usas Scrum o Kanban? con microservicios,ask_methodology
+"Hola, ¿qué tal? 22",greet
+Necesito roles para el proyecto,ask_team
+¿Qué riesgos ves?,ask_risks
+Explícame tus capacidades en mi organización,help
+Justifica la metodología propuesta,ask_why_methodology
+Chao con alto rendimiento,goodbye
+¿Qué metodología recomiendas? en mi organización,ask_methodology
+¿Cuántos desarrolladores? 16,ask_team
+¿Qué riesgos ves?,ask_risks
+Dame una estimación del presupuesto,ask_budget
+Hasta pronto,goodbye
+Te lo agradezco,thanks
+¿Qué riesgos ves? con alto rendimiento,ask_risks
+Qué perfiles necesito?,ask_team
+Por qué necesitas 2 PMs?,ask_why_role_count
+Necesito roles para el proyecto con microservicios,ask_team
+Por qué necesitas ese equipo? por favor,ask_why_team
+¿Cuántos desarrolladores?,ask_team
+Hola con microservicios,greet
+Por qué necesitas ese equipo? con microservicios,ask_why_team
+Explica el número de roles propuesto,ask_why_role_count
+Necesito roles para el proyecto,ask_team
+Justifica la metodología propuesta,ask_why_methodology
+Gracias por la ayuda,thanks
+Justifica la elección de perfiles con microservicios,ask_why_team
+Identifica riesgos del proyecto,ask_risks
+¿Usas Scrum o Kanban?,ask_methodology
+Riesgos asociados a la entrega,ask_risks
+Por qué esa metodología?,ask_why_methodology
+Por qué necesitas ese equipo? en mi organización,ask_why_team
+Hey con alto rendimiento,greet
+¿Usas Scrum o Kanban? con alto rendimiento,ask_methodology
+Chao,goodbye
+Necesito una estimación de coste,ask_budget
+Por qué ese presupuesto? por favor,ask_why_budget
+Necesito una estimación de coste con alto rendimiento,ask_budget
+Gracias en mi organización,thanks
+Hola,greet
+Por qué necesitas ese equipo?,ask_why_team
+Explica el número de roles propuesto en mi organización 73,ask_why_role_count
+Gracias,thanks
+Gracias por la ayuda,thanks
+Justifica la metodología propuesta 53,ask_why_methodology
+Por qué necesitas ese equipo?,ask_why_team
+Explica el número de roles propuesto con microservicios,ask_why_role_count
+¿Usas Scrum o Kanban? por favor,ask_methodology
+Por qué esa metodología?,ask_why_methodology
+Necesito roles para el proyecto,ask_team
+Necesito una estimación de coste,ask_budget
+Muchas gracias,thanks
+Explica el presupuesto,ask_why_budget
+Gracias por la ayuda con microservicios,thanks
+Hola por favor,greet
+Hey con alto rendimiento,greet
+Nos vemos con microservicios,goodbye
+¿Usas Scrum o Kanban?,ask_methodology
+Justifica la elección de perfiles en mi organización,ask_why_team
+¿Qué metodología recomiendas? con alto rendimiento,ask_methodology
+¿Qué puedes hacer?,help
+Por qué necesitas 2 PMs? con microservicios,ask_why_role_count
+Explica el número de roles propuesto por favor,ask_why_role_count
+Explica el número de roles propuesto con microservicios,ask_why_role_count
+Dame una estimación del presupuesto,ask_budget
+Gracias por la ayuda si es posible,thanks
+Explica el número de roles propuesto,ask_why_role_count
+Por qué necesitas ese equipo? con microservicios 21,ask_why_team
+Por qué esa metodología? en mi organización,ask_why_methodology
+Justifica el coste,ask_why_budget
+"Hola, ¿qué tal?",greet
+Nos vemos,goodbye
+¿Qué metodología recomiendas?,ask_methodology
+Hasta luego,goodbye
+Dame una estimación del presupuesto,ask_budget
+Identifica riesgos del proyecto con alto rendimiento,ask_risks
+Explica el presupuesto con microservicios,ask_why_budget
+Por qué necesitas 2 PMs? con microservicios,ask_why_role_count
+Explícame tus capacidades,help
+Por qué necesitas 2 PMs? por favor,ask_why_role_count
+Necesito una estimación de coste,ask_budget
+¿Qué riesgos ves?,ask_risks
+¿Usas Scrum o Kanban?,ask_methodology
+Necesito una estimación de coste 47,ask_budget
+¿Qué metodología recomiendas? 24,ask_methodology
+Te lo agradezco si es posible,thanks
+¿Cuánto costaría? si es posible,ask_budget
+Por qué ese presupuesto?,ask_why_budget
+¿Qué riesgos ves?,ask_risks
+Gracias en mi organización,thanks
+Gracias por la ayuda en mi organización,thanks
+Por qué ese presupuesto? en mi organización,ask_why_budget
+Gracias si es posible,thanks
+Por qué esa metodología? en mi organización,ask_why_methodology
+Te lo agradezco,thanks
+Hey,greet
+¿Qué funcionalidades tienes?,help
+Justifica la metodología propuesta,ask_why_methodology
+¿Qué riesgos ves? por favor,ask_risks
+Gracias por la ayuda en mi organización,thanks
+¿Cuánto costaría? con microservicios,ask_budget
+Justifica la metodología propuesta por favor,ask_why_methodology
+Nos vemos con microservicios,goodbye
+Necesito ayuda en mi organización,help
+Explícame tus capacidades,help
+Por qué esa metodología? por favor,ask_why_methodology
+Chao,goodbye
+¿Qué funcionalidades tienes?,help
+Justifica la elección de perfiles con microservicios,ask_why_team
+¿Qué riesgos ves? en mi organización,ask_risks
+¿Qué metodología recomiendas? en mi organización,ask_methodology
+Buenas,greet
+Explica el número de roles propuesto si es posible 26,ask_why_role_count
+Muchas gracias en mi organización,thanks
+Por qué esa metodología?,ask_why_methodology
+Por qué necesitas ese equipo? en mi organización,ask_why_team
+Por qué esa metodología? con alto rendimiento,ask_why_methodology
+Recomienda una metodología con alto rendimiento,ask_methodology
+Recomienda una metodología con alto rendimiento,ask_methodology
+Por qué necesitas 2 PMs? si es posible,ask_why_role_count
+¿Qué funcionalidades tienes? con microservicios,help
+Qué perfiles necesito? con alto rendimiento,ask_team
+Dame una estimación del presupuesto,ask_budget
+¿Qué funcionalidades tienes?,help
+Hasta luego con microservicios,goodbye
+Justifica la metodología propuesta,ask_why_methodology
+¿Cuánto costaría? con alto rendimiento,ask_budget
+Justifica el coste con microservicios,ask_why_budget
+Por qué necesitas ese equipo?,ask_why_team
+Gracias,thanks
+Explica el número de roles propuesto,ask_why_role_count
+Justifica el coste,ask_why_budget
+Explica el presupuesto con microservicios,ask_why_budget
+Identifica riesgos del proyecto con alto rendimiento,ask_risks
+¿Qué puedes hacer?,help
+Necesito roles para el proyecto,ask_team
+Por qué esa metodología? con alto rendimiento,ask_why_methodology
+Gracias 13,thanks
+Adiós,goodbye
+Buenas si es posible,greet
+Riesgos asociados a la entrega si es posible,ask_risks
+¿Qué funcionalidades tienes?,help
+Riesgos asociados a la entrega,ask_risks
+Riesgos asociados a la entrega con microservicios,ask_risks
+Explica el número de roles propuesto,ask_why_role_count
+Dame una estimación del presupuesto,ask_budget
+"Hola, ¿qué tal? con microservicios",greet
+Chao,goodbye
+Identifica riesgos del proyecto con microservicios,ask_risks
+¿Cuántos desarrolladores? si es posible 90,ask_team
+Qué perfiles necesito? con alto rendimiento,ask_team
+Recomienda una metodología si es posible,ask_methodology
+Justifica la elección de perfiles con microservicios,ask_why_team
+Por qué ese presupuesto?,ask_why_budget
+Necesito roles para el proyecto con microservicios,ask_team
+Recomienda una metodología con alto rendimiento 83,ask_methodology
+Por qué necesitas 2 PMs? en mi organización,ask_why_role_count
+¿Cuánto costaría? por favor,ask_budget
+Justifica el coste con microservicios,ask_why_budget
+¿Qué riesgos ves?,ask_risks
+Qué perfiles necesito?,ask_team
+"Hola, ¿qué tal? si es posible",greet
+Dame una estimación del presupuesto con microservicios,ask_budget
+Por qué esa metodología? en mi organización,ask_why_methodology
+Gracias en mi organización,thanks
+Justifica la elección de perfiles,ask_why_team
+¿Cuánto costaría?,ask_budget
+Por qué necesitas 2 PMs? si es posible,ask_why_role_count
+Necesito una estimación de coste en mi organización,ask_budget
+Por qué esa metodología? por favor,ask_why_methodology
+Buenos días,greet
+Por qué ese presupuesto? 20,ask_why_budget
+Riesgos asociados a la entrega con microservicios,ask_risks
+Por qué ese presupuesto?,ask_why_budget
+Explica el número de roles propuesto 43,ask_why_role_count
+Hasta luego con microservicios,goodbye
+Recomienda una metodología por favor,ask_methodology
+Necesito ayuda,help
+Explica el número de roles propuesto si es posible,ask_why_role_count
+Por qué necesitas 2 PMs?,ask_why_role_count
+Explica el presupuesto,ask_why_budget
+Qué perfiles necesito?,ask_team
+Gracias si es posible,thanks
+Explica el presupuesto,ask_why_budget
+Gracias por la ayuda,thanks
+Adiós,goodbye
+Justifica la elección de perfiles,ask_why_team
+¿Qué metodología recomiendas? en mi organización,ask_methodology
+Necesito roles para el proyecto con microservicios,ask_team
+Hasta luego,goodbye
+¿Qué metodología recomiendas? en mi organización,ask_methodology
+Hola,greet
+Justifica la metodología propuesta con alto rendimiento,ask_why_methodology
+Por qué necesitas ese equipo? en mi organización,ask_why_team
+Necesito ayuda,help
+Qué perfiles necesito?,ask_team
+Hasta luego,goodbye
+Nos vemos,goodbye
+Por qué necesitas 2 PMs?,ask_why_role_count
+Nos vemos si es posible,goodbye
+Identifica riesgos del proyecto con alto rendimiento,ask_risks
+¿Qué metodología recomiendas?,ask_methodology
+Por qué necesitas ese equipo?,ask_why_team
+Necesito ayuda,help
+Necesito roles para el proyecto,ask_team
+Explica el número de roles propuesto con alto rendimiento 85,ask_why_role_count
+Hey,greet
+Identifica riesgos del proyecto,ask_risks
+Justifica la metodología propuesta en mi organización,ask_why_methodology
+¿Qué riesgos ves? 61,ask_risks
+Justifica la elección de perfiles,ask_why_team
+¿Qué riesgos ves?,ask_risks
+Justifica el coste si es posible,ask_why_budget
+Justifica el coste,ask_why_budget
+Por qué necesitas ese equipo? 84,ask_why_team
+Por qué necesitas 2 PMs? con alto rendimiento,ask_why_role_count
+Identifica riesgos del proyecto si es posible,ask_risks
+Dame una estimación del presupuesto,ask_budget
+Qué perfiles necesito?,ask_team
+Gracias por la ayuda,thanks
+Hey,greet
+Riesgos asociados a la entrega si es posible,ask_risks
+Justifica el coste por favor,ask_why_budget
+Justifica la elección de perfiles si es posible,ask_why_team
+Riesgos asociados a la entrega si es posible,ask_risks
+¿Cuánto costaría?,ask_budget
+¿Qué funcionalidades tienes? en mi organización,help
+Necesito ayuda con microservicios,help
+Gracias por la ayuda,thanks
+Chao,goodbye
+¿Qué funcionalidades tienes? en mi organización,help
+Qué perfiles necesito? si es posible,ask_team
+Explícame tus capacidades por favor,help
+Buenas,greet
+Muchas gracias en mi organización,thanks
+Buenas con alto rendimiento,greet
+Hasta pronto en mi organización,goodbye
+Justifica la metodología propuesta con alto rendimiento 83,ask_why_methodology
+Identifica riesgos del proyecto con alto rendimiento,ask_risks
+Hola en mi organización,greet
+Necesito una estimación de coste,ask_budget
+Necesito una estimación de coste,ask_budget
+Por qué necesitas ese equipo? por favor,ask_why_team
+¿Qué riesgos ves?,ask_risks
+Necesito una estimación de coste por favor,ask_budget
+¿Cuántos desarrolladores?,ask_team
+Justifica el coste si es posible,ask_why_budget
+Justifica la elección de perfiles,ask_why_team
+Adiós 15,goodbye
+Dame una estimación del presupuesto con alto rendimiento 11,ask_budget
+Explica el número de roles propuesto si es posible,ask_why_role_count
+Justifica el coste por favor,ask_why_budget
+Por qué ese presupuesto? con alto rendimiento,ask_why_budget
+¿Qué riesgos ves? con alto rendimiento,ask_risks
+Por qué necesitas 2 PMs? por favor,ask_why_role_count
+Necesito ayuda por favor,help
+Explica el presupuesto,ask_why_budget
+Necesito roles para el proyecto si es posible 71,ask_team
+Adiós con alto rendimiento,goodbye
+Justifica el coste en mi organización,ask_why_budget
+Explica el número de roles propuesto con alto rendimiento,ask_why_role_count
+Por qué necesitas 2 PMs? con alto rendimiento,ask_why_role_count
+Explícame tus capacidades,help
+Explica el número de roles propuesto si es posible,ask_why_role_count
+Por qué ese presupuesto?,ask_why_budget
+Justifica la metodología propuesta,ask_why_methodology
+Por qué necesitas ese equipo?,ask_why_team
+Necesito roles para el proyecto,ask_team
+Muchas gracias,thanks
+Chao,goodbye
+Chao,goodbye
+Por qué esa metodología?,ask_why_methodology
+Justifica la metodología propuesta,ask_why_methodology
+¿Qué metodología recomiendas? en mi organización,ask_methodology
+Necesito una estimación de coste,ask_budget
+Muchas gracias en mi organización,thanks
+Muchas gracias 34,thanks
+Muchas gracias si es posible,thanks
+Te lo agradezco por favor,thanks
+Buenas,greet
+¿Qué puedes hacer?,help
+Gracias por la ayuda si es posible,thanks
+Por qué esa metodología?,ask_why_methodology
+Necesito roles para el proyecto si es posible,ask_team
+Buenos días,greet
+Gracias por la ayuda con microservicios,thanks
+¿Qué metodología recomiendas? en mi organización 65,ask_methodology
+Te lo agradezco,thanks
+Explícame tus capacidades,help
+Por qué ese presupuesto? con alto rendimiento,ask_why_budget
+¿Qué funcionalidades tienes? por favor,help
+Justifica la elección de perfiles 13,ask_why_team
+Por qué necesitas 2 PMs? con microservicios,ask_why_role_count
+Justifica la elección de perfiles,ask_why_team
+Por qué necesitas 2 PMs?,ask_why_role_count
+Chao,goodbye
+Por qué necesitas 2 PMs? en mi organización,ask_why_role_count
+Riesgos asociados a la entrega con microservicios,ask_risks
+Justifica el coste con microservicios,ask_why_budget
+Hola con microservicios,greet
+Dame una estimación del presupuesto con microservicios,ask_budget
+Recomienda una metodología,ask_methodology
+Explica el presupuesto,ask_why_budget
+Necesito una estimación de coste con alto rendimiento,ask_budget
+¿Usas Scrum o Kanban? con microservicios,ask_methodology
+¿Qué puedes hacer? en mi organización,help
+Gracias por la ayuda con microservicios 69,thanks
+Por qué esa metodología? con microservicios,ask_why_methodology
+Gracias por la ayuda,thanks
+Dame una estimación del presupuesto con microservicios 50,ask_budget
+Te lo agradezco,thanks
+¿Qué riesgos ves?,ask_risks
+Justifica la metodología propuesta con alto rendimiento,ask_why_methodology
+Necesito roles para el proyecto,ask_team
+Por qué esa metodología?,ask_why_methodology
+Justifica la elección de perfiles con microservicios 69,ask_why_team
+Buenos días por favor,greet
+Qué perfiles necesito? con microservicios,ask_team
+Por qué esa metodología?,ask_why_methodology
+Justifica la metodología propuesta,ask_why_methodology
+Necesito una estimación de coste 78,ask_budget
+Justifica el coste si es posible,ask_why_budget
+Justifica la elección de perfiles con alto rendimiento,ask_why_team
+¿Qué puedes hacer? con microservicios,help
+Por qué necesitas 2 PMs? con microservicios 74,ask_why_role_count
+Por qué necesitas ese equipo?,ask_why_team
+Por qué necesitas ese equipo? en mi organización 27,ask_why_team
+Justifica la metodología propuesta 16,ask_why_methodology
+¿Usas Scrum o Kanban? por favor,ask_methodology
+¿Qué metodología recomiendas? con microservicios,ask_methodology
+Por qué necesitas ese equipo? por favor,ask_why_team
+Por qué necesitas 2 PMs? con alto rendimiento 2,ask_why_role_count
+Buenas,greet
+Por qué necesitas 2 PMs? con alto rendimiento,ask_why_role_count
+Explícame tus capacidades,help
+¿Cuánto costaría? por favor 54,ask_budget
+Gracias,thanks
+Riesgos asociados a la entrega,ask_risks
+Explica el número de roles propuesto,ask_why_role_count
+Necesito una estimación de coste por favor,ask_budget
+Explícame tus capacidades con microservicios 42,help
+Dame una estimación del presupuesto por favor,ask_budget
+¿Qué puedes hacer? con microservicios,help
+Hola con alto rendimiento,greet
+Justifica la elección de perfiles,ask_why_team
+Justifica el coste con alto rendimiento,ask_why_budget
+¿Qué riesgos ves? con alto rendimiento,ask_risks
+Qué perfiles necesito? con microservicios,ask_team
+Riesgos asociados a la entrega con microservicios,ask_risks
+Gracias,thanks
+Gracias por favor,thanks
+Por qué esa metodología?,ask_why_methodology
+Riesgos asociados a la entrega,ask_risks
+Por qué ese presupuesto? por favor,ask_why_budget
+Recomienda una metodología en mi organización,ask_methodology
+Identifica riesgos del proyecto,ask_risks
+Por qué esa metodología? si es posible,ask_why_methodology
+¿Qué puedes hacer? con alto rendimiento,help
+Recomienda una metodología,ask_methodology
+Hey por favor,greet
+¿Qué funcionalidades tienes?,help
+"Hola, ¿qué tal? en mi organización",greet
+Hasta pronto 98,goodbye
+Justifica la metodología propuesta,ask_why_methodology
+Qué perfiles necesito? con microservicios,ask_team
+Adiós por favor,goodbye
+Hasta luego si es posible,goodbye
+Explica el presupuesto,ask_why_budget
+Hasta pronto por favor,goodbye
+¿Qué funcionalidades tienes? por favor,help
+Justifica la elección de perfiles,ask_why_team
+Por qué ese presupuesto? con alto rendimiento,ask_why_budget
+Chao,goodbye
+Por qué esa metodología?,ask_why_methodology
+¿Qué metodología recomiendas? 71,ask_methodology
+Justifica el coste 2,ask_why_budget
+Justifica la metodología propuesta con microservicios,ask_why_methodology
+Justifica el coste,ask_why_budget
+Necesito roles para el proyecto,ask_team
+Necesito una estimación de coste si es posible,ask_budget
+Identifica riesgos del proyecto en mi organización,ask_risks
+Necesito una estimación de coste en mi organización,ask_budget
+¿Cuánto costaría?,ask_budget
+Buenas,greet
+¿Cuántos desarrolladores? con alto rendimiento,ask_team
+Hasta luego,goodbye
+¿Usas Scrum o Kanban?,ask_methodology
+Por qué ese presupuesto?,ask_why_budget
+Dame una estimación del presupuesto 44,ask_budget
+Por qué ese presupuesto?,ask_why_budget
+Riesgos asociados a la entrega en mi organización,ask_risks
+Justifica la metodología propuesta con alto rendimiento,ask_why_methodology
+Chao con alto rendimiento 56,goodbye
+¿Qué funcionalidades tienes?,help
+Justifica la elección de perfiles en mi organización,ask_why_team
+¿Usas Scrum o Kanban? por favor,ask_methodology
+Adiós con microservicios,goodbye
+Explica el número de roles propuesto en mi organización,ask_why_role_count
+Muchas gracias,thanks
+Nos vemos 30,goodbye
+¿Cuánto costaría? por favor,ask_budget
+¿Qué funcionalidades tienes? si es posible,help
+Por qué ese presupuesto?,ask_why_budget
+Identifica riesgos del proyecto con alto rendimiento,ask_risks
+¿Qué riesgos ves? por favor,ask_risks
+Dame una estimación del presupuesto con alto rendimiento,ask_budget
+Hola,greet
+Identifica riesgos del proyecto por favor,ask_risks
+¿Qué puedes hacer?,help
+Qué perfiles necesito? con alto rendimiento,ask_team
+¿Cuántos desarrolladores?,ask_team
+¿Cuántos desarrolladores?,ask_team
+¿Qué funcionalidades tienes? en mi organización,help
+Qué perfiles necesito?,ask_team
+Hasta luego,goodbye
+Justifica la metodología propuesta,ask_why_methodology
+Justifica el coste,ask_why_budget
+Justifica el coste,ask_why_budget
+Necesito roles para el proyecto en mi organización,ask_team
+¿Qué metodología recomiendas?,ask_methodology
+Nos vemos en mi organización,goodbye
+Justifica el coste,ask_why_budget
+Hasta luego en mi organización,goodbye
+Dame una estimación del presupuesto,ask_budget
+Justifica la metodología propuesta,ask_why_methodology
+Necesito ayuda,help
+Buenos días,greet
+Chao,goodbye
+Necesito ayuda,help
+Explica el presupuesto si es posible 65,ask_why_budget
+Por qué necesitas ese equipo?,ask_why_team
+Nos vemos,goodbye
+¿Qué riesgos ves? si es posible,ask_risks
+Buenos días,greet
+Necesito roles para el proyecto con microservicios,ask_team
+Hey si es posible,greet
+Gracias por la ayuda,thanks
+Por qué necesitas 2 PMs?,ask_why_role_count
+Justifica la metodología propuesta por favor,ask_why_methodology
+¿Cuántos desarrolladores? en mi organización,ask_team
+Hola,greet
+Hasta pronto 19,goodbye
+Por qué necesitas ese equipo?,ask_why_team
+Recomienda una metodología en mi organización,ask_methodology
+¿Cuánto costaría? si es posible,ask_budget
+Por qué necesitas 2 PMs? en mi organización,ask_why_role_count
+Justifica la metodología propuesta,ask_why_methodology
+Por qué esa metodología?,ask_why_methodology
+Necesito roles para el proyecto,ask_team
+Explícame tus capacidades con alto rendimiento,help
+Necesito ayuda si es posible,help
+Por qué necesitas ese equipo? por favor,ask_why_team
+Por qué necesitas ese equipo? en mi organización,ask_why_team
+Hola en mi organización,greet
+Gracias con microservicios,thanks
+Identifica riesgos del proyecto,ask_risks
+Gracias por la ayuda con alto rendimiento,thanks
+Identifica riesgos del proyecto con alto rendimiento,ask_risks
+"Hola, ¿qué tal?",greet
+Por qué ese presupuesto? con alto rendimiento,ask_why_budget
+¿Usas Scrum o Kanban? por favor,ask_methodology
+Chao si es posible,goodbye
+Por qué esa metodología? con microservicios,ask_why_methodology
+Chao,goodbye
+Gracias por la ayuda por favor 62,thanks
+Justifica la elección de perfiles con microservicios,ask_why_team
+Muchas gracias,thanks
+¿Qué metodología recomiendas?,ask_methodology
+Por qué necesitas ese equipo? con microservicios,ask_why_team
+Adiós en mi organización,goodbye
+Dame una estimación del presupuesto,ask_budget
+Recomienda una metodología con alto rendimiento,ask_methodology
+Por qué necesitas 2 PMs? con microservicios,ask_why_role_count
+Por qué necesitas ese equipo? si es posible,ask_why_team
+Buenos días con microservicios,greet
+Chao con alto rendimiento,goodbye
+Riesgos asociados a la entrega si es posible,ask_risks
+Te lo agradezco por favor,thanks
+Explícame tus capacidades con alto rendimiento,help
+Justifica la metodología propuesta con microservicios,ask_why_methodology
+Explica el presupuesto por favor,ask_why_budget
+Por qué necesitas 2 PMs? con microservicios 70,ask_why_role_count
+¿Cuántos desarrolladores?,ask_team
+Justifica la metodología propuesta por favor,ask_why_methodology
+Recomienda una metodología con microservicios,ask_methodology
+Justifica la elección de perfiles si es posible,ask_why_team
+Explica el número de roles propuesto con alto rendimiento,ask_why_role_count
+Riesgos asociados a la entrega,ask_risks
+Gracias,thanks
+Identifica riesgos del proyecto si es posible,ask_risks
+Identifica riesgos del proyecto,ask_risks
+Qué perfiles necesito? con microservicios,ask_team
+"Hola, ¿qué tal? 95",greet
+Por qué necesitas ese equipo? con microservicios,ask_why_team
+Hasta pronto,goodbye
+¿Cuánto costaría?,ask_budget
+Recomienda una metodología por favor 18,ask_methodology
+Chao por favor,goodbye
+Necesito una estimación de coste con alto rendimiento,ask_budget
+¿Qué funcionalidades tienes?,help
+Necesito una estimación de coste,ask_budget
+Buenas,greet
+Riesgos asociados a la entrega,ask_risks
+Recomienda una metodología si es posible,ask_methodology
+Chao,goodbye
+Muchas gracias si es posible,thanks
+¿Qué metodología recomiendas? con alto rendimiento,ask_methodology
+Recomienda una metodología,ask_methodology
+Necesito una estimación de coste,ask_budget
+Adiós,goodbye
+Por qué necesitas 2 PMs?,ask_why_role_count
+Te lo agradezco,thanks
+Por qué ese presupuesto?,ask_why_budget
+Adiós,goodbye
+Justifica la metodología propuesta,ask_why_methodology
+Necesito ayuda,help
+Por qué necesitas ese equipo?,ask_why_team
+Recomienda una metodología si es posible,ask_methodology
+Por qué necesitas 2 PMs? por favor,ask_why_role_count
+Necesito ayuda,help
+Buenas,greet
+Explica el número de roles propuesto,ask_why_role_count
+Qué perfiles necesito? si es posible,ask_team
+Justifica la metodología propuesta,ask_why_methodology
+Hey,greet
+Explica el número de roles propuesto en mi organización,ask_why_role_count
+Muchas gracias con microservicios,thanks
+Recomienda una metodología con microservicios,ask_methodology
+Recomienda una metodología,ask_methodology
+Qué perfiles necesito? en mi organización,ask_team
+Explica el número de roles propuesto 80,ask_why_role_count
+Justifica la elección de perfiles en mi organización,ask_why_team
+¿Qué funcionalidades tienes? 81,help
+¿Cuántos desarrolladores? por favor,ask_team
+Por qué necesitas 2 PMs?,ask_why_role_count
+Por qué esa metodología? si es posible,ask_why_methodology
+Te lo agradezco,thanks
+¿Qué metodología recomiendas? por favor,ask_methodology
+Por qué necesitas 2 PMs? en mi organización,ask_why_role_count
+Por qué ese presupuesto? con alto rendimiento,ask_why_budget
+Por qué necesitas ese equipo? con alto rendimiento 86,ask_why_team
+Riesgos asociados a la entrega 85,ask_risks
+Gracias en mi organización,thanks
+Gracias,thanks
+¿Qué metodología recomiendas?,ask_methodology
+¿Usas Scrum o Kanban? si es posible,ask_methodology
+Recomienda una metodología,ask_methodology
+Chao 9,goodbye
+Por qué necesitas 2 PMs? en mi organización,ask_why_role_count
+Qué perfiles necesito?,ask_team
+Explica el número de roles propuesto,ask_why_role_count
+¿Cuántos desarrolladores? en mi organización,ask_team
+Adiós,goodbye
+Qué perfiles necesito? si es posible,ask_team
+Explica el presupuesto por favor,ask_why_budget
+Chao,goodbye
+Explica el número de roles propuesto si es posible 77,ask_why_role_count
+Justifica la elección de perfiles si es posible,ask_why_team
+Gracias,thanks
+Buenos días en mi organización,greet
+Nos vemos con microservicios,goodbye
+Recomienda una metodología con alto rendimiento 4,ask_methodology
+¿Qué puedes hacer? con alto rendimiento,help
+¿Usas Scrum o Kanban? en mi organización,ask_methodology
+Muchas gracias,thanks
+Explícame tus capacidades,help
+Justifica la elección de perfiles,ask_why_team
+¿Usas Scrum o Kanban?,ask_methodology
+Hola,greet
+Explica el presupuesto por favor,ask_why_budget
+Por qué ese presupuesto?,ask_why_budget
+Hey,greet
+¿Qué puedes hacer? en mi organización,help
+Por qué necesitas ese equipo?,ask_why_team
+Necesito ayuda con microservicios,help
+Hey si es posible,greet
+Chao en mi organización,goodbye
+Buenas por favor,greet
+Explica el presupuesto 49,ask_why_budget
+Gracias por la ayuda,thanks
+¿Qué metodología recomiendas?,ask_methodology
+Justifica la metodología propuesta,ask_why_methodology
+Explica el presupuesto con microservicios,ask_why_budget
+Explícame tus capacidades con microservicios,help
+Justifica la metodología propuesta,ask_why_methodology
+Te lo agradezco,thanks
+Justifica la metodología propuesta,ask_why_methodology
+Por qué esa metodología? si es posible,ask_why_methodology
+Qué perfiles necesito?,ask_team
+Por qué necesitas 2 PMs?,ask_why_role_count
+Hey,greet
+Justifica la elección de perfiles,ask_why_team

@@ -1,0 +1,27 @@
+[
+  {
+    "file": "data\\historical_projects.csv",
+    "headers": [],
+    "rows": 0
+  },
+  {
+    "file": "data\\methodologies.csv",
+    "headers": [],
+    "rows": 0
+  },
+  {
+    "file": "data\\roles_catalog.csv",
+    "headers": [],
+    "rows": 0
+  },
+  {
+    "file": "data\\skills_taxonomy.csv",
+    "headers": [],
+    "rows": 0
+  },
+  {
+    "file": "data\\tasks_catalog.csv",
+    "headers": [],
+    "rows": 0
+  }
+]

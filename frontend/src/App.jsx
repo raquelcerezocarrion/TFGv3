@@ -168,10 +168,12 @@ export default function App() {
   // Top navigation controls the visible section; Sidebar is only shown in Proyectos (view === 'chat')
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-emerald-50">
-              <header className="border-b bg-white/80 backdrop-blur sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="font-semibold">Assistant · Propuestas</div>
+    <div className="min-h-screen bg-slate-50">
+              <header className="border-b bg-white/80 backdrop-blur sticky top-0 z-10" role="banner" aria-label="Main banner">
+                <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+                  <div className="bg-white/80 px-2 rounded">
+                    <h1 className="text-lg font-semibold">Assistant · Propuestas</h1>
+                  </div>
                 {token && (
             <TopNav
               current={view === 'employees' ? 'employees' : view === 'profile' ? 'profile' : (view === 'recommendations' ? 'recommendations' : 'projects')}
@@ -185,7 +187,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="w-full px-4 py-6 h-[calc(100vh-64px)]">
+      <main className="w-full px-4 py-6 h-[calc(100vh-64px)]" role="main" aria-label="Main content">
         <div className="bg-white/70 backdrop-blur shadow-none rounded-none p-4 flex h-full w-full border-0">
           {!token ? (
             <div className="w-full grid place-items-center">
