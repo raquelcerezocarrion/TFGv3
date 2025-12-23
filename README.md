@@ -12,33 +12,37 @@
 Última actualización: 2025-11-18
 
 Índice
-- Objetivo general
-- Objetivos específicos
-- Descripción breve del proyecto
-- Arquitectura y componentes principales
-- Requisitos (local)
-- Instalación y ejecución (Windows / PowerShell)
-	- Backend (Python / FastAPI)
-	- Frontend (React / Vite)
-	- Iniciar ambos en desarrollo
-- API y contratos importantes
-- Flujo crítico (handshake empleados)
-- Tests
-	- Suite TDD (pytest)
-	- Tests E2E (Playwright)
-- Deploy / producción (notas rápidas)
-- Troubleshooting y preguntas frecuentes
-- Estructura del repositorio
-- Contacto y créditos
+
+- [Objetivo general](#objetivo-general)
+- [Objetivos específicos](#objetivos-especificos)
+- [Descripción breve](#descripcion-breve)
+- [Arquitectura y componentes principales](#arquitectura-y-componentes-principales)
+- [Requisitos (local)](#requisitos-local)
+- [Instalación y ejecución (PowerShell)](#instalacion-y-ejecucion-powershell)
+	- [Backend (Python / FastAPI)](#iniciar-backend-desarrollo)
+	- [Frontend (React / Vite)](#iniciar-frontend-desarrollo)
+	- [Iniciar ambos en desarrollo](#instalacion-y-ejecucion-powershell)
+- [API y contratos importantes](#api-y-contratos-importantes)
+- [Flujo crítico (handshake empleados)](#flujo-critico-handshake-empleados)
+- [Tests](#tests)
+	- [Suite TDD (pytest)](#suite-tdd-pytest)
+	- [Tests E2E (Playwright)](#tests-e2e-playwright)
+- [Deploy / producción (notas rápidas)](#deploy--produccion-notas-rapidas)
+- [Acceso al despliegue Docker (local)](#acceso-al-despliegue-docker-local)
+- [Troubleshooting y preguntas frecuentes](#troubleshooting--faqs)
+- [Estructura del repositorio](#estructura-del-repositorio)
+- [Contacto y créditos](#contacto-y-creditos)
 
 ---
 
-**Objetivo general del trabajo**
+<a name="objetivo-general"></a>
+## Objetivo general
 
 Diseñar y desarrollar una aplicación web que permita generar propuestas de proyecto de forma automática mediante la interacción con un asistente conversacional, integrando funcionalidades de gestión de personal, planificación de fases y exportación de resultados.
 
 
-**Objetivos específicos**
+<a name="objetivos-especificos"></a>
+## Objetivos específicos
 
 - Implementar un sistema conversacional capaz de guiar al usuario durante la creación de una propuesta de proyecto.
 - Desarrollar un backend que gestione la lógica de negocio, el estado conversacional y la persistencia de datos.
@@ -51,6 +55,7 @@ Diseñar y desarrollar una aplicación web que permita generar propuestas de pro
 
 ---
 
+<a name="descripcion-breve"></a>
 ## Descripción breve
 
 TFGv3 es una aplicación de demostración que combina una API (FastAPI) y un frontend (React + Vite) para que un asistente conversacional genere propuestas de proyecto a partir de requisitos textuales. Soporta guardado de "chats/propuestas", gestión de empleados por usuario, generación de propuestas (metodología, equipo, fases, presupuesto) y exportación a PDF. Además incluye mecanismos de NLU/recuperación para mejorar respuestas y tests automatizados TDD/E2E.
@@ -58,6 +63,8 @@ TFGv3 es una aplicación de demostración que combina una API (FastAPI) y un fro
 ---
 
 ## Arquitectura y componentes principales
+
+<a name="arquitectura-y-componentes-principales"></a>
 
 - backend/: FastAPI app y lógica del motor (motor conversacional en `backend/engine/brain.py`). Persistencia ligera con SQLite y helpers en `backend/memory/state_store.py`.
 - frontend/: SPA en React (Vite). Componentes principales: `Chat.jsx` (UI del asistente), `Employees.jsx`, `Auth.jsx`, `Sidebar.jsx`.
@@ -69,6 +76,8 @@ TFGv3 es una aplicación de demostración que combina una API (FastAPI) y un fro
 
 ## Requisitos (local)
 
+<a name="requisitos-local"></a>
+
 - Windows 10/11 (o macOS / Linux con comandos equivalentes)
 - Python 3.11 (recomendado)
 - Node.js 18+ (para frontend y Playwright)
@@ -79,6 +88,7 @@ Dependencias Python: están en `requirements.txt` y en `pyproject.toml` (si usas
 
 ---
 
+<a name="instalacion-y-ejecucion-powershell"></a>
 ## Instalación y ejecución (PowerShell)
 
 Estos pasos asumen que trabajas en PowerShell y quieres ejecutar backend + frontend localmente.
@@ -124,6 +134,7 @@ npx playwright install --with-deps
 cd ..
 ```
 
+<a name="iniciar-backend-desarrollo"></a>
 ### Iniciar backend (desarrollo)
 
 En una terminal PowerShell con el entorno Python activado:
@@ -133,6 +144,7 @@ cd C:\Users\HP\Desktop\TFGv3
 python -m uvicorn backend.app:app --reload --port 8000
 ```
 
+<a name="iniciar-frontend-desarrollo"></a>
 ### Iniciar frontend (desarrollo)
 
 En otra terminal (no dentro del virtualenv de Python necesariamente):
@@ -144,6 +156,7 @@ npm run dev
 
 ---
 
+<a name="api-y-contratos-importantes"></a>
 ## API y contratos importantes
 
 Algunos endpoints clave (método · ruta):
@@ -162,6 +175,7 @@ Importante: los endpoints protegidos usan header `Authorization: Bearer <token>`
 
 ---
 
+<a name="flujo-critico-handshake-empleados"></a>
 ## Flujo crítico: handshake de empleados (cómo debe comportarse el frontend)
 
 El backend espera un flujo concreto para activar la rama de asignación/planificación basada en empleados guardados:
@@ -176,8 +190,10 @@ El `frontend/src/components/Chat.jsx` ya implementa este handshake: detecta el m
 
 ---
 
+<a name="tests"></a>
 ## Tests
 
+<a name="suite-tdd-pytest"></a>
 ### Suite TDD (pytest)
 
 Los tests relacionados con la lógica del backend y contratos API se encuentran en `TDD/backend_tests/` y en `backend/tests/`.
@@ -198,6 +214,7 @@ pytest -q
 Nota: durante el desarrollo se añadieron mecanismos para evitar colisiones de nombres de módulos de test (algunos tests se renombraron o se colocaron en `TDD` para TDD). Si pytest muestra errores de importación, limpia `__pycache__` o ejecuta `pytest -q backend TDD/backend_tests`.
 
 
+<a name="tests-e2e-playwright"></a>
 ### Pruebas E2E (Playwright)
 
 Se añadieron pruebas de extremo a extremo bajo `e2e/tests/` usando Playwright. Estas pruebas automáticas cubren:
@@ -234,6 +251,7 @@ Notes:
 
 ---
 
+<a name="deploy--produccion-notas-rapidas"></a>
 ## Deploy / producción (breve)
 
 - Ajusta variables de configuración en `backend/core/config.py` (secretos, base de datos). Actualmente la app usa SQLite por conveniencia.
@@ -242,6 +260,77 @@ Notes:
 
 ---
 
+<a name="acceso-al-despliegue-docker-local"></a>
+## Acceso al despliegue Docker (local) — guía para un usuario
+
+Esta sección explica, paso a paso y de forma no técnica, cómo un usuario normal puede arrancar y acceder al despliegue local usando Docker Desktop y Docker Compose. Está pensada para el Tribunal evaluador o revisores que quieran ver la aplicación en funcionamiento sin instalar dependencias de desarrollo.
+
+Requisitos mínimos (usuario):
+- Docker Desktop instalado y con el Engine en "running" (Windows: comprobar icono en la bandeja).
+- Acceso a la carpeta del proyecto con el `docker/` y `frontend`/`backend` presentes.
+
+Pasos rápidos (ejecución en Windows PowerShell desde la carpeta del proyecto `TFGv3`):
+
+1) Abrir Docker Desktop y asegurarse de que muestra "Engine running".
+
+2) Abrir PowerShell y situarse en la raíz del repo:
+```powershell
+cd C:\Users\HP\Desktop\TFGv3
+```
+
+3) Levantar la aplicación con Docker Compose (usa el fichero `docker/docker-compose.yml` incluido en el repo):
+```powershell
+docker compose -f docker/docker-compose.yml up --build -d
+```
+
+Qué hace este comando: construye las imágenes necesarias y arranca dos servicios — el `backend` (API) y el `frontend` (interfaz). El argumento `-d` ejecuta los servicios en segundo plano.
+
+4) Verificar que los servicios están arriba:
+```powershell
+docker compose -f docker/docker-compose.yml ps
+```
+Deberías ver dos contenedores con los puertos mapeados: `8000->8000` (backend) y `5173->5173` (frontend).
+
+5) Abrir la aplicación en el navegador:
+- Frontend (interfaz): http://localhost:5173
+- Backend (API / documentación): http://localhost:8000/docs
+
+Acciones útiles para un usuario no técnico
+- Ver logs simples (si necesitas comprobar actividad):
+	- `docker compose -f docker/docker-compose.yml logs -f backend`
+	- `docker compose -f docker/docker-compose.yml logs -f frontend`
+- Parar la aplicación:
+	- `docker compose -f docker/docker-compose.yml down`
+- Reiniciar (por ejemplo tras un rebuild):
+	- `docker compose -f docker/docker-compose.yml up --build -d`
+
+Si no quieres usar la terminal
+- En Docker Desktop (GUI) aparece la lista de contenedores; puedes arrancarlos/ detenerlos/ ver logs y abrir puertos directamente desde la interfaz.
+
+Notas sobre datos y persistencia
+- El proyecto monta carpetas locales como volúmenes (por ejemplo `./backend` y `./frontend`) para facilitar desarrollo. Si el evaluador quiere que los datos persistan entre reinicios, asegúrate de que el directorio `backend/memory` (que contiene `db.sqlite3`) no se elimine. Si se prefiere, se puede sustituir SQLite por un servicio de base de datos externo (no incluido por defecto).
+
+Comprobaciones rápidas para confirmar que todo funciona
+- Abrir `http://localhost:8000/docs` y ejecutar el endpoint `/auth/register` desde la interfaz Swagger para crear una cuenta de prueba.
+- Abrir `http://localhost:5173` y usar la interfaz para iniciar sesión con la cuenta creada. Deberías poder crear un proyecto y pedir la exportación a PDF.
+- Si la UI muestra errores de conexión, comprobar la consola del navegador (DevTools → Console) y los logs del backend (comando `logs` arriba).
+
+Errores frecuentes y soluciones
+- "No configuration file provided": usar la opción `-f docker/docker-compose.yml` porque el archivo `docker-compose.yml` está en la carpeta `docker/`.
+- Puertos ocupados: si `8000` o `5173` están en uso, cierra la aplicación que los usa o modifica las líneas `ports:` en `docker/docker-compose.yml` (por ejemplo `8001:8000`) y vuelve a levantar con `up --build`.
+- Si el backend devuelve `{"detail":"Not Found"}` al abrir la raíz `http://localhost:8000`, abrir `http://localhost:8000/docs` (la API no ofrece contenido en `/` por diseño).
+
+Despliegue usando imágenes públicas (opcional)
+- Si prefieres no construir localmente, el workflow de GitHub Actions incluido puede subir imágenes a Docker Hub (mira `.github/workflows/docker-deploy.yml`). Si hay imágenes públicas disponibles, bastará con hacer `docker pull <usuario>/tfg-backend:latest` y `docker pull <usuario>/tfg-frontend:latest` y usar un `docker-compose` que cargue esas imágenes.
+
+Soporte
+- Si tienes dudas mientras realizas estos pasos, pega aquí la salida del comando `docker compose -f docker/docker-compose.yml ps` y los últimos logs (`docker compose -f docker/docker-compose.yml logs backend --tail 100`) y te ayudo a interpretar y solucionar.
+
+---
+
+---
+
+<a name="troubleshooting--faqs"></a>
 ## Troubleshooting / FAQs
 
 Q: `pytest` falla con errores de importación (import file mismatch)?
@@ -263,6 +352,7 @@ Q: El backend muestra `DeprecationWarning: on_event is deprecated` al arrancar
 
 ---
 
+<a name="estructura-del-repositorio"></a>
 ## Estructura del repositorio (resumen)
 
 - backend/
@@ -281,6 +371,8 @@ Q: El backend muestra `DeprecationWarning: on_event is deprecated` al arrancar
 - package.json (frontend) — dependencias frontend
 
 ---
+<a name="contacto-y-creditos"></a>
+## Contacto y créditos
 
 Créditos: Proyecto desarrollado como TFG (Trabajo Fin de Grado) — autor/a: raquelcerezocarrion.
 

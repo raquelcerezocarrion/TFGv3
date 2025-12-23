@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+.env
+venv/
+.env.*
+
+# Node
+node_modules/
+frontend/node_modules/
+
+# Docker
+docker-compose.override.yml
+
+# Local data
+backend/memory/db.sqlite3

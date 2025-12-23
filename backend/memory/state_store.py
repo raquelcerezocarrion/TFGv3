@@ -69,8 +69,8 @@ class ProposalFeedback(Base):
 class ProposalView(Base):
     __tablename__ = "proposal_views"
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, index=True, nullable=False)
-    proposal_id = Column(Integer, index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    proposal_id = Column(Integer, ForeignKey("proposal_logs.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 # --- Usuario / Auth (simple)
@@ -87,7 +87,7 @@ class User(Base):
 class SavedChat(Base):
     __tablename__ = "saved_chats"
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     title = Column(String, nullable=True)
     content = Column(Text, nullable=False)   # JSON or plain text representing the chat
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -98,7 +98,7 @@ class SavedChat(Base):
 class Employee(Base):
     __tablename__ = "employees"
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     name = Column(String, nullable=False)
     role = Column(String, nullable=False)  # Backend, QA, Frontend, etc.
     skills = Column(Text, nullable=False)  # CSV o JSON de skills
