@@ -1,0 +1,24 @@
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+COPY requirements.txt /app/
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential gcc libpq-dev curl \
+    && pip install --upgrade pip \
+    && pip install --no-cache-dir -r /app/requirements.txt \
+    && apt-get purge -y --auto-remove build-essential gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy backend source
+COPY backend /app/backend
+WORKDIR /app
+
+EXPOSE 8000
+
+# Development default: use reload so edits on bind-mounted code are reflected
+CMD ["uvicorn", "backend.app:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
