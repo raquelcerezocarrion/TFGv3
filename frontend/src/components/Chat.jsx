@@ -194,11 +194,12 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
     setUserHasScrolled(false) // Reset scroll lock on new messages
   }, [loadedMessages])
 
-  // If parent didn't pass `loadedMessages`, show the default assistant greeting once.
+  // If parent didn't pass `loadedMessages` or passed an empty array, show the default assistant greeting once.
   useEffect(() => {
-    if (Array.isArray(loadedMessages)) return
+    // Si loadedMessages es un array con mensajes, no mostrar el greeting
+    if (Array.isArray(loadedMessages) && loadedMessages.length > 0) return
     if (messages.length > 0) return
-    setMessages([{ role: 'assistant', content: '👋 Hola, soy el asistente. Pídeme una propuesta o escribe cualquier cosa.', ts: new Date().toISOString() }])
+    setMessages([{ role: 'assistant', content: '👋 Hola, soy el asistente de propuestas. Puedes escribir "aprender" para entrar en modo formación y aprender sobre metodologías, o directamente escribe tu propuesta (por ejemplo: /propuesta: requisitos del cliente).', ts: new Date().toISOString() }])
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadedMessages])
 
