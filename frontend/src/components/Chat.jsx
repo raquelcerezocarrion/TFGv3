@@ -53,7 +53,14 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
       if (txt.includes('manual') || txt.includes('introducir plantilla') || txt.includes('introducir plantilla manualmente') || txt.includes('plantilla manual')) {
         ctas.push({ type: 'manual', label: 'Introducir plantilla' })
       }
-      if ((txt.includes('quieres comenzar') || txt.includes('quieres iniciar') || txt.includes('comenzamos') || txt.includes('empezamos')) && txt.includes('proyecto')) {
+      // Avoid offering the 'Iniciar proyecto' CTA for some long proposal messages
+      const noStartPhrases = [
+        'quieres comenzar el proyecto ahora',
+        'quieres iniciar el proyecto ahora',
+        'quieres empezar el proyecto ahora'
+      ]
+      const suppressStart = noStartPhrases.some(p => txt.includes(p))
+      if (!suppressStart && (txt.includes('quieres comenzar') || txt.includes('quieres iniciar') || txt.includes('comenzamos') || txt.includes('empezamos')) && txt.includes('proyecto')) {
         ctas.push({ type: 'start', label: 'Iniciar proyecto' })
       }
       if (txt.includes('hacer cambios') || txt.includes('modific') || txt.includes('realizar cambios') || txt.includes('quieres que lo modifi')) {
@@ -605,6 +612,37 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
 
                 {/* Render CTA buttons and phase buttons for this assistant message (if any) */}
                 {m.role === 'assistant' && (() => {
+                  // Special case: when backend confirms that it has loaded employees
+                  const loadedEmployeesRegex = /^✅\s*He cargado \d+ empleados de tu base de datos\.$/i
+                  const isLoadedEmployeesMsg = typeof m.content === 'string' && loadedEmployeesRegex.test(m.content.trim())
+
+                  if (isLoadedEmployeesMsg) {
+                    return (
+                      <div className="mt-2 flex flex-col gap-2">
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            className="px-3 py-1 rounded-md border bg-white hover:bg-gray-50 text-sm"
+                            onClick={() => {
+                              setSuggestedCtas([])
+                              // Replace any messages after (and including) this assistant message
+                              setMessages(prev => {
+                                try {
+                                  const idx = i
+                                  const head = Array.isArray(prev) ? prev.slice(0, idx) : []
+                                  return [...head, { role: 'assistant', content: 'Su proyecto esta listo y que puede descargar el pdf', ts: new Date().toISOString() }]
+                                } catch {
+                                  return [{ role: 'assistant', content: 'Su proyecto esta listo y que puede descargar el pdf', ts: new Date().toISOString() }]
+                                }
+                              })
+                            }}
+                          >
+                            Aceptar propuesta
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  }
+
                   const ctas = detectCtas(m.content)
                   const phases = extractPhasesFromText(m.content)
                   if (( !ctas || ctas.length === 0 ) && ( !phases || phases.length === 0 )) return null
