@@ -4030,6 +4030,16 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
                 return "Tengo un cambio de metodología pendiente. ¿Lo aplico? sí/no", "Esperando confirmación de cambio."
 
     # === MODO FORMACIÓN: activar, guiar por nivel/temas y salir ===
+    tr = _get_training_state(session_id)
+    
+    # Primero verificar salida si ya está en formación (antes de _wants_training)
+    if tr.get("active") and _training_exit(text):
+        _exit_training(session_id)
+        return (
+            "Has salido del modo formación. Si quieres volver a entrar, escribe 'aprender'. "
+            "Si prefieres generar propuestas, simplemente escríbela (por ejemplo: /propuesta: requisitos del cliente)."
+        ), "Formación: salida"
+
     if _wants_training(text):
         _enter_training(session_id)
         return (
@@ -4038,11 +4048,7 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             "Puedes salir cuando quieras diciendo: salir de la formación."
         ), "Formación: activada"
 
-    tr = _get_training_state(session_id)
     if tr.get("active"):
-        if _training_exit(text):
-            _exit_training(session_id)
-            return ("Salgo del modo formación. ¿Generamos una propuesta? Usa /propuesta: ..."), "Formación: salida"
 
         if not tr.get("level"):
             lv = _parse_level(text)
