@@ -169,11 +169,31 @@ export default function App() {
   // Top navigation controls the visible section; Sidebar is only shown in Proyectos (view === 'chat')
 
   return (
-    <div className="min-h-screen bg-slate-50">
-              <header className="border-b bg-white/80 backdrop-blur sticky top-0 z-10" role="banner" aria-label="Main banner">
-                <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-                  <div className="bg-white/80 px-2 rounded">
-                    <h1 className="text-lg font-semibold">Assistant · Propuestas</h1>
+    <div className="h-screen bg-gradient-to-br from-slate-800 via-blue-900 to-indigo-900 relative overflow-hidden">
+      {/* Patrón de cuadrícula sutil */}
+      <div className="absolute inset-0 z-0" style={{
+        backgroundImage: `
+          linear-gradient(to right, rgba(255,255,255,0.03) 1px, transparent 1px),
+          linear-gradient(to bottom, rgba(255,255,255,0.03) 1px, transparent 1px)
+        `,
+        backgroundSize: '40px 40px'
+      }}></div>
+      
+      {/* Círculos decorativos sutiles */}
+      <div className="absolute -top-40 -left-40 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl z-0"></div>
+      <div className="absolute -bottom-40 -right-40 w-[600px] h-[600px] bg-indigo-500/10 rounded-full blur-3xl z-0"></div>
+      <div className="absolute top-1/3 -right-20 w-80 h-80 bg-slate-400/8 rounded-full blur-2xl z-0"></div>
+      
+      <div className="relative z-10">
+              <header className="bg-transparent backdrop-blur-md sticky top-0 z-20" role="banner" aria-label="Main banner">
+                <div className="px-6 py-4 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-lg flex items-center justify-center text-white text-xl shadow-lg">
+                      🎯
+                    </div>
+                    <h1 className="text-2xl font-bold text-white drop-shadow-lg">
+                      Asistente de consultoría estratégica
+                    </h1>
                   </div>
                 {token && (
             <TopNav
@@ -189,16 +209,15 @@ export default function App() {
         </div>
       </header>
 
-      <main className="w-full px-4 py-6 h-[calc(100vh-64px)]" role="main" aria-label="Main content">
-        <div className="bg-white/70 backdrop-blur shadow-none rounded-none p-4 flex h-full w-full border-0">
+      <main className="w-full h-[calc(100vh-64px)] overflow-hidden p-4" role="main" aria-label="Main content">
+        <div className="bg-transparent flex h-full w-full">
           {!token ? (
-            <div className="w-full grid place-items-center">
-              <div className="w-full max-w-md"><Auth onLogin={onLogin} /></div>
-            </div>
+            <Auth onLogin={onLogin} />
           ) : (
+            <div className="bg-white/95 backdrop-blur-xl shadow-2xl rounded-2xl flex h-full w-full border border-white/30 overflow-hidden">
             <>
               {view === 'chat' && (
-              <div className="w-80 flex-shrink-0 mr-4">
+              <div className="w-80 flex-shrink-0 mr-4 p-4">
                 <Sidebar
                   chats={chats}
                   onSelect={onSelectChat}
@@ -210,7 +229,7 @@ export default function App() {
               </div>
               )}
 
-              <div className="flex-1">
+              <div className="flex-1 overflow-hidden p-4">
                 {view === 'profile' ? (
                   <Profile token={token} onOpenChat={(c) => { onSelectChat(c) }} logout={logout} />
                 ) : view === 'employees' ? (
@@ -231,9 +250,11 @@ export default function App() {
                 )}
               </div>
             </>
+            </div>
           )}
         </div>
       </main>
+      </div>
     </div>
   )
 }

@@ -133,7 +133,8 @@ export default function Employees({ token }) {
   }, [q, list])
 
   return (
-    <div className="p-4 md:p-6">
+    <div className="h-full flex flex-col overflow-hidden">
+      <div className="flex-1 overflow-y-auto p-4 md:p-6">
       <div className="rounded-3xl bg-white/70 backdrop-blur border shadow-xl p-5 space-y-6">
         {/* Cabecera */}
         <div className="flex items-center justify-between">
@@ -249,6 +250,7 @@ export default function Employees({ token }) {
             </div>
           )}
         </div>
+      </div>
       </div>
     </div>
   )

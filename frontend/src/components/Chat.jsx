@@ -614,7 +614,10 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
     <div className="h-full flex flex-col gap-2 min-w-0 min-h-0 box-border text-[13px] relative overflow-hidden">
       {/* acciones superiores */}
       <div className="flex items-center justify-between">
-        <div className="text-sm text-gray-500">Consejo: escribe <code className="px-1 py-[1px] rounded bg-gray-100 border">/propuesta: requisitos del cliente</code></div>
+        <div className="text-sm text-gray-600 flex items-center gap-2 bg-blue-50 px-4 py-2 rounded-lg border border-blue-100">
+          <span className="text-lg">💡</span>
+          <span className="font-medium">Le recomendamos que vea los tres pasos de la guía inicial</span>
+        </div>
         {(onSaveCurrentChat || onSaveExistingChat) && (
           <div className="relative">
             <button className="px-3 py-2 border rounded-xl hover:bg-gray-50" onClick={() => setShowSaveDialog(true)}>

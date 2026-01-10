@@ -100,22 +100,116 @@ export default function Auth({ onLogin }){
   }
 
   return (
-    <div className="p-4">
-      <h2 className="text-xl font-bold mb-2">{mode === 'login' ? 'Iniciar sesión' : 'Registro'}</h2>
-      {error && <div className="text-red-600 mb-2">{error}</div>}
-      {info && <div className="text-green-600 mb-2">{info}</div>}
-      {mode === 'register' && (
-        <input className="w-full border rounded px-2 py-1 mb-2" placeholder="Nombre completo" value={name} onChange={e=>setName(e.target.value)} />
-      )}
-      <input className="w-full border rounded px-2 py-1 mb-2" placeholder="Email" value={email} onChange={(e)=>{ setEmail(e.target.value); setError(null); setInfo(null) }} />
-      <input type="password" className="w-full border rounded px-2 py-1 mb-2" placeholder="Contraseña" value={password} onChange={(e)=>{ setPassword(e.target.value); setError(null); setInfo(null) }} />
-      <div className="flex gap-2">
-        <button className="px-4 py-2 bg-blue-600 text-white rounded" onClick={submit} disabled={loading}>{loading ? 'Enviando…' : (mode === 'login' ? 'Entrar' : 'Registrar')}</button>
-        <button className="px-4 py-2 border rounded" onClick={()=>{ setMode(mode==='login'?'register':'login'); setError(null); setInfo(null) }}>{mode==='login'?'Crear cuenta':'Tengo cuenta'}</button>
-      </div>
+    <div className="fixed inset-0 flex items-center justify-center overflow-hidden">
+      {/* Fondo base con gradiente corporativo */}
+      <div className="absolute inset-0 bg-gradient-to-br from-slate-800 via-blue-900 to-indigo-900"></div>
+      
+      {/* Patrón de cuadrícula sutil */}
+      <div className="absolute inset-0" style={{
+        backgroundImage: `
+          linear-gradient(to right, rgba(255,255,255,0.03) 1px, transparent 1px),
+          linear-gradient(to bottom, rgba(255,255,255,0.03) 1px, transparent 1px)
+        `,
+        backgroundSize: '40px 40px'
+      }}></div>
+      
+      {/* Círculos decorativos sutiles */}
+      <div className="absolute -top-40 -left-40 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl"></div>
+      <div className="absolute -bottom-40 -right-40 w-[600px] h-[600px] bg-indigo-500/10 rounded-full blur-3xl"></div>
+      <div className="absolute top-1/3 -right-20 w-80 h-80 bg-slate-400/8 rounded-full blur-2xl"></div>
+      <div className="absolute bottom-1/4 -left-20 w-72 h-72 bg-blue-400/8 rounded-full blur-2xl"></div>
+      
+      {/* Formas geométricas decorativas sutiles */}
+      <div className="absolute top-20 left-1/4 w-32 h-32 border-2 border-white/10 rounded-lg rotate-12 backdrop-blur-sm"></div>
+      <div className="absolute bottom-32 right-1/4 w-40 h-40 border-2 border-white/8 rounded-full backdrop-blur-sm"></div>
+      <div className="absolute top-1/2 left-12 w-24 h-24 border-2 border-white/8 rounded-lg -rotate-12 backdrop-blur-sm"></div>
+      
+      <div className="w-full max-w-md relative z-10">
+        <div className="bg-white/97 backdrop-blur-xl rounded-3xl shadow-2xl p-8 border border-blue-200/20">
+          {/* Logo y título */}
+          <div className="flex items-center justify-center mb-6">
+            <div className="w-14 h-14 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl flex items-center justify-center text-white text-2xl shadow-xl mr-3">
+              🎯
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold text-white drop-shadow-lg">
+                {mode === 'login' ? 'Iniciar sesión' : 'Registro'}
+              </h2>
+            </div>
+          </div>
 
-      <div className="text-xs text-gray-500 mt-2">
-        Nota: para conveniencia esta demo guarda email y contraseña en el navegador (localStorage). En producción no es seguro almacenar contraseñas en texto claro; considera usar "recordarme" sin guardar la contraseña, o cookies seguras.
+          {/* Mensajes de error/info */}
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4 flex items-start gap-2">
+              <span className="text-red-600 text-lg">⚠️</span>
+              <div className="text-red-700 text-sm flex-1">{error}</div>
+            </div>
+          )}
+          {info && (
+            <div className="bg-green-50 border border-green-200 rounded-xl p-3 mb-4 flex items-start gap-2">
+              <span className="text-green-600 text-lg">✓</span>
+              <div className="text-green-700 text-sm flex-1">{info}</div>
+            </div>
+          )}
+
+          {/* Formulario */}
+          <div className="space-y-4">
+            {mode === 'register' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Nombre completo</label>
+                <input 
+                  className="w-full border-2 border-gray-200 rounded-xl px-4 py-2.5 focus:border-blue-500 focus:outline-none transition" 
+                  placeholder="Tu nombre" 
+                  value={name} 
+                  onChange={e=>setName(e.target.value)} 
+                />
+              </div>
+            )}
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
+              <input 
+                className="w-full border-2 border-gray-200 rounded-xl px-4 py-2.5 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 focus:outline-none transition" 
+                placeholder="tu@email.com" 
+                value={email} 
+                onChange={(e)=>{ setEmail(e.target.value); setError(null); setInfo(null) }} 
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Contraseña</label>
+              <input 
+                type="password" 
+                className="w-full border-2 border-gray-200 rounded-xl px-4 py-2.5 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 focus:outline-none transition" 
+                placeholder="••••••" 
+                value={password} 
+                onChange={(e)=>{ setPassword(e.target.value); setError(null); setInfo(null) }} 
+              />
+            </div>
+          </div>
+
+          {/* Botones */}
+          <div className="flex gap-3 mt-6">
+            <button 
+              className="flex-1 px-4 py-3 bg-gradient-to-r from-blue-600 to-indigo-700 text-white rounded-xl font-semibold hover:shadow-xl hover:from-blue-700 hover:to-indigo-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed" 
+              onClick={submit} 
+              disabled={loading}
+            >
+              {loading ? '⏳ Enviando…' : (mode === 'login' ? 'Entrar' : 'Registrar')}
+            </button>
+            <button 
+              className="px-4 py-3 bg-white border-2 border-blue-600 text-blue-700 rounded-xl font-semibold hover:bg-blue-50 transition" 
+              onClick={()=>{ setMode(mode==='login'?'register':'login'); setError(null); setInfo(null) }}
+            >
+              {mode==='login'?'Crear cuenta':'Tengo cuenta'}
+            </button>
+          </div>
+
+          {/* Nota de seguridad */}
+          <div className="mt-6 text-xs text-gray-500 bg-gray-50 rounded-lg p-3 border border-gray-100">
+            <span className="font-medium">Nota:</span> para conveniencia esta demo guarda email y contraseña en el navegador (localStorage). En producción no es seguro almacenar contraseñas en texto claro; considera usar "recordarme" sin guardar la contraseña, o cookies seguras.
+          </div>
+        </div>
       </div>
     </div>
   )
