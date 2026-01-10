@@ -29,8 +29,8 @@ def generate_proposal(requirements_text: str) -> Dict[str, Any]:
     
     # Necesidades técnicas específicas
     need_mobile = any(k in req for k in ["mobile", "móvil", "android", "ios", "app"]) or signals.get("mobile", 0.0) == 1.0
-    need_admin  = any(k in req for k in ["admin", "backoffice", "panel"])
-    need_pay    = any(k in req for k in ["pago", "pagos", "stripe", "checkout"]) or signals.get("payments", 0.0) == 1.0
+    need_admin  = any(k in req for k in ["admin", "backoffice", "panel", "administración", "administracion", "dashboard"])
+    need_pay    = any(k in req for k in ["pago", "pagos", "stripe", "checkout", "pasarela"]) or signals.get("payments", 0.0) == 1.0
     need_realtime = signals.get("realtime", 0.0) == 1.0
     need_ml     = signals.get("ml_ai", 0.0) == 1.0
     need_iot    = signals.get("iot", 0.0) == 1.0

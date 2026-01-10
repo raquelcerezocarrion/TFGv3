@@ -226,7 +226,7 @@ def detect_signals(text: str) -> Dict[str, float]:
         "fixed_budget": 1.0 if has("presupuesto fijo","tope de presupuesto","coste cerrado","precio cerrado") else 0.0,
         "regulated": 1.0 if has("pci","gdpr","hipaa","iso 27001","rgpd","regulado","auditor","compliance","normativa","sox","mifid") else 0.0,
         "realtime": 1.0 if has("tiempo real","realtime","websocket","baja latencia","notificaciones push","chat","mensajería","mensajeria","instantáneo","instantaneo") else 0.0,
-        "payments": 1.0 if has("pagos","stripe","redsys","paypal","checkout","subscripciones","suscripciones","billing","facturación","facturacion","cobros") else 0.0,
+        "payments": 1.0 if has("pagos","stripe","redsys","paypal","checkout","subscripciones","suscripciones","billing","facturación","facturacion","cobros","pasarela de pagos","pasarela","payment gateway","gateway de pagos") else 0.0,
         "integrations": 1.0 if has("api","apis","webhook","integración","integracion","terceros","conectar con","sincronización","sincronizacion") else 0.0,
         "mobile": 1.0 if has("app","android","ios","móvil","movil","mobile","nativa","flutter","react native") else 0.0,
         "ml_ai": 1.0 if has("ml","machine learning","ia","modelo","recomendaciones","matching","algoritmo","predicciones","deep learning","nlp","computer vision") else 0.0,
@@ -241,7 +241,7 @@ def detect_signals(text: str) -> Dict[str, float]:
         "matching_dating": 1.0 if has("citas","dating","matching","match","perfiles","preferencias","swipe","likes","conexiones") else 0.0,
         "b2b": 1.0 if has("b2b","empresas","clientes corporativos","pedidos","órdenes","ordenes","proveedores","distribuidores","mayoristas") else 0.0,
         "saas": 1.0 if has("saas","multitenancy","multi-tenant","suscripciones","subscripciones","planes","freemium","software as a service") else 0.0,
-        "ecommerce": 1.0 if has("ecommerce","e-commerce","tienda","carrito","checkout","inventario","stock","catálogo de productos","catalogo de productos") else 0.0,
+        "ecommerce": 1.0 if has("ecommerce","e-commerce","tienda","carrito","checkout","inventario","stock","catálogo de productos","catalogo de productos","gestión de inventario","gestion de inventario","productos artesanales","venta de productos","tienda online") else 0.0,
         "social": 1.0 if has("red social","comunidad","feeds","comentarios","likes","seguir","seguidores","timeline","posts") else 0.0,
         
         # Contexto organizacional

@@ -648,6 +648,29 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
                     return null
                   }
 
+                  // Special case: Initial welcome message with recommendations
+                  const isWelcomeMessage = typeof m.content === 'string' && 
+                    m.content.includes('👋 Hola, soy el asistente de propuestas') &&
+                    m.content.includes('Recomendaciones de uso importantes')
+                  
+                  if (isWelcomeMessage) {
+                    // Show "¿Cómo generar una propuesta?" button
+                    return (
+                      <div className="mt-2 flex flex-col gap-2">
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            className="px-3 py-1 rounded-md border bg-blue-600 text-white hover:bg-blue-700 text-sm"
+                            onClick={() => {
+                              setMessages(prev => [...prev, { role: 'assistant', content: '📝 Mejores prácticas para describir su proyecto:\n\nPara generar una propuesta precisa y completa, simplemente describa su proyecto con el máximo detalle posible.\n\n✅ Información recomendada a incluir:\n\n1️⃣ Tipo de aplicación: Web, móvil, API, sistema interno, etc.\n\n2️⃣ Funcionalidad principal: ¿Qué problema resuelve? (ej: gestión de inventarios, e-commerce, CRM)\n\n3️⃣ Stack tecnológico preferido (opcional): Backend (Python, Node.js, Java), Frontend (React, Vue, Angular), Base de datos\n\n4️⃣ Dominio/Sector: Fintech, healthcare, educación, retail, logística, etc.\n\n5️⃣ Requisitos especiales: Integraciones con APIs externas, seguridad avanzada, cumplimiento normativo (GDPR, PCI-DSS), alta concurrencia\n\n6️⃣ Complejidad estimada: Simple, media o alta\n\n📌 Ejemplo completo:\nAplicación web de e-commerce para venta de productos artesanales. Backend en Python con Django, frontend en React. Necesita pasarela de pagos (Stripe), gestión de inventario en tiempo real, panel de administración para vendedores, y cumplimiento GDPR. Complejidad media.\n\n💡 Nota: Cuanta más información proporcione, más precisa será la propuesta generada.', ts: new Date().toISOString() }])
+                            }}
+                          >
+                            ¿Cómo generar una propuesta?
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  }
+
                   // Special case: Long proposal message ending with "¿Quieres comenzar el proyecto ahora?"
                   // This is the complete proposal with employees, assignments, gaps, and phases
                   const isCompleteProposal = typeof m.content === 'string' && 
