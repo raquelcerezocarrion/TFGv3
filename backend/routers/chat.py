@@ -35,7 +35,11 @@ def _reply(payload: ChatIn) -> Dict[str, Any]:
         prop, _ = get_last_proposal(sid)
         if prop:
             ctx = _project_context_summary(prop)
-            if ctx and "Contexto del proyecto:" not in text:
+            # No añadir contexto si el texto es el mensaje de activación de formación
+            is_training_message = ("Modo formación activado" in text or 
+                                 "salir de la formación" in text or
+                                 "sección Aprender" in text)
+            if ctx and "Contexto del proyecto:" not in text and not is_training_message:
                 text = text + "\n\nContexto del proyecto: " + ctx
     except Exception:
         pass
@@ -96,7 +100,11 @@ async def chat_ws(ws: WebSocket):
                 prop, _ = get_last_proposal(sid)
                 if prop:
                     ctx = _project_context_summary(prop)
-                    if ctx and "Contexto del proyecto:" not in text:
+                    # No añadir contexto si el texto es el mensaje de activación de formación
+                    is_training_message = ("Modo formación activado" in text or 
+                                         "salir de la formación" in text or
+                                         "sección Aprender" in text)
+                    if ctx and "Contexto del proyecto:" not in text and not is_training_message:
                         text = text + "\n\nContexto del proyecto: " + ctx
             except Exception:
                 pass

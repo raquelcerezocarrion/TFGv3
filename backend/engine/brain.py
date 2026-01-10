@@ -4113,47 +4113,27 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             else:
                 return "Tengo un cambio de metodología pendiente. ¿Lo aplico? sí/no", "Esperando confirmación de cambio."
 
-    # === MODO FORMACIÓN: activar, guiar por nivel/temas y salir ===
-    tr = _get_training_state(session_id)
-    
-    # Primero verificar salida si ya está en formación (antes de _wants_training)
-    if tr.get("active") and _training_exit(text):
-        _exit_training(session_id)
-        return (
-            "Has salido del modo formación. Si quieres volver a entrar, escribe 'aprender'. "
-            "Si prefieres generar propuestas, simplemente escríbela (por ejemplo: /propuesta: requisitos del cliente)."
-        ), "Formación: salida"
-
+    # === MODO FORMACIÓN DESHABILITADO: redirigir a sección Aprender ===
+    # El modo formación ahora está en una sección separada (Aprender)
     if _wants_training(text):
-        _enter_training(session_id)
         return (
-            "Modo formación activado.\n"
-            "¿Cuál es tu nivel? principiante, intermedio o experto.\n"
-            "Puedes salir cuando quieras diciendo: salir de la formación."
-        ), "Formación: activada"
+            "El modo formación ahora está disponible en la sección Aprender 📚.\n"
+            "Encontrarás contenido adaptado a tu nivel (principiante, intermedio o experto) "
+            "sobre metodologías, roles, fases, métricas y mejores prácticas.\n\n"
+            "Ve a la pestaña Aprender en el menú superior para acceder al contenido formativo."
+        ), "Formación: redirigir a sección Aprender"
 
-    if tr.get("active"):
-
-        if not tr.get("level"):
-            lv = _parse_level(text)
-            if not lv:
-                return ("Indícame tu nivel: principiante, intermedio o experto.\n"
-                        "Para terminar: salir de la formación."), "Formación: esperando nivel"
-            tr["level"] = lv
-            _set_training_state(session_id, tr)
-            return _training_intro(lv), "Formación: nivel fijado"
-
-        # Peticiones dentro de formación
-        topic, method_in_text = _training_topic_and_method(text)
-
-        # Preguntas específicas con método → responde SOLO a eso
-        if topic == "fases" and method_in_text:
-            return _training_phases_card(tr["level"], method_in_text), f"Formación: fases de {method_in_text}"
-        if topic == "roles" and method_in_text:
-            return _training_roles_card(tr["level"], method_in_text), f"Formación: roles de {method_in_text}"
-        if topic == "metricas" and method_in_text:
-            return _training_metrics_card(tr["level"], method_in_text), f"Formación: métricas de {method_in_text}"
-        if topic == "quees" and method_in_text:
+    # Intents 
+    intent, conf = ("other", 0.0)
+    if _INTENTS is not None:
+        try:
+            intent, conf = _INTENTS.predict(text)
+        except Exception:
+            pass
+    if conf >= 0.80:
+        if intent == "greet":
+            return "¡Hola! ¿Quieres generar una propuesta de proyecto o aprender un poco sobre consultoría? Si prefieres aprender, di: quiero formarme.", "Saludo (intent)."
+        if intent == "goodbye":
             return _training_define_card(tr["level"], method_in_text), f"Formación: qué es {method_in_text}"
         if topic == "ventajas" and method_in_text:
             return _training_benefits_card(tr["level"], method_in_text), f"Formación: ventajas {method_in_text}"

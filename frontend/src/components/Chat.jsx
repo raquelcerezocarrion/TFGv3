@@ -59,6 +59,11 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
         ctas.push({ type: 'accept', label: 'Aceptar propuesta' })
       }
       
+      // ALWAYS show "Quiero hacer cambios" button alongside "Aceptar propuesta"
+      if (isCompleteProposal) {
+        ctas.push({ type: 'changes', label: 'Quiero hacer cambios' })
+      }
+      
       // Employee-related options
       if (txt.includes('usar empleados') || txt.includes('cargar empleados') || (txt.includes('empleados') && txt.includes('guardad')) || txt.includes('usar empleados guardados')) {
         ctas.push({ type: 'load_employees', label: 'Cargar empleados' })
@@ -80,9 +85,47 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
       if (!suppressStart && (txt.includes('quieres comenzar') || txt.includes('quieres iniciar') || txt.includes('comenzamos') || txt.includes('empezamos')) && txt.includes('proyecto')) {
         ctas.push({ type: 'start', label: 'Iniciar proyecto' })
       }
-      if (txt.includes('hacer cambios') || txt.includes('modific') || txt.includes('realizar cambios') || txt.includes('quieres que lo modifi')) {
+      // Detect change options buttons (methodology, roles, budget) - CHECK THIS FIRST
+      const hasChangeOptions = txt.includes('__change_options__')
+      if (hasChangeOptions) {
+        ctas.push({ type: 'change_methodology', label: 'Metodologías' })
+        ctas.push({ type: 'change_roles', label: 'Roles' })
+        ctas.push({ type: 'change_budget', label: 'Presupuesto' })
+      }
+      
+      // Detect accept button after showing change options
+      if (txt.includes('__accept_after_changes__')) {
+        ctas.push({ type: 'accept', label: 'Aceptar propuesta' })
+      }
+      
+      // Detect methodology selection buttons
+      if (txt.includes('__methodology_options__')) {
+        const methodologies = ['Scrum', 'Kanban', 'XP', 'Lean', 'SAFe', 'Scrumban', 'Crystal', 'FDD']
+        methodologies.forEach(m => {
+          ctas.push({ type: 'select_methodology', label: m, data: m })
+        })
+      }
+      
+      // Detect roles selection buttons
+      if (txt.includes('__roles_options__')) {
+        // Extract roles from the previous proposal message
+        const roles = ['PM', 'Tech Lead', 'Backend Dev', 'Frontend Dev', 'QA', 'UX/UI', 'ML Engineer', 'DevOps', 'Security']
+        roles.forEach(r => {
+          ctas.push({ type: 'select_role', label: r, data: r })
+        })
+      }
+      
+      // Detect budget adjustment buttons
+      if (txt.includes('__budget_options__')) {
+        ctas.push({ type: 'increase_contingency', label: '⬆️ Aumentar contingencia' })
+        ctas.push({ type: 'decrease_contingency', label: '⬇️ Reducir contingencia' })
+      }
+      
+      // Only add changes button if not already added by isCompleteProposal AND not showing change options
+      if (!isCompleteProposal && !hasChangeOptions && (txt.includes('hacer cambios') || txt.includes('modific') || txt.includes('realizar cambios') || txt.includes('quieres que lo modifi'))) {
         ctas.push({ type: 'changes', label: 'Solicitar cambios' })
       }
+      
       return ctas
     } catch {
       return []
@@ -445,7 +488,7 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
   }
 
   // Handle CTA button clicks: send a predefined message and attempt to save
-  const handleCta = async (type) => {
+  const handleCta = async (type, data = null) => {
     try {
       if (type === 'view_pdf') {
         // Open export modal to let user generate/download the PDF
@@ -476,7 +519,94 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
       let text = ''
       if (type === 'accept') text = 'Acepto la propuesta'
       else if (type === 'start') text = 'Sí, vamos a comenzar el proyecto'
-      else if (type === 'changes') text = 'Solicito cambios en la propuesta'
+      else if (type === 'changes') {
+        // Show options for changes
+        setMessages(prev => [...prev, { 
+          role: 'assistant', 
+          content: '¿Qué aspecto de la propuesta desea modificar?\n\n__CHANGE_OPTIONS__\n\nSi finalmente no quiere realizar ningún cambio pulse el siguiente botón:\n__ACCEPT_AFTER_CHANGES__', 
+          ts: new Date().toISOString() 
+        }])
+        setSuggestedCtas([])
+        return
+      }
+      else if (type === 'change_methodology') {
+        // Show methodology options
+        setMessages(prev => [...prev, { 
+          role: 'assistant', 
+          content: 'Seleccione la metodología que desea aplicar:\n\n__METHODOLOGY_OPTIONS__', 
+          ts: new Date().toISOString() 
+        }])
+        setSuggestedCtas([])
+        return
+      }
+      else if (type === 'change_roles') {
+        // Show roles from the current proposal
+        setMessages(prev => [...prev, { 
+          role: 'assistant', 
+          content: 'Seleccione el rol que desea modificar:\n\n__ROLES_OPTIONS__', 
+          ts: new Date().toISOString() 
+        }])
+        setSuggestedCtas([])
+        return
+      }
+      else if (type === 'change_budget') {
+        // Show budget adjustment options
+        setMessages(prev => [...prev, { 
+          role: 'assistant', 
+          content: 'Ajuste el nivel de contingencia del presupuesto:\n\n__BUDGET_OPTIONS__', 
+          ts: new Date().toISOString() 
+        }])
+        setSuggestedCtas([])
+        return
+      }
+      else if (type === 'select_methodology') {
+        // User selected a specific methodology - show updated proposal as new message
+        // Find the last proposal message in the conversation
+        const lastProposalMsg = messages.find(m => 
+          m.role === 'assistant' && 
+          typeof m.content === 'string' && 
+          m.content.includes('He generado una propuesta') &&
+          m.content.includes('📌 Metodología:')
+        )
+        
+        if (lastProposalMsg) {
+          // Add user selection message first
+          const userMessage = { 
+            role: 'user', 
+            content: data, 
+            ts: new Date().toISOString() 
+          }
+          
+          // Update the methodology in the proposal content
+          const updatedContent = lastProposalMsg.content.replace(
+            /📌 Metodología: [^\n]+/,
+            `📌 Metodología: ${data}`
+          ).replace(
+            /Metodología: [A-Za-z0-9\s]+/g,
+            `Metodología: ${data}`
+          )
+          
+          // Add updated proposal as new assistant message
+          const assistantMessage = {
+            role: 'assistant',
+            content: updatedContent,
+            ts: new Date().toISOString()
+          }
+          
+          setMessages(prev => [...prev, userMessage, assistantMessage])
+          setSuggestedCtas([])
+          return
+        }
+        
+        // Fallback: if no proposal found, send message to backend
+        text = `Regenerar propuesta con metodología ${data}`
+      }
+      else if (type === 'select_role') {
+        // User selected a specific role
+        text = `Modificar rol ${data}`
+      }
+      else if (type === 'increase_contingency') text = 'Aumentar contingencia del presupuesto'
+      else if (type === 'decrease_contingency') text = 'Reducir contingencia del presupuesto'
       else return
 
       await send(text)
@@ -654,8 +784,21 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
           <div className="space-y-3 pb-4 flex flex-col">
             {messages.map((m, i) => (
               <div key={i} className={`box-border max-w-full md:max-w-[60%] break-words rounded-2xl px-3 py-2 shadow-sm ${m.role === 'user' ? 'ml-auto bg-blue-600 text-white' : 'bg-white border'}`}>
-                <div className="whitespace-pre-wrap font-sans text-[12px] leading-relaxed break-words">{m.content}</div>
-                {m.ts && <div className="text-[10px] opacity-60 mt-1">{new Date(m.ts).toLocaleString()}</div>}
+                <div className="whitespace-pre-wrap font-sans text-[12px] leading-relaxed break-words">
+                  {/* Clean content by removing placeholder markers */}
+                  {typeof m.content === 'string' 
+                    ? m.content
+                        .replace(/__CHANGE_OPTIONS__/g, '')
+                        .replace(/__ACCEPT_AFTER_CHANGES__/g, '')
+                        .replace(/__METHODOLOGY_OPTIONS__/g, '')
+                        .replace(/__ROLES_OPTIONS__/g, '')
+                        .replace(/__BUDGET_OPTIONS__/g, '')
+                        .replace(/Si finalmente no quiere realizar ningún cambio pulse el siguiente botón:\s*/g, '')
+                        .trim()
+                    : m.content
+                  }
+                </div>
+                <div className="text-[10px] opacity-60 mt-1">{m.ts && new Date(m.ts).toLocaleString()}</div>
 
                 {/* Render CTA buttons and phase buttons for this assistant message (if any) */}
                 {m.role === 'assistant' && (() => {
@@ -818,25 +961,56 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
                   }
 
                   const ctas = detectCtas(m.content)
-                  const phases = extractPhasesFromText(m.content)
-                  if (( !ctas || ctas.length === 0 ) && ( !phases || phases.length === 0 )) return null
+                  if (!ctas || ctas.length === 0) return null
+                  
+                  // Check if this is the change options message
+                  const hasChangeOptions = typeof m.content === 'string' && m.content.includes('__CHANGE_OPTIONS__')
+                  
+                  if (hasChangeOptions) {
+                    // Separate change option buttons from accept button
+                    const changeButtons = ctas.filter(c => ['change_methodology', 'change_roles', 'change_budget'].includes(c.type))
+                    const acceptButton = ctas.filter(c => c.type === 'accept')
+                    
+                    return (
+                      <div className="mt-2 flex flex-col gap-3">
+                        {/* Change option buttons */}
+                        {changeButtons.length > 0 && (
+                          <div className="flex flex-wrap gap-2">
+                            {changeButtons.map((c, idx) => (
+                              <button key={idx} className="px-3 py-1 rounded-md border bg-white hover:bg-gray-50 text-sm" onClick={() => handleCta(c.type)}>
+                                {c.label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        
+                        {/* Text separator */}
+                        <div className="text-sm text-gray-600 italic">
+                          Si finalmente no quiere realizar ningún cambio pulse el siguiente botón:
+                        </div>
+                        
+                        {/* Accept button */}
+                        {acceptButton.length > 0 && (
+                          <div className="flex flex-wrap gap-2">
+                            {acceptButton.map((c, idx) => (
+                              <button key={idx} className="px-3 py-1 rounded-md border bg-white hover:bg-gray-50 text-sm" onClick={() => handleCta(c.type)}>
+                                {c.label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  }
+                  
+                  // Regular button rendering for other messages
                   return (
                     <div className="mt-2 flex flex-col gap-2">
                       {ctas && ctas.length > 0 && (
                         <div className="flex flex-wrap gap-2">
                           {ctas.map((c, idx) => (
-                            <button key={idx} className="px-3 py-1 rounded-md border bg-white hover:bg-gray-50 text-sm" onClick={() => handleCta(c.type)}>
+                            <button key={idx} className="px-3 py-1 rounded-md border bg-white hover:bg-gray-50 text-sm" onClick={() => handleCta(c.type, c.data)}>
                               {c.label}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-
-                      {phases && phases.length > 0 && (
-                        <div className="flex flex-wrap gap-2">
-                          {phases.map((p, idx) => (
-                            <button key={`phase-${idx}`} className="px-3 py-1 rounded-md border bg-sky-50 hover:bg-sky-100 text-sm" onClick={() => handlePhaseClick(p)}>
-                              {p}
                             </button>
                           ))}
                         </div>
