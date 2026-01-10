@@ -368,10 +368,13 @@ export default function Aprender({ token }) {
                             
                             // Subtítulos (con : al final o en mayúsculas)
                             if (trimmed.endsWith(':') || (trimmed === trimmed.toUpperCase() && trimmed.length > 3 && trimmed.length < 50)) {
+                              // Detectar si el texto ya contiene un emoji
+                              const hasEmoji = /[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/u.test(trimmed)
+                              
                               return (
                                 <div key={idx} className="mt-6 mb-3">
                                   <h4 className="text-lg font-semibold text-blue-800 flex items-center gap-2">
-                                    <span className="text-xl">💡</span>
+                                    {!hasEmoji && <span className="text-xl">💡</span>}
                                     {trimmed}
                                   </h4>
                                 </div>

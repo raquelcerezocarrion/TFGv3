@@ -3003,7 +3003,7 @@ def _one_liner_from_info(info: Dict[str, Any], name: str) -> str:
 def _training_topic_and_method(text: str) -> Tuple[Optional[str], Optional[str]]:
     """
     Detecta tema y método solicitado.
-    tema ∈ {'metodologias','fases','roles','metricas','quees','ventajas'} o None
+    tema ∈ {'metodologias','fases','roles','metricas','quees','ventajas','desventajas'} o None
     """
     t = _norm(text)
     topic = None
@@ -3019,6 +3019,8 @@ def _training_topic_and_method(text: str) -> Tuple[Optional[str], Optional[str]]
         topic = "quees"
     if any(x in t for x in ["ventaja", "beneficio", "cuando usar", "cuándo usar", "pros"]):
         topic = "ventajas"
+    if any(x in t for x in ["desventaja", "riesgo", "cuando evitar", "cuándo evitar", "cons", "contras", "limitacion"]):
+        topic = "desventajas"
 
     methods_mentioned = _mentioned_methods(text)
     method = methods_mentioned[0] if methods_mentioned else None
@@ -3218,13 +3220,95 @@ def _training_define_card(level: str, method: str) -> str:
 
 def _training_benefits_card(level: str, method: str) -> str:
     m = normalize_method_name(method)
-    fit = METHODOLOGIES.get(m, {}).get("encaja_bien_si") or []
-    avoid = METHODOLOGIES.get(m, {}).get("evitar_si") or []
+    ventajas = METHODOLOGIES.get(m, {}).get("ventajas") or []
+    fit = METHODOLOGIES.get(m, {}).get("mejor_si") or []
     lines = [f"Ventajas y cuándo usar {m} — nivel {_level_label(level)}"]
-    if fit:
-        lines.append("Va especialmente bien si: " + "; ".join(fit))
-    if level != "beginner" and avoid:
-        lines.append("Precauciones: " + "; ".join(avoid))
+    
+    if level == "beginner":
+        # Principiante: solo 2 ventajas principales, muy simple
+        if ventajas:
+            lines.append("\n✅ Ventajas principales:")
+            for v in ventajas[:2]:  # Solo las 2 primeras
+                lines.append(f"  • {v.split(':')[0]}" if ':' in v else f"  • {v}")
+        if fit:
+            lines.append(f"\n💡 Ideal para: {fit[0]}")
+    
+    elif level == "intermediate":
+        # Intermedio: todas las ventajas + contexto de cuándo usar
+        if ventajas:
+            lines.append("\n✅ Ventajas principales:")
+            for v in ventajas:
+                lines.append(f"  • {v}")
+        if fit:
+            lines.append("\n💡 Encaja especialmente bien si:")
+            for f in fit:
+                lines.append(f"  • {f}")
+    
+    else:  # expert
+        # Experto: todo el detalle + análisis
+        if ventajas:
+            lines.append("\n✅ Ventajas principales:")
+            for i, v in enumerate(ventajas, 1):
+                lines.append(f"  {i}. {v}")
+        if fit:
+            lines.append("\n💡 Contextos óptimos de aplicación:")
+            for i, f in enumerate(fit, 1):
+                lines.append(f"  {i}. {f}")
+        # Añadir análisis estratégico
+        practicas = METHODOLOGIES.get(m, {}).get("practicas") or []
+        if practicas:
+            lines.append(f"\n🔧 Prácticas clave que habilitan estas ventajas: {', '.join(practicas[:4])}")
+    
+    return "\n".join(lines)
+
+def _training_disadvantages_card(level: str, method: str) -> str:
+    """Tarjeta de desventajas y cuándo evitar la metodología."""
+    m = normalize_method_name(method)
+    desventajas = METHODOLOGIES.get(m, {}).get("desventajas") or []
+    avoid = METHODOLOGIES.get(m, {}).get("evitar_si") or []
+    risks = METHODOLOGIES.get(m, {}).get("riesgos") or []
+    lines = [f"Desventajas y cuándo evitar {m} — nivel {_level_label(level)}"]
+    
+    if level == "beginner":
+        # Principiante: solo 2 desventajas principales, muy simple
+        if desventajas:
+            lines.append("\n⚠️ Limitaciones principales:")
+            for d in desventajas[:2]:  # Solo las 2 primeras
+                lines.append(f"  • {d.split(':')[0]}" if ':' in d else f"  • {d}")
+        if avoid:
+            lines.append(f"\n❌ No usar si: {avoid[0]}")
+    
+    elif level == "intermediate":
+        # Intermedio: todas las desventajas + cuándo evitar
+        if desventajas:
+            lines.append("\n⚠️ Desventajas principales:")
+            for d in desventajas:
+                lines.append(f"  • {d}")
+        if avoid:
+            lines.append("\n❌ Evitar si:")
+            for a in avoid:
+                lines.append(f"  • {a}")
+    
+    else:  # expert
+        # Experto: todo el detalle + riesgos + análisis
+        if desventajas:
+            lines.append("\n⚠️ Desventajas y trade-offs:")
+            for i, d in enumerate(desventajas, 1):
+                lines.append(f"  {i}. {d}")
+        if avoid:
+            lines.append("\n❌ Contextos donde evitar:")
+            for i, a in enumerate(avoid, 1):
+                lines.append(f"  {i}. {a}")
+        if risks:
+            lines.append("\n🚨 Riesgos de implementación:")
+            for i, r in enumerate(risks, 1):
+                lines.append(f"  {i}. {r}")
+        # Añadir recomendaciones de mitigación
+        lines.append("\n🛡️ Recomendación: Evaluar estos factores antes de adoptar. Considerar mitigaciones específicas.")
+    
+    if not desventajas and not avoid and not risks:
+        lines.append(f"No hay desventajas críticas documentadas para {m}.")
+    
     return "\n".join(lines)
 
 
@@ -4073,6 +4157,8 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             return _training_define_card(tr["level"], method_in_text), f"Formación: qué es {method_in_text}"
         if topic == "ventajas" and method_in_text:
             return _training_benefits_card(tr["level"], method_in_text), f"Formación: ventajas {method_in_text}"
+        if topic == "desventajas" and method_in_text:
+            return _training_disadvantages_card(tr["level"], method_in_text), f"Formación: desventajas {method_in_text}"
 
         # Preguntas generales sin método
         if topic == "metodologias":

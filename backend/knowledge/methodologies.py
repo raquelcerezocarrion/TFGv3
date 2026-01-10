@@ -19,6 +19,16 @@ METHODOLOGIES: Dict[str, Dict] = {
             "Plazos y alcance rígidos sin margen de negociación",
             "Necesidad de operación 24/7 con interrupciones constantes"
         ],
+        "ventajas": [
+            "Feedback rápido y frecuente: entrega incremental cada sprint",
+            "Alta transparencia y visibilidad del progreso real del equipo",
+            "Facilita la adaptación rápida a cambios de requisitos"
+        ],
+        "desventajas": [
+            "Requiere compromiso constante del Product Owner y stakeholders",
+            "Puede generar ritualismo si no se enfoca en valor real",
+            "Difícil de aplicar con equipos distribuidos sin herramientas adecuadas"
+        ],
         "practicas": ["Sprints", "Daily", "Review", "Retros", "Product Backlog", "Definition of Done"],
         "riesgos": ["Scope creep si no hay DoR/DoD claros", "Ritualismo sin foco en valor"],
         "fuentes": [
@@ -37,6 +47,16 @@ METHODOLOGIES: Dict[str, Dict] = {
             "Necesidad de visualizar cuellos de botella y mejorar lead time"
         ],
         "evitar_si": ["Se requieren compromisos por sprint/fecha fija estricta"],
+        "ventajas": [
+            "Flexibilidad total: no requiere iteraciones fijas ni compromisos de fecha",
+            "Visualización clara de cuellos de botella y flujo de trabajo",
+            "Fácil de implementar de forma evolutiva sobre procesos existentes"
+        ],
+        "desventajas": [
+            "Falta de cadencia regular puede dificultar la planificación a medio plazo",
+            "Requiere disciplina estricta para respetar límites WIP",
+            "Puede ser difícil medir velocidad o predecir entregas"
+        ],
         "practicas": ["Tablero de flujo", "Límites WIP", "Lead/Cycle time", "Políticas explícitas"],
         "riesgos": ["Si no se respetan WIP → multitarea y bloqueos", "Falta de cadencia si el contexto la exige"],
         "fuentes": [
@@ -61,6 +81,16 @@ METHODOLOGIES: Dict[str, Dict] = {
             "Cambios frecuentes sin perder visibilidad del flujo"
         ],
         "evitar_si": ["Contextos que exigen gobernanza pesada/escala corporativa formal"],
+        "ventajas": [
+            "Combina lo mejor de Scrum y Kanban: planificación + flexibilidad",
+            "Adaptable a equipos con trabajo variado (desarrollo + soporte)",
+            "Reduce overhead de ceremonias manteniendo control de flujo"
+        ],
+        "desventajas": [
+            "Puede generar confusión si no se define claramente qué tomar de cada marco",
+            "Requiere madurez del equipo para autogestionar la transición",
+            "Menor estructura puede dificultar la coordinación en equipos grandes"
+        ],
         "practicas": ["Backlog ligero", "Tablero con WIP", "Revisiones periódicas"],
         "riesgos": ["Ambigüedad de cadencia si no se define una mínima"],
         "fuentes": [
@@ -76,6 +106,16 @@ METHODOLOGIES: Dict[str, Dict] = {
         "vision": "Prácticas técnicas que elevan la calidad y la velocidad con seguridad.",
         "mejor_si": ["Calidad/fiabilidad crítica (pagos/seguridad/tiempo real)", "Necesidad de feedback técnico muy rápido"],
         "evitar_si": ["Organizaciones que no aceptan prácticas técnicas intensivas"],
+        "ventajas": [
+            "Calidad de código excepcional mediante TDD y pair programming",
+            "Diseño emergente: el código evoluciona sin acumular deuda técnica",
+            "Feedback técnico inmediato reduce riesgos de arquitectura"
+        ],
+        "desventajas": [
+            "Requiere desarrolladores senior y cultura de ingeniería madura",
+            "Pair programming puede percibirse como 'costoso' o incómodo",
+            "Curva de aprendizaje alta para equipos sin experiencia en TDD"
+        ],
         "practicas": ["TDD", "Pair Programming", "Refactorización continua", "Integración Continua"],
         "riesgos": ["Requiere disciplina y cultura de ingeniería madura"],
         "fuentes": [
@@ -91,6 +131,16 @@ METHODOLOGIES: Dict[str, Dict] = {
         "vision": "Eliminar desperdicio y acelerar aprendizaje (Construir–Medir–Aprender).",
         "mejor_si": ["Hipótesis de negocio con alta incertidumbre (producto/mercado)"],
         "evitar_si": ["Gobernanza rígida que impide iteraciones y experimentación"],
+        "ventajas": [
+            "Enfoque en eliminar desperdicio y maximizar valor al cliente",
+            "Experimentación rápida mediante MVP reduce riesgos de mercado",
+            "Métricas accionables orientadas a aprendizaje validado"
+        ],
+        "desventajas": [
+            "MVP mal interpretado puede resultar en productos de baja calidad",
+            "Requiere cambio cultural profundo hacia experimentación",
+            "Puede ser difícil aplicar en entornos regulados o con alta aversión al riesgo"
+        ],
         "practicas": ["MVP", "Métricas accionables", "Kaizen", "Mapas de valor"],
         "riesgos": ["Mala interpretación de MVP → calidad insuficiente"],
         "fuentes": [
@@ -112,6 +162,16 @@ METHODOLOGIES: Dict[str, Dict] = {
         "vision": "Familia de procesos ligeros centrados en personas y comunicación.",
         "mejor_si": ["Equipos pequeños, riesgo moderado, alta comunicación directa"],
         "evitar_si": ["Necesidad de escalado o coordinación multi-equipo formal"],
+        "ventajas": [
+            "Alta flexibilidad: se adapta al tamaño y criticidad del proyecto",
+            "Énfasis en personas y comunicación reduce fricción organizacional",
+            "Procesos ligeros y no prescriptivos facilitan adopción"
+        ],
+        "desventajas": [
+            "Falta de estructura puede generar problemas en proyectos complejos",
+            "Requiere equipos muy comunicativos y autoorganizados",
+            "Difícil de escalar a múltiples equipos sin coordinación adicional"
+        ],
         "practicas": ["Ajuste del proceso según tamaño y criticidad", "Énfasis en comunicación"],
         "riesgos": ["Poca estructura para contextos complejos o regulados"],
         "fuentes": [
@@ -127,6 +187,16 @@ METHODOLOGIES: Dict[str, Dict] = {
         "vision": "Planificación y entrega orientadas a 'features' con modelado de dominio.",
         "mejor_si": ["Dominios con muchas funcionalidades discretas y claras"],
         "evitar_si": ["Altísima incertidumbre o descubrimiento de producto"],
+        "ventajas": [
+            "Orientación a features facilita planificación y comunicación con negocio",
+            "Modelado de dominio proporciona arquitectura sólida desde el inicio",
+            "Progreso medible: cada feature completada es valor tangible"
+        ],
+        "desventajas": [
+            "Rigidez ante cambios continuos de requisitos o alcance",
+            "Requiere modelado upfront que puede ser costoso",
+            "Menos ágil que Scrum/Kanban en contextos de alta incertidumbre"
+        ],
         "practicas": ["Lista de features", "Plan por feature", "Diseño por feature"],
         "riesgos": ["Puede ser rígido si el alcance cambia continuamente"],
         "fuentes": [
@@ -163,6 +233,16 @@ METHODOLOGIES: Dict[str, Dict] = {
         "vision": "Marco para escalar Agile con coordinación a nivel programa/portafolio.",
         "mejor_si": ["Múltiples equipos/áreas, coordinación corporativa, cumplimiento/regulación"],
         "evitar_si": ["Proyectos pequeños de un solo equipo (sobrecoste)"],
+        "ventajas": [
+            "Coordinación efectiva de múltiples equipos mediante ARTs y Program Increments",
+            "Alineación estratégica entre portafolio, programa y equipos",
+            "Estructura clara para cumplimiento regulatorio en grandes organizaciones"
+        ],
+        "desventajas": [
+            "Sobrecarga de procesos y ceremonias puede ralentizar equipos pequeños",
+            "Alta curva de aprendizaje y necesidad de certificaciones costosas",
+            "Puede percibirse como 'Waterfall disfrazado' si se implementa mal"
+        ],
         "practicas": ["Program Increments", "ARTs", "Lean-Agile Mindset"],
         "riesgos": ["Sobrecarga de procesos si el contexto no lo requiere"],
         "fuentes": [
