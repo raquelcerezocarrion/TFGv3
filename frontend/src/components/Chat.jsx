@@ -115,14 +115,37 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
         wsRef.current = ws
         ws.onmessage = async (evt) => {
           const content = evt.data
-          setMessages(prev => [...prev, { role: 'assistant', content, ts: new Date().toISOString() }])
+          
+          // Check if we already have a complete proposal message
+          // If so, ignore any subsequent messages from the backend
+          const hasCompleteProposal = messagesRef.current.some(m => 
+            m.role === 'assistant' && 
+            typeof m.content === 'string' && 
+            m.content.includes('✅ He cargado') && 
+            m.content.includes('empleados de tu base de datos') &&
+            m.content.includes('Asignación por rol') &&
+            m.content.includes('¿Quieres comenzar el proyecto ahora?')
+          )
+          
+          if (hasCompleteProposal) {
+            // Don't show any more messages after the complete proposal
+            return
+          }
           
           // 🔥 Auto-detectar si el backend pide JSON de empleados y cargarlos automáticamente
           const normalized = content.toLowerCase()
-          if (normalized.includes('envíame la lista de empleados') || 
+          const isAskingForEmployees = normalized.includes('envíame la lista de empleados') || 
               normalized.includes('enviame la lista de empleados') ||
               normalized.includes('envíame json') ||
-              (normalized.includes('empleados') && normalized.includes('json'))) {
+              (normalized.includes('empleados') && normalized.includes('json'))
+          
+          // Don't show the message asking for employees JSON - just send it silently
+          if (!isAskingForEmployees) {
+            setMessages(prev => [...prev, { role: 'assistant', content, ts: new Date().toISOString() }])
+          }
+          
+          // If backend is asking for employees, load and send them automatically
+          if (isAskingForEmployees) {
             
             // Cargar empleados de la API
             try {
@@ -139,24 +162,15 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
                   availability_pct: emp.availability_pct || 100
                 }))
                 
-                // Enviar automáticamente el JSON
+                // Enviar automáticamente el JSON sin mostrar mensajes intermedios
                 const jsonString = JSON.stringify(employeesJson, null, 2)
                 
-                // Mostrar mensaje del usuario indicando que se están cargando empleados
+                // Enviar el JSON directamente sin delays ni mensajes intermedios
                 setTimeout(() => {
-                  setMessages(prev => [...prev, { 
-                    role: 'user', 
-                    content: `📋 Cargando ${employeesJson.length} empleados guardados...`, 
-                    ts: new Date().toISOString() 
-                  }])
-                  
-                  // Enviar el JSON después de un breve delay
-                  setTimeout(() => {
-                    if (ws.readyState === WebSocket.OPEN) {
-                      ws.send(jsonString)
-                    }
-                  }, 500)
-                }, 300)
+                  if (ws.readyState === WebSocket.OPEN) {
+                    ws.send(jsonString)
+                  }
+                }, 200)
               } else {
                 // No hay empleados guardados
                 setTimeout(() => {
@@ -189,7 +203,24 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
   // Antes se ignoraba el array vacío y se mostraba el mensaje inicial del asistente.
   useEffect(() => {
     if (!Array.isArray(loadedMessages)) return
-    const mapped = (loadedMessages || []).map(m => ({ role: m.role, content: m.content, ts: m.ts || new Date().toISOString() }))
+    let mapped = (loadedMessages || []).map(m => ({ role: m.role, content: m.content, ts: m.ts || new Date().toISOString() }))
+    
+    // Truncate messages after the complete proposal message (if found)
+    // This prevents showing follow-up messages after the final proposal
+    const completeProposalIndex = mapped.findIndex(m => 
+      m.role === 'assistant' && 
+      typeof m.content === 'string' && 
+      m.content.includes('✅ He cargado') && 
+      m.content.includes('empleados de tu base de datos') &&
+      m.content.includes('Asignación por rol') &&
+      m.content.includes('¿Quieres comenzar el proyecto ahora?')
+    )
+    
+    if (completeProposalIndex !== -1) {
+      // Keep messages up to and including the complete proposal, discard everything after
+      mapped = mapped.slice(0, completeProposalIndex + 1)
+    }
+    
     setMessages(mapped)
     setUserHasScrolled(false) // Reset scroll lock on new messages
   }, [loadedMessages])
@@ -318,7 +349,21 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
   const payload = { session_id: sessionId, message: text }
   if (phase) payload.phase = phase
   const { data } = await axios.post(`${apiBase}/chat/message`, payload, { headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, timeout: 5000 })
-        setMessages(prev => [...prev, { role: 'assistant', content: data.reply, ts: new Date().toISOString() }])
+        
+        // Check if we already have a complete proposal message
+        // If so, ignore any subsequent messages from the backend
+        const hasCompleteProposal = messagesRef.current.some(m => 
+          m.role === 'assistant' && 
+          typeof m.content === 'string' && 
+          m.content.includes('✅ He cargado') && 
+          m.content.includes('empleados de tu base de datos') &&
+          m.content.includes('Asignación por rol') &&
+          m.content.includes('¿Quieres comenzar el proyecto ahora?')
+        )
+        
+        if (!hasCompleteProposal) {
+          setMessages(prev => [...prev, { role: 'assistant', content: data.reply, ts: new Date().toISOString() }])
+        }
       } catch (e) {
         const msg = e?.response?.data?.detail || e?.message || 'Error enviando mensaje.'
         setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${msg}`, ts: new Date().toISOString() }])
@@ -497,67 +542,42 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
         }))
         const jsonString = JSON.stringify(employeesJson, null, 2)
 
-        // show user message and then send via WS if available
-        const userMsg = { role: 'user', content: `📋 Cargando ${employeesJson.length} empleados guardados...`, ts: new Date().toISOString() }
-        setMessages(prev => [...prev, userMsg])
-
-        // Also render a readable preview of the saved employees in the chat
-        try {
-          const previewLines = employeesJson.map(emp => {
-            const skills = Array.isArray(emp.skills) ? emp.skills.join(', ') : String(emp.skills || '')
-            return `• ${emp.name} — ${emp.role} — ${skills} — ${emp.seniority} — ${emp.availability_pct}%`
-          })
-          const preview = ['🔎 Empleados guardados: ', ...previewLines].join('\n')
-          setMessages(prev => [...prev, { role: 'assistant', content: preview, ts: new Date().toISOString() }])
-        } catch (e) {
-          // If preview building fails, ignore silently
-        }
-
+        // NO mostrar mensajes intermedios - enviar directamente
         // First, send a textual trigger so the backend sets the "awaiting_employees_data" context
-        // and asks the assistant to request the JSON. This mirrors the previous manual flow.
         try {
-          await send('cargar empleados')
+          // Enviar directamente sin mostrar el mensaje en el chat
+          if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+            wsRef.current.send('cargar empleados')
+          } else {
+            // HTTP fallback
+            const payload = { session_id: sessionId, message: 'cargar empleados' }
+            await axios.post(`${apiBase}/chat/message`, payload, { 
+              headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, 
+              timeout: 5000 
+            })
+          }
         } catch (e) {
           // ignore send errors here; we'll still attempt to deliver the JSON
         }
 
-        // Wait briefly for the assistant/back-end to respond asking for the JSON.
-        // Poll messagesRef for up to 3s for an assistant message that indicates readiness.
-        const waitForAssistantReady = async (timeoutMs = 3000) => {
-          const deadline = Date.now() + timeoutMs
-          const initialLen = Array.isArray(messagesRef.current) ? messagesRef.current.length : 0
-          const readyRegex = /env[ií]ame la lista de empleados|enviame la lista de empleados|env[ií]ame json|empleados.*json|env[ií]ame la lista/i
-          while (Date.now() < deadline) {
-            await new Promise(r => setTimeout(r, 200))
-            const msgs = messagesRef.current || []
-            if (msgs.length <= initialLen) continue
-            // search recent messages for readiness
-            for (let i = msgs.length - 1; i >= Math.max(0, initialLen); i--) {
-              const m = msgs[i]
-              if (m && m.role === 'assistant' && typeof m.content === 'string') {
-                if (readyRegex.test(m.content.toLowerCase())) return true
-              }
-            }
-          }
-          return false
-        }
-
-        const isReady = await waitForAssistantReady(3000)
-
-        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-          if (isReady) {
+        // Wait briefly for the backend to be ready, then send the JSON
+        setTimeout(async () => {
+          if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
             wsRef.current.send(jsonString)
           } else {
-            // fallback: small delay then send anyway
-            setTimeout(() => { if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) wsRef.current.send(jsonString) }, 500)
+            // HTTP fallback
+            try {
+              const payload = { session_id: sessionId, message: jsonString }
+              await axios.post(`${apiBase}/chat/message`, payload, { 
+                headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, 
+                timeout: 5000 
+              })
+            } catch (err) {
+              console.error('Error sending employees JSON via HTTP:', err)
+            }
           }
-        } else {
-          setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ No hay conexión WebSocket. Pega los empleados manualmente o inicia el servidor.', ts: new Date().toISOString() }])
-        }
+        }, 500)
 
-        // Attempt to save the chat including the new user message
-        const updated = [...messages, userMsg]
-        await saveChatIfNeeded(updated)
       } else {
         setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ No tienes empleados guardados en la sección "Empleados".', ts: new Date().toISOString() }])
       }
@@ -642,6 +662,20 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
                         </div>
                       </div>
                     )
+                  }
+
+                  // Special case: Long proposal message ending with "¿Quieres comenzar el proyecto ahora?"
+                  // This is the complete proposal with employees, assignments, gaps, and phases
+                  // We should NOT show any CTAs that would send more messages to the backend
+                  const isCompleteProposal = typeof m.content === 'string' && 
+                    m.content.includes('✅ He cargado') && 
+                    m.content.includes('empleados de tu base de datos') &&
+                    m.content.includes('Asignación por rol') &&
+                    m.content.includes('¿Quieres comenzar el proyecto ahora?')
+                  
+                  if (isCompleteProposal) {
+                    // Don't render any CTAs - this is the final message
+                    return null
                   }
 
                   const ctas = detectCtas(m.content)
