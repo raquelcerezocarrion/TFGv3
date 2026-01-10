@@ -42,6 +42,12 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
     try {
       if (!raw) return []
       const txt = String(raw).toLowerCase()
+      
+      // Don't detect CTAs in the initial welcome message
+      if (txt.includes('hola, soy el asistente de propuestas') && txt.includes('recomendaciones de uso importantes')) {
+        return []
+      }
+      
       const ctas = []
       if (txt.includes('acept') || txt.includes('acepto la propuesta') || txt.includes('aceptar la propuesta')) {
         ctas.push({ type: 'accept', label: 'Aceptar propuesta' })
@@ -230,7 +236,7 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
     // Si loadedMessages es un array con mensajes, no mostrar el greeting
     if (Array.isArray(loadedMessages) && loadedMessages.length > 0) return
     if (messages.length > 0) return
-    setMessages([{ role: 'assistant', content: '👋 Hola, soy el asistente de propuestas. Puedes escribir "aprender" para entrar en modo formación y aprender sobre metodologías, o directamente escribe tu propuesta (por ejemplo: /propuesta: requisitos del cliente).', ts: new Date().toISOString() }])
+    setMessages([{ role: 'assistant', content: '👋 Hola, soy el asistente de propuestas. Puedes escribir "aprender" para entrar en modo formación y aprender sobre metodologías, o directamente escribe tu propuesta (por ejemplo: /propuesta: requisitos del cliente).\n\n📋 Recomendaciones de uso importantes:\nLa plataforma ha sido diseñada para ser muy intuitiva. ✨ Simplemente siga las indicaciones y pulse los botones que aparecerán en cada paso para avanzar de forma guiada en la configuración de su proyecto.\n\n⚠️ Es importante que utilice los botones de "Aceptar" ✅ o "Terminar" ✅ cuando aparezcan, ya que estos le permitirán avanzar correctamente a las siguientes fases del proceso.', ts: new Date().toISOString() }])
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadedMessages])
 
@@ -638,30 +644,8 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
                   const isLoadedEmployeesMsg = typeof m.content === 'string' && loadedEmployeesRegex.test(m.content.trim())
 
                   if (isLoadedEmployeesMsg) {
-                    return (
-                      <div className="mt-2 flex flex-col gap-2">
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            className="px-3 py-1 rounded-md border bg-white hover:bg-gray-50 text-sm"
-                            onClick={() => {
-                              setSuggestedCtas([])
-                              // Replace any messages after (and including) this assistant message
-                              setMessages(prev => {
-                                try {
-                                  const idx = i
-                                  const head = Array.isArray(prev) ? prev.slice(0, idx) : []
-                                  return [...head, { role: 'assistant', content: 'Su proyecto esta listo y que puede descargar el pdf', ts: new Date().toISOString() }]
-                                } catch {
-                                  return [{ role: 'assistant', content: 'Su proyecto esta listo y que puede descargar el pdf', ts: new Date().toISOString() }]
-                                }
-                              })
-                            }}
-                          >
-                            Aceptar propuesta
-                          </button>
-                        </div>
-                      </div>
-                    )
+                    // No mostrar ningún botón para el mensaje corto de empleados cargados
+                    return null
                   }
 
                   // Special case: Long proposal message ending with "¿Quieres comenzar el proyecto ahora?"
