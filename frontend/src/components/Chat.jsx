@@ -569,46 +569,8 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
         text = 'desglose presupuesto'
       }
       else if (type === 'select_methodology') {
-        // User selected a specific methodology - show updated proposal as new message
-        // Find the last proposal message in the conversation
-        const lastProposalMsg = messages.find(m => 
-          m.role === 'assistant' && 
-          typeof m.content === 'string' && 
-          m.content.includes('He generado una propuesta') &&
-          m.content.includes('📌 Metodología:')
-        )
-        
-        if (lastProposalMsg) {
-          // Add user selection message first
-          const userMessage = { 
-            role: 'user', 
-            content: data, 
-            ts: new Date().toISOString() 
-          }
-          
-          // Update the methodology in the proposal content
-          const updatedContent = lastProposalMsg.content.replace(
-            /📌 Metodología: [^\n]+/,
-            `📌 Metodología: ${data}`
-          ).replace(
-            /Metodología: [A-Za-z0-9\s]+/g,
-            `Metodología: ${data}`
-          )
-          
-          // Add updated proposal as new assistant message
-          const assistantMessage = {
-            role: 'assistant',
-            content: updatedContent,
-            ts: new Date().toISOString()
-          }
-          
-          setMessages(prev => [...prev, userMessage, assistantMessage])
-          setSuggestedCtas([])
-          return
-        }
-        
-        // Fallback: if no proposal found, send message to backend
-        text = `Regenerar propuesta con metodología ${data}`
+        // User selected a specific methodology - send to backend to apply the change
+        text = `/cambiar: ${data}`
       }
       else if (type === 'select_role') {
         // User selected a specific role - show dedication options
@@ -630,7 +592,7 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
         return
       }
       else if (type === 'select_dedication') {
-        // User selected a dedication level - update proposal with new role dedication
+        // User selected a dedication level - send to backend to update role
         const lastDedicationMsg = messages.findLast(m => 
           m.role === 'assistant' && 
           m._selectedRole
@@ -639,52 +601,16 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
         if (lastDedicationMsg) {
           const roleName = lastDedicationMsg._selectedRole
           const dedication = data // x0.5, x1, or x2
-          
-          // Find the last proposal message
-          const lastProposalMsg = messages.find(m => 
-            m.role === 'assistant' && 
-            typeof m.content === 'string' && 
-            m.content.includes('He generado una propuesta') &&
-            m.content.includes('👥 Equipo:')
-          )
-          
-          if (lastProposalMsg) {
-            // Add user selection message
-            const userMessage = { 
-              role: 'user', 
-              content: dedication, 
-              ts: new Date().toISOString() 
-            }
-            
-            // Update the role dedication in the team section
-            // Match patterns like "Backend Dev x2" or "PM x0.5"
-            const rolePattern = new RegExp(`(${roleName}\\s+x)[0-9.]+`, 'g')
-            const updatedContent = lastProposalMsg.content.replace(
-              rolePattern,
-              `$1${dedication.substring(1)}` // Remove the 'x' from dedication
-            )
-            
-            // Add updated proposal as new assistant message
-            const assistantMessage = {
-              role: 'assistant',
-              content: updatedContent,
-              ts: new Date().toISOString()
-            }
-            
-            setMessages(prev => [...prev, userMessage, assistantMessage])
-            setSuggestedCtas([])
-            return
-          }
+          text = `/cambiar: ${roleName} ${dedication}`
+        } else {
+          text = `Modificar dedicación`
         }
-        
-        // Fallback
-        text = `Modificar dedicación`
       }
       else if (type === 'increase_contingency') text = 'Aumentar contingencia del presupuesto'
       else if (type === 'decrease_contingency') text = 'Reducir contingencia del presupuesto'
       else if (type === 'set_contingency') {
         // User clicked a contingency percentage button - send command to backend
-        text = `contingencia a ${data}%`
+        text = `/cambiar: contingencia a ${data}%`
       }
       else return
 

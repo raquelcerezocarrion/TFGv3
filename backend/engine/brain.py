@@ -2298,6 +2298,11 @@ def _parse_team_patch(text: str) -> Optional[Dict[str, Any]]:
 
     ops: List[Dict[str, Any]] = []
 
+    # Formato directo: "Backend Dev x2" o "PM x0.5"
+    for m in re.finditer(r"([a-zA-Z][a-zA-Z\s/]*?)\s+x\s*(\d+(?:[.,]\d+)?)", t):
+        role, num = m.groups()
+        ops.append({"op": "set", "role": role.strip(), "count": _to_float(num)})
+
     # Buscar patrones 'añade 0.5 qa' o 'añade qa' (sin número -> 1)
     for m in re.finditer(fr"{add_verbs}\s+(?:(\d+[.,]?\d*)\s+)?([a-zA-Z\s/]+)", t):
         num, role = m.groups()
@@ -4604,7 +4609,15 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
         if patch:
             if not proposal:
                 return "Primero necesito una propuesta en esta sesión. Usa '/propuesta: ...' y después propón cambios.", "Cambiar: sin propuesta."
-            return _make_pending_patch(session_id, patch, proposal, req_text)
+            # Aplicar cambio directamente sin pedir confirmación
+            new_plan = _apply_patch(proposal, patch)
+            set_last_proposal(session_id, new_plan, req_text)
+            try:
+                save_proposal(session_id, req_text, new_plan)
+                log_message(session_id, "assistant", f"[CAMBIO APLICADO → {patch.get('type')}]")
+            except Exception:
+                pass
+            return _pretty_proposal(new_plan), f"Cambio aplicado ({patch.get('type')})."
         return "No entendí qué cambiar. Puedes usar ejemplos: '/cambiar: añade 0.5 QA', '/cambiar: contingencia a 15%'", "Cambiar: sin parseo."
 
     # Cambio natural de metodología: consejo + confirmación
