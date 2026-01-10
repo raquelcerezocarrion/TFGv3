@@ -4380,15 +4380,19 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             pass
         prompt = (
             "¡Genial, propuesta aprobada! 🎉\n\n"
-            "Para asignar las personas más adecuadas a cada rol en cada fase, tengo dos opciones:\n\n"
-            "1️⃣ **Usar empleados guardados** → Si tienes empleados registrados en la sección 'Empleados', "
-            "puedo cargar automáticamente esa información y sugerirte quién encaja mejor en cada rol según "
-            "sus skills, disponibilidad y seniority.\n\n"
-            "2️⃣ **Introducir plantilla manualmente** → Puedes pegarme la lista de personas con este formato:\n"
-            "   Nombre — Rol — Skills — Seniority — Disponibilidad%\n\n"
-            "¿Qué prefieres? Escribe:\n"
-            "- 'usar empleados guardados' o 'cargar empleados'\n"
-            "- 'manual' o 'introducir plantilla'"
+            "Para asignar las personas más adecuadas a cada rol en cada fase del proyecto, "
+            "utilizaremos su base de datos de empleados registrados.\n\n"
+            "📊 ¿Cómo funciona la carga de empleados?\n\n"
+            "El sistema cargará automáticamente todos los empleados que tiene registrados en la sección 'Empleados' "
+            "y analizará sus perfiles para sugerirle quién encaja mejor en cada rol del proyecto.\n\n"
+            "🔍 El sistema evalúa:\n"
+            "• Skills y competencias técnicas de cada empleado\n"
+            "• Nivel de seniority (Junior, Mid, Senior)\n"
+            "• Disponibilidad actual (% de dedicación disponible)\n"
+            "• Compatibilidad con los roles requeridos en el proyecto\n\n"
+            "✅ Resultado:\n"
+            "Se generará una asignación sugerida que podrá revisar y ajustar según sus necesidades.\n\n"
+            "Para continuar, pulse el botón 'Cargar empleados' que aparece abajo."
         )
         return prompt, "Solicitud de método de staffing."
 

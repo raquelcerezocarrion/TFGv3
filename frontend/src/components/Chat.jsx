@@ -63,9 +63,13 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
       if (txt.includes('usar empleados') || txt.includes('cargar empleados') || (txt.includes('empleados') && txt.includes('guardad')) || txt.includes('usar empleados guardados')) {
         ctas.push({ type: 'load_employees', label: 'Cargar empleados' })
       }
-      if (txt.includes('manual') || txt.includes('introducir plantilla') || txt.includes('introducir plantilla manualmente') || txt.includes('plantilla manual')) {
+      
+      // Only show "Introducir plantilla" if NOT in the "propuesta aprobada" message
+      const isProposalApproved = txt.includes('genial, propuesta aprobada')
+      if (!isProposalApproved && (txt.includes('manual') || txt.includes('introducir plantilla') || txt.includes('introducir plantilla manualmente') || txt.includes('plantilla manual'))) {
         ctas.push({ type: 'manual', label: 'Introducir plantilla' })
       }
+      
       // Avoid offering the 'Iniciar proyecto' CTA for some long proposal messages
       const noStartPhrases = [
         'quieres comenzar el proyecto ahora',
