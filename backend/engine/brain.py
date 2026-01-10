@@ -2728,16 +2728,16 @@ def _render_budget_detail(p: Dict[str, Any]) -> List[str]:
     cost_by_role, cost_by_activity, activities = _breakdown_by_role_and_activity(p)
 
     lines: List[str] = []
-    lines.append("💶 **Presupuesto — detalle**")
+    lines.append("💶 Presupuesto — detalle")
     lines.append(f"- Semanas totales: {weeks_total:g}")
     bw = _bucket_weeks(p)
     lines.append(f"- Semanas por fase/actividad: Discovery {bw['discovery']:g}s • Iteraciones {bw['iterations']:g}s • Hardening {bw['hardening']:g}s • Release {bw['release']:g}s")
 
     # NUEVA SECCIÓN: Explicación de por qué este presupuesto
-    lines.append("\n📋 **¿Por qué esta distribución del presupuesto?**")
+    lines.append("\n📋 ¿Por qué esta distribución del presupuesto?")
     
     if industry_note and industry_note != "Industria estándar":
-        lines.append(f"\n🏢 **Tipo de proyecto:** {industry_note}")
+        lines.append(f"\n🏢 Tipo de proyecto: {industry_note}")
         
         # Explicaciones específicas por industria
         if "Fintech" in industry_note or "FinTech" in industry_note:
@@ -2785,14 +2785,14 @@ def _render_budget_detail(p: Dict[str, Any]) -> List[str]:
     if rate_multiplier != 1.0:
         diff_pct = int((rate_multiplier - 1.0) * 100)
         sign = "+" if diff_pct > 0 else ""
-        lines.append(f"\n💰 **Ajuste de tarifas:** {sign}{diff_pct}% respecto a base de mercado")
+        lines.append(f"\n💰 Ajuste de tarifas: {sign}{diff_pct}% respecto a base de mercado")
         if diff_pct > 0:
             lines.append(f"  → Refleja especialización técnica, riesgo regulatorio y complejidad del dominio")
         else:
             lines.append(f"  → Refleja optimización de costes y compensación mediante equity/riesgo compartido")
 
     if cost_by_role:
-        lines.append("\n📊 **Coste por rol:**")
+        lines.append("\n📊 Coste por rol:")
         for role, euros in sorted(cost_by_role.items(), key=lambda x: x[1], reverse=True):
             # Mostrar tarifa base si está disponible
             base_rate = base_rates.get(role, 0)
@@ -2805,7 +2805,7 @@ def _render_budget_detail(p: Dict[str, Any]) -> List[str]:
         lines.append("\n(No encuentro equipo/tarifas para desglosar por rol.)")
 
     if any(cost_by_activity.values()):
-        lines.append("\n🔎 **Coste por actividad/fase:**")
+        lines.append("\n🔎 Coste por actividad/fase:")
         names = {"discovery":"Discovery / Historias","iterations":"Iteraciones (build)","hardening":"Hardening & Aceptación","release":"Release & Handover"}
         for b in ("iterations","discovery","hardening","release"):
             lines.append(f"- {names[b]}: {_eur(cost_by_activity.get(b, 0.0))}")
@@ -2813,18 +2813,19 @@ def _render_budget_detail(p: Dict[str, Any]) -> List[str]:
         lines.append("\n(No pude mapear fases; enséñame las fases para intentar de nuevo.)")
 
     if activities:
-        lines.append("\n🏷️ **Top actividades (dónde se va más dinero):**")
+        lines.append("\n🏷️ Top actividades (dónde se va más dinero):")
         names = {"discovery":"Discovery / Historias","iterations":"Iteraciones","hardening":"Hardening & Aceptación","release":"Release & Handover"}
         for (b, role, euros) in activities[:5]:
             lines.append(f"- {names[b]} — {role}: {_eur(euros)}")
 
-    lines.append(f"\n💵 **Resumen financiero:**")
+    lines.append(f"\n💵 Resumen financiero:")
     lines.append(f"- Total mano de obra: {_eur(labor0) if labor0 > 0 else '—'}")
     lines.append(f"- Contingencia ({int(cont_pct*100)}%): {_eur(total0 - labor0)}")
-    lines.append(f"- **TOTAL PROYECTO: {_eur(total0)}**")
+    lines.append(f"- TOTAL PROYECTO: {_eur(total0)}")
 
-    lines.append("\n¿Quieres ajustar el presupuesto? Prueba:")
-    lines.append("- «contingencia a 15%»")
+    lines.append("\n💡 Ajustar contingencia:")
+    lines.append("__CONTINGENCY_BUTTONS__")
+    lines.append("\n¿Quieres ajustar tarifas? Prueba:")
     lines.append("- «tarifa de Backend a 1200»  |  «tarifa de QA a 900»")
     return lines
 # ---------- Calendario / plazos: parseo fecha inicio + construcción de timeline ----------
@@ -4656,7 +4657,19 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
     if proposal:
         patch = _parse_any_patch(text)
         if patch:
-            return _make_pending_patch(session_id, patch, proposal, req_text)
+            # Si el parche es solo de contingencia, aplicarlo directamente sin confirmación
+            if patch.get("type") == "budget" and "contingency_pct" in patch and "role_rates" not in patch:
+                new_plan = _apply_patch(proposal, patch)
+                set_last_proposal(session_id, new_plan, req_text)
+                try:
+                    save_proposal(session_id, req_text, new_plan)
+                    log_message(session_id, "assistant", f"[CONTINGENCIA ACTUALIZADA → {patch['contingency_pct']}%]")
+                except Exception:
+                    pass
+                # Mostrar solo la propuesta actualizada sin el desglose detallado
+                return _pretty_proposal(new_plan), f"Contingencia actualizada a {patch['contingency_pct']}%."
+            else:
+                return _make_pending_patch(session_id, patch, proposal, req_text)
 
     # Documentación/autores (citas)
     if _asks_sources(text):
@@ -5288,8 +5301,8 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             pass
         return _catalog_text(), "Metodologías (catálogo)."
 
-    # Presupuesto (detalle visible)
-    if (_asks_budget(text) or "presupuesto" in _norm(text)) and not _asks_why(text):
+    # Presupuesto (detalle visible) - incluye desglose y detalle
+    if ((_asks_budget(text) or "presupuesto" in _norm(text) or "mostrar presupuesto detallado" in _norm(text)) and not _asks_why(text)) or _asks_budget_breakdown(text) or "desglose" in _norm(text) or "detalle" in _norm(text):
         if proposal:
             try:
                 set_last_area(session_id, "presupuesto")
@@ -5302,25 +5315,6 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
                 return "\n".join(_explain_budget(proposal)), "Presupuesto."
         return ("Para estimar presupuesto considero: alcance → equipo → semanas → tarifas por rol + % de contingencia.\n"
                 "Genera una propuesta con '/propuesta: ...' y te doy el detalle."), "Guía presupuesto."
-
-    # Alias de desglose: también muestra el detalle
-    if _asks_budget_breakdown(text) or "desglose" in _norm(text) or "detalle" in _norm(text):
-        if proposal:
-            try:
-                set_last_area(session_id, "presupuesto")
-            except Exception:
-                pass
-            try:
-                detail = _render_budget_detail(proposal)
-                return "\n".join(detail), "Presupuesto (detalle)."
-            except Exception:
-                try:
-                    breakdown = _explain_budget_breakdown(proposal)
-                    return "Presupuesto — desglose por rol:\n" + "\n".join(breakdown), "Desglose presupuesto."
-                except Exception:
-                    return "\n".join(_explain_budget(proposal)), "Presupuesto."
-        else:
-            return "Genera primero una propuesta con '/propuesta: ...' para poder desglosar el presupuesto por rol.", "Sin propuesta para desglose."
 
     if _asks_team(text) and not _asks_why(text):
         set_last_area(session_id, "equipo")

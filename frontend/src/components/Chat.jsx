@@ -121,6 +121,14 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
         ctas.push({ type: 'decrease_contingency', label: '⬇️ Reducir contingencia' })
       }
       
+      // Detect contingency percentage buttons
+      if (txt.includes('__contingency_buttons__')) {
+        ctas.push({ type: 'set_contingency', label: '5%', data: 5 })
+        ctas.push({ type: 'set_contingency', label: '10%', data: 10 })
+        ctas.push({ type: 'set_contingency', label: '15%', data: 15 })
+        ctas.push({ type: 'set_contingency', label: '20%', data: 20 })
+      }
+      
       // Detect dedication selection buttons
       if (txt.includes('__dedication_options__')) {
         ctas.push({ type: 'select_dedication', label: 'x0.5', data: 'x0.5' })
@@ -557,14 +565,8 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
         return
       }
       else if (type === 'change_budget') {
-        // Show budget adjustment options
-        setMessages(prev => [...prev, { 
-          role: 'assistant', 
-          content: 'Ajuste el nivel de contingencia del presupuesto:\n\n__BUDGET_OPTIONS__', 
-          ts: new Date().toISOString() 
-        }])
-        setSuggestedCtas([])
-        return
+        // Send command to backend to show budget detail with contingency buttons
+        text = 'desglose presupuesto'
       }
       else if (type === 'select_methodology') {
         // User selected a specific methodology - show updated proposal as new message
@@ -680,6 +682,10 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
       }
       else if (type === 'increase_contingency') text = 'Aumentar contingencia del presupuesto'
       else if (type === 'decrease_contingency') text = 'Reducir contingencia del presupuesto'
+      else if (type === 'set_contingency') {
+        // User clicked a contingency percentage button - send command to backend
+        text = `contingencia a ${data}%`
+      }
       else return
 
       await send(text)
