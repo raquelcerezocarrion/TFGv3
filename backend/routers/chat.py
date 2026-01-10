@@ -2,12 +2,10 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
-import logging
 
 from backend.engine.brain import generate_reply, _project_context_summary
 from backend.engine.context import get_last_proposal
 
-logger = logging.getLogger(__name__)
 router = APIRouter()
 
 class ChatIn(BaseModel):
@@ -79,50 +77,19 @@ async def chat_ws(ws: WebSocket):
     try:
         while True:
             raw = await ws.receive_text()
-            logger.info(f"[WS {sid}] Recibido raw: {raw[:100]}...")  # Primeros 100 chars
-            
             # aceptar tanto texto plano como JSON con {message, phase}
             msg_text = raw
-            
-            # Validar que no sea "[object Object]" (error común del frontend)
-            if raw.strip() == "[object Object]":
-                error_msg = "⚠️ Error: El mensaje recibido está vacío o mal formateado. Por favor, envía un mensaje válido."
-                logger.warning(f"[WS {sid}] {error_msg}")
-                await ws.send_text(error_msg)
-                continue
-            
             try:
                 import json as _json
                 parsed = _json.loads(raw)
-                logger.info(f"[WS {sid}] JSON parseado: {parsed}")
-                
-                if isinstance(parsed, dict):
-                    # Intentar extraer el mensaje de diferentes campos posibles
-                    msg_text = (parsed.get('message') or 
-                               parsed.get('text') or 
-                               parsed.get('content') or '')
-                    
-                    # Si aún está vacío, intentar convertir el objeto completo a string
-                    if not msg_text and parsed:
-                        msg_text = str(parsed)
-                    
+                if isinstance(parsed, dict) and 'message' in parsed:
+                    msg_text = parsed.get('message') or ''
                     if parsed.get('phase'):
                         msg_text = f"Fase seleccionada: {parsed.get('phase')}\n" + msg_text
-                elif isinstance(parsed, str):
-                    msg_text = parsed
-            except Exception as e:
-                # no es JSON válido, tratamos como texto plano
-                logger.info(f"[WS {sid}] No es JSON, usando raw como texto: {e}")
+            except Exception:
+                # no es JSON, tratamos como texto plano
                 msg_text = raw
-            
-            # Validación final: si el mensaje está vacío o sigue siendo "[object Object]", avisar
-            if not msg_text.strip() or msg_text.strip() == "[object Object]":
-                error_msg = "⚠️ Error: El mensaje está vacío. Por favor, escribe algo."
-                logger.warning(f"[WS {sid}] {error_msg}")
-                await ws.send_text(error_msg)
-                continue
-            
-            logger.info(f"[WS {sid}] Procesando mensaje: {msg_text[:100]}...")
+
             text, _ = generate_reply(sid, msg_text)
             # añadir contexto si existe propuesta para esta sesión
             try:
