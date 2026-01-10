@@ -104,49 +104,213 @@ def proposal(req: ProposalRequest):
     }
 
 
-# ---------------- Recomendaciones de proyectos similares ----------------
+# ---------------- Recomendaciones de características del proyecto ----------------
 class RecommendIn(BaseModel):
     query: str = Field(..., min_length=3, description="Descripción del proyecto que quieres hacer")
-    top_k: int = Field(5, ge=1, le=10)
 
-class RecommendedItem(BaseModel):
-    id: int
-    requirements: str
-    methodology: Optional[str] = None
-    budget: Optional[Dict[str, Any]] = None
-    team: Optional[List[Dict[str, Any]]] = None
-    phases: Optional[List[Dict[str, Any]]] = None
-    similarity: float
-    pdf_url: str
+class RecommendationResponse(BaseModel):
+    methodology: Dict[str, Any]
+    typical_roles: List[Dict[str, str]]
+    typical_phases: List[Dict[str, Any]]
+    key_practices: List[str]
+    important_considerations: List[str]
 
-@router.post("/recommend", response_model=List[RecommendedItem])
-def recommend_similar(req: RecommendIn):
-    # Primero: intentar con el índice TF‑IDF/NNeighbors.
+@router.post("/recommend", response_model=RecommendationResponse)
+def recommend_project_info(req: RecommendIn):
+    """
+    Devuelve información típica sobre proyectos similares: metodología recomendada,
+    roles habituales, fases típicas, prácticas clave y consideraciones importantes.
+    """
     try:
-        from backend.retrieval.similarity import get_retriever
-        retr = get_retriever(); retr.refresh()
-        items = retr.retrieve(req.query, top_k=req.top_k)
+        from backend.knowledge.methodologies import recommend_methodology, METHODOLOGIES, detect_signals
     except Exception:
-        items = []
+        # Fallback si no se puede importar
+        return _fallback_recommendations()
+    
+    # Detectar metodología recomendada
+    methodology_name, reasons, scored = recommend_methodology(req.query)
+    
+    # Obtener info de la metodología
+    method_info = METHODOLOGIES.get(methodology_name, {})
+    
+    # Detectar señales del proyecto para sugerir roles y prácticas
+    signals = detect_signals(req.query)
+    
+    # Construir respuesta sobre metodología
+    methodology_response = {
+        "name": methodology_name,
+        "description": method_info.get("vision", ""),
+        "best_for": method_info.get("mejor_si", []),
+        "avoid_if": method_info.get("evitar_si", []),
+        "reasons": reasons[:3] if reasons else []
+    }
+    
+    # Roles típicos según las señales detectadas
+    typical_roles = _get_typical_roles(signals, req.query)
+    
+    # Fases típicas de la metodología
+    typical_phases = _get_typical_phases(methodology_name)
+    
+    # Prácticas clave
+    key_practices = method_info.get("practicas", [])
+    
+    # Consideraciones importantes
+    important_considerations = _get_important_considerations(signals, methodology_name)
+    
+    return {
+        "methodology": methodology_response,
+        "typical_roles": typical_roles,
+        "typical_phases": typical_phases,
+        "key_practices": key_practices,
+        "important_considerations": important_considerations
+    }
 
-    # Fallback: búsqueda por palabras clave si no hay sklearn o índice vacío
-    if not items:
-        items = _keyword_recommend(req.query, top_k=req.top_k)
+def _get_typical_roles(signals: Dict[str, float], query: str) -> List[Dict[str, str]]:
+    """Determina roles típicos según las señales del proyecto"""
+    roles = [
+        {"name": "Product Owner", "description": "Define requisitos y prioriza el backlog"}
+    ]
+    
+    # Roles base para cualquier proyecto
+    if signals.get("mobile", 0) > 0:
+        roles.append({"name": "Mobile Developer", "description": "Desarrollo de aplicaciones móviles (iOS/Android)"})
+    else:
+        roles.append({"name": "Full Stack Developer", "description": "Desarrollo frontend y backend"})
+    
+    # Roles específicos según señales
+    if signals.get("ml_ai", 0) > 0:
+        roles.append({"name": "ML Engineer", "description": "Desarrollo e integración de modelos de ML/IA"})
+        roles.append({"name": "Data Scientist", "description": "Análisis de datos y entrenamiento de modelos"})
+    
+    if signals.get("payments", 0) > 0 or signals.get("fintech", 0) > 0:
+        roles.append({"name": "Payment Integration Specialist", "description": "Integración de pasarelas de pago"})
+    
+    if signals.get("quality_critical", 0) > 0 or signals.get("realtime", 0) > 0:
+        roles.append({"name": "QA Engineer", "description": "Pruebas exhaustivas y aseguramiento de calidad"})
+    
+    if signals.get("regulated", 0) > 0:
+        roles.append({"name": "Compliance Officer", "description": "Cumplimiento normativo y auditorías"})
+    
+    if signals.get("ops_flow", 0) > 0 or signals.get("high_availability", 0) > 0:
+        roles.append({"name": "DevOps Engineer", "description": "Infraestructura, CI/CD y monitorización"})
+    
+    if signals.get("ux_heavy", 0) > 0:
+        roles.append({"name": "UX/UI Designer", "description": "Diseño de experiencia e interfaces de usuario"})
+    
+    # Scrum Master si no es Kanban puro
+    roles.append({"name": "Scrum Master / Facilitador", "description": "Facilita ceremonias y elimina impedimentos"})
+    
+    return roles[:8]  # Limitar a 8 roles más comunes
 
-    out: List[Dict[str, Any]] = []
-    for m in items:
-        pid = int(m.get("id"))
-        out.append({
-            "id": pid,
-            "requirements": m.get("requirements") or "",
-            "methodology": m.get("methodology"),
-            "budget": m.get("budget"),
-            "team": m.get("team"),
-            "phases": m.get("phases"),
-            "similarity": float(m.get("similarity", 0.0)),
-            "pdf_url": f"/projects/{pid}/report.pdf",
-        })
-    return out
+def _get_typical_phases(methodology: str) -> List[Dict[str, Any]]:
+    """Devuelve fases típicas según la metodología"""
+    m = methodology.lower()
+    
+    if 'scrum' in m:
+        return [
+            {"name": "Descubrimiento", "duration": "2 semanas", "description": "Definición de visión, MVP y backlog inicial"},
+            {"name": "Sprints de Desarrollo", "duration": "8-12 semanas", "description": "Iteraciones de 2 semanas con entrega incremental"},
+            {"name": "Hardening", "duration": "2 semanas", "description": "Estabilización, QA y corrección de bugs"},
+            {"name": "Release", "duration": "1 semana", "description": "Despliegue a producción y handover"}
+        ]
+    elif 'kanban' in m:
+        return [
+            {"name": "Configuración del tablero", "duration": "1 semana", "description": "Definir columnas, WIP limits y políticas"},
+            {"name": "Flujo continuo", "duration": "Ongoing", "description": "Trabajo continuo sin sprints fijos"},
+            {"name": "Optimización", "duration": "Ongoing", "description": "Mejora continua del flujo y lead time"}
+        ]
+    elif 'xp' in m or 'extreme' in m:
+        return [
+            {"name": "Incepción técnica", "duration": "1-2 semanas", "description": "Setup, arquitectura y estándares"},
+            {"name": "Iteraciones XP", "duration": "8-10 semanas", "description": "Desarrollo con TDD, pair programming y CI"},
+            {"name": "Release seguro", "duration": "1 semana", "description": "Validación final y despliegue"}
+        ]
+    elif 'lean' in m:
+        return [
+            {"name": "Build MVP", "duration": "2-4 semanas", "description": "Construcción del producto mínimo viable"},
+            {"name": "Measure", "duration": "1-2 semanas", "description": "Medición de métricas clave"},
+            {"name": "Learn & Iterate", "duration": "Ongoing", "description": "Aprendizaje y pivoteo según datos"}
+        ]
+    else:
+        return [
+            {"name": "Planificación", "duration": "2 semanas", "description": "Definición de alcance y planificación"},
+            {"name": "Desarrollo", "duration": "8-12 semanas", "description": "Implementación de funcionalidades"},
+            {"name": "Pruebas", "duration": "2 semanas", "description": "QA y validación"},
+            {"name": "Despliegue", "duration": "1 semana", "description": "Puesta en producción"}
+        ]
+
+def _get_important_considerations(signals: Dict[str, float], methodology: str) -> List[str]:
+    """Devuelve consideraciones importantes según señales detectadas"""
+    considerations = []
+    
+    if signals.get("payments", 0) > 0 or signals.get("fintech", 0) > 0:
+        considerations.append("🔒 Seguridad crítica: implementar PCI DSS compliance y encriptación end-to-end")
+        considerations.append("💳 Integración con pasarelas: considerar Stripe, PayPal o Redsys según región")
+    
+    if signals.get("regulated", 0) > 0:
+        considerations.append("⚖️ Cumplimiento normativo: asegurar conformidad con GDPR/HIPAA/ISO según aplique")
+        considerations.append("📋 Auditorías: documentar decisiones y mantener logs detallados")
+    
+    if signals.get("ml_ai", 0) > 0:
+        considerations.append("🤖 Datos de calidad: la precisión del modelo depende de buenos datos de entrenamiento")
+        considerations.append("⚡ Infraestructura ML: considerar GPU/TPU para entrenamiento si es necesario")
+    
+    if signals.get("mobile", 0) > 0:
+        considerations.append("📱 Multiplataforma: evaluar Flutter/React Native vs nativo según complejidad")
+        considerations.append("📲 App stores: planificar tiempo para revisiones de Apple/Google (5-7 días)")
+    
+    if signals.get("realtime", 0) > 0:
+        considerations.append("⚡ Arquitectura realtime: websockets, message queues o servicios como Pusher/Ably")
+        considerations.append("🔄 Escalabilidad: diseñar para manejar múltiples conexiones concurrentes")
+    
+    if signals.get("high_availability", 0) > 0 or signals.get("ops_flow", 0) > 0:
+        considerations.append("🚀 DevOps sólido: CI/CD, monitorización 24/7 y plan de disaster recovery")
+        considerations.append("📊 Observabilidad: logs centralizados, métricas y alertas (Datadog, New Relic)")
+    
+    if signals.get("startup", 0) > 0 or signals.get("uncertainty", 0) > 0:
+        considerations.append("🎯 Foco en MVP: priorizar features críticas y lanzar rápido para validar")
+        considerations.append("📈 Métricas desde día 1: analytics y tracking de user behavior para decisiones data-driven")
+    
+    if signals.get("ecommerce", 0) > 0 or signals.get("marketplace", 0) > 0:
+        considerations.append("🛒 Checkout optimizado: reducir fricción para maximizar conversión")
+        considerations.append("📦 Logística: integración con sistemas de envío y tracking")
+    
+    # Consideraciones de metodología
+    if 'scrum' in methodology.lower():
+        considerations.append("🔄 Ceremonias Scrum: daily standup, planning, review y retrospectiva son clave")
+    elif 'kanban' in methodology.lower():
+        considerations.append("📊 Visualización del flujo: mantener WIP limits estrictos para evitar cuellos de botella")
+    elif 'xp' in methodology.lower():
+        considerations.append("✅ TDD obligatorio: tests primero para calidad y refactoring seguro")
+    
+    if signals.get("quality_critical", 0) > 0:
+        considerations.append("🧪 Testing exhaustivo: unit, integration, e2e y load testing son imprescindibles")
+    
+    return considerations[:6]  # Limitar a 6 consideraciones más importantes
+
+def _fallback_recommendations():
+    """Respuesta de fallback si no hay sistema de metodologías"""
+    return {
+        "methodology": {
+            "name": "Scrum",
+            "description": "Marco ágil para desarrollo iterativo",
+            "best_for": ["Proyectos con requisitos cambiantes", "Equipos pequeños-medianos"],
+            "avoid_if": ["Proyectos con alcance muy fijo"],
+            "reasons": []
+        },
+        "typical_roles": [
+            {"name": "Product Owner", "description": "Define prioridades"},
+            {"name": "Scrum Master", "description": "Facilita el proceso"},
+            {"name": "Developers", "description": "Desarrollo del producto"}
+        ],
+        "typical_phases": [
+            {"name": "Sprint Planning", "duration": "2 semanas", "description": "Planificación de iteración"},
+            {"name": "Development", "duration": "10 días", "description": "Desarrollo incremental"},
+            {"name": "Review & Retro", "duration": "2 días", "description": "Revisión y mejora"}
+        ],
+        "key_practices": ["Daily Standup", "Sprint Review", "Retrospectivas"],
+        "important_considerations": ["Definir Definition of Done", "Mantener backlog priorizado"]
+    }
 
 def _keyword_recommend(query: str, top_k: int = 5):
     from sqlalchemy import or_
