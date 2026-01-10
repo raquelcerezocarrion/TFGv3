@@ -538,6 +538,10 @@ def _pretty_proposal(p: Dict[str, Any]) -> str:
         for d in dels:
             lines.append(f"- {d}")
 
+    # Añadir mensaje final para activar el botón "Aceptar propuesta"
+    lines.append("")
+    lines.append("✅ ¿Te parece bien esta propuesta? Puedes **aceptar la propuesta** para continuar con la asignación de empleados.")
+
     return "\n".join(lines)
 
 
