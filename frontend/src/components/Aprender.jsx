@@ -38,75 +38,474 @@ export default function Aprender({ token }) {
     { name: 'FDD', icon: '🎨', description: 'Feature-Driven Development' }
   ]
 
+      // Contenido estático por metodología y tema (se usa en lugar de llamadas al backend)
+      const staticContent = {
+        Scrum: {
+          '¿Qué es?': `Scrum — ¿qué es y cuándo usarla?
+
+Marco ágil con sprints cortos para entregar valor frecuente.
+
+Prácticas clave: Sprints, Daily, Review, Retros, Product Backlog, Definition of Done
+
+Evitar si: Plazos y alcance rígidos sin margen de negociación; Necesidad de operación 24/7 con interrupciones constantes`,
+          'Roles típicos': `Scrum — Roles típicos
+
+- Product Owner: Responsable del backlog y prioridades.
+- Scrum Master: Facilita al equipo y elimina impedimentos.
+- Equipo de desarrollo: Autogestionado y multifuncional.`,
+          'Prácticas clave': `Scrum — Prácticas clave
+
+- Sprints cortos y cadenciados
+- Revisión de incremento (Review)
+- Retrospectiva para mejora continua
+- Refinamiento de backlog
+- Definition of Done (DoD)`,
+          'Fases': `Scrum — Fases (flujo)
+
+- Planificación de sprint (Sprint Planning)
+- Ejecución del sprint
+- Revisión del sprint (Review)
+- Retrospectiva (Retro)
+- Preparación/refinamiento del backlog`,
+          'Ceremonias': `Scrum — Ceremonias
+
+- Daily Standup (Daily)
+- Sprint Planning
+- Sprint Review
+- Sprint Retrospective
+- Refinement (opcional y continuo)`,
+          'Artefactos': `Scrum — Artefactos
+
+- Product Backlog
+- Sprint Backlog
+- Incremento (deliverable que cumple DoD)
+- Definition of Done`,
+          'Métricas': `Scrum — Métricas comunes
+
+- Velocidad (velocity)
+- Burndown chart
+- Tiempo de ciclo por ítem
+- % de historias completadas vs comprometidas`,
+          'Cuándo usar': `Scrum — Cuándo usarlo
+
+- Proyectos con requerimientos que cambian frecuentemente
+- Equipos que pueden trabajar en sprints iterativos
+- Necesidad de feedback frecuente de stakeholders`,
+          'Cuándo evitar': `Scrum — Cuándo evitarlo
+
+- Operaciones 24/7 con interrupciones constantes
+- Proyectos con alcance y requisitos completamente fijos y sin margen de negociación`,
+          'Ventajas': `Scrum — Ventajas
+
+- Entregas frecuentes de valor
+- Mayor visibilidad y feedback temprano
+- Mejora continua mediante retros`,
+          'Desventajas': `Scrum — Desventajas
+
+- Requiere disciplina y compromiso del equipo
+- Puede ser ineficiente si hay muchas interrupciones
+- Overhead de ceremonias si se aplica mal`,
+          'Ejemplos prácticos': `Scrum — Ejemplos prácticos
+
+- Equipo de producto que lanza releases cada 2 semanas
+- Adaptación rápida a cambios de prioridad por el Product Owner
+- Uso de retros para reducir defectos y mejorar estimaciones`,
+        },
+        Kanban: {
+          '¿Qué es?': `Kanban — ¿qué es?
+
+Kanban es un método visual para gestionar el flujo de trabajo en curso (WIP) mediante tarjetas y columnas. Ideal para equipos con flujo continuo y variabilidad en prioridades.`,
+          'Roles típicos': `Kanban — Roles típicos
+
+- No exige roles fijos; suelen existir responsables de flujo o propietarios de cola.
+- Equipos operativos que gestionan tarjetas en el tablero.`,
+          'Prácticas clave': `Kanban — Prácticas clave
+
+- Visualizar trabajo en columnas
+- Limitar WIP (Work In Progress)
+- Medir flujo y mejorar cuellos de botella
+- Pull system (extraer trabajo cuando hay capacidad)`,
+          'Fases': `Kanban — Fases
+
+- Backlog
+- Ready
+- In Progress
+- Review/Testing
+- Done
+
+El flujo se adapta según el equipo.`,
+          'Ceremonias': `Kanban — Ceremonias
+
+- Reuniones de flujo/standups cortos
+- Revisión de políticas del tablero
+- Retrospectivas para mejora de flujo`,
+          'Artefactos': `Kanban — Artefactos
+
+- Tablero Kanban
+- Tarjetas (historia/tarea)
+- Políticas/criterios de entrada y salida`,
+          'Métricas': `Kanban — Métricas
+
+- Lead time
+- Cycle time
+- Throughput
+- Work in progress (WIP)`,
+          'Cuándo usar': `Kanban — Cuándo usarlo
+
+- Operaciones o equipos con flujo continuo
+- Donde las prioridades cambian frecuentemente y es necesario flexibilidad`,
+          'Cuándo evitar': `Kanban — Cuándo evitarlo
+
+- Proyectos que requieren entregas planificadas con fechas fijas y coordinar muchos equipos sin reglas de sincronización`,
+          'Ventajas': `Kanban — Ventajas
+
+- Alta flexibilidad
+- Menor overhead de ceremonias
+- Mejora continua del flujo`,
+          'Desventajas': `Kanban — Desventajas
+
+- Puede ser menos predecible en entregas con muchas prioridades
+- Requiere disciplina para mantener límites WIP`,
+          'Ejemplos prácticos': `Kanban — Ejemplos prácticos
+
+- Equipo de soporte que procesa tickets continuamente
+- Pipeline de despliegue donde las tareas fluyen según capacidad`,
+        },
+        'XP (Extreme Programming)': {
+          '¿Qué es?': `XP — ¿qué es?
+
+Conjunto de prácticas técnicas y de ingeniería para mejorar calidad: TDD, pair programming, integración continua, refactorización continua.`,
+          'Roles típicos': `XP — Roles típicos
+
+- Cliente (on-site): Define requisitos y pruebas.
+- Equipo de desarrollo: Colabora estrechamente con prácticas técnicas.`,
+          'Prácticas clave': `XP — Prácticas clave
+
+- Programación en parejas (pair programming)
+- Desarrollo guiado por pruebas (TDD)
+- Integración continua
+- Refactorización frecuente
+- Propiedad colectiva del código`,
+          'Fases': `XP — Fases
+
+- Iteraciones cortas con entrega de historias
+- Ciclo: escribir prueba → implementar → refactorizar`,
+          'Ceremonias': `XP — Ceremonias
+
+- Planning game (planificación colaborativa)
+- Pequñas reuniones de sincronización y revisión de pruebas`,
+          'Artefactos': `XP — Artefactos
+
+- Suite de pruebas automatizadas
+- Historias pequeñas y bien definidas
+- Código con cobertura de tests`,
+          'Métricas': `XP — Métricas
+
+- Cobertura de tests
+- Número de fallos en integración
+- Tiempo para pasar la suite de tests`,
+          'Cuándo usar': `XP — Cuándo usarlo
+
+- Proyectos donde la calidad técnica es crítica
+- Equipos con alta disciplina técnica`,
+          'Cuándo evitar': `XP — Cuándo evitarlo
+
+- Equipos sin soporte para prácticas técnicas o con plazos que impiden refactorizar y escribir tests`,
+          'Ventajas': `XP — Ventajas
+
+- Alta calidad del software
+- Rápida detección de errores
+- Código más mantenible`,
+          'Desventajas': `XP — Desventajas
+
+- Requiere alta disciplina técnica
+- Curva de adopción y coste inicial en tiempo para tests`,
+          'Ejemplos prácticos': `XP — Ejemplos prácticos
+
+- Equipos que aplican TDD y pair programming en entregas críticas
+- Ciclos rápidos con integración continua y despliegues frecuentes`,
+        },
+        Lean: {
+          '¿Qué es?': `Lean — ¿qué es?
+
+Enfoque en eliminar desperdicio, optimizar flujo y acelerar aprendizaje mediante entregas continuas y mejora de procesos.`,
+          'Roles típicos': `Lean — Roles típicos
+
+- Líderes de proceso y equipos cross-funcionales que identifican desperdicios.`,
+          'Prácticas clave': `Lean — Prácticas clave
+
+- Identificar y eliminar desperdicio
+- Mejorar el flujo
+- Entregar lo mínimo viable rápidamente
+- Aprendizaje continuo`,
+          'Fases': `Lean — Fases
+
+- Identificar valor
+- Mapear flujo de valor
+- Crear flujo continuo
+- Establecer pull
+- Mejorar continuamente`,
+          'Ceremonias': `Lean — Ceremonias
+
+- Reuniones de mejora continua
+- Eventos Kaizen para solucionar cuellos de botella`,
+          'Artefactos': `Lean — Artefactos
+
+- Mapa de flujo de valor
+- Kanban/visual boards
+- Definición de valor para el cliente`,
+          'Métricas': `Lean — Métricas
+
+- Tiempo de ciclo
+- Porcentaje de valor entregado
+- Nivel de inventario en proceso`,
+          'Cuándo usar': `Lean — Cuándo usarlo
+
+- Organizaciones que buscan eficiencia y rápido aprendizaje
+- Procesos con desperdicio evidente`,
+          'Cuándo evitar': `Lean — Cuándo evitarlo
+
+- Contextos donde la reducción de trabajo en curso puede afectar disponibilidad crítica`,
+          'Ventajas': `Lean — Ventajas
+
+- Menos desperdicio
+- Mayor velocidad de entrega
+- Mejora continua de procesos`,
+          'Desventajas': `Lean — Desventajas
+
+- Requiere cultura de mejora continua
+- Puede ser complejo en organizaciones grandes sin apoyo`,
+          'Ejemplos prácticos': `Lean — Ejemplos prácticos
+
+- Reducción de pasos en un proceso de aprobación
+- Implementación de tablero visual para reducir inventario en proceso`,
+        },
+        SAFe: {
+          '¿Qué es?': `SAFe — ¿qué es?
+
+Framework para escalar prácticas ágiles en grandes organizaciones, coordinando múltiples equipos, programas y soluciones.`,
+          'Roles típicos': `SAFe — Roles típicos
+
+- Release Train Engineer (RTE)
+- Product Management
+- System Architect
+- Equipos ágiles y stakeholders a nivel de programa.`,
+          'Prácticas clave': `SAFe — Prácticas clave
+
+- Planificación de PI (Program Increment)
+- Sincronización entre equipos
+- Arquitectura emergente
+- Gestión de portfolio ágil`,
+          'Fases': `SAFe — Fases
+
+- Planificación de PI
+- Iteraciones por equipo
+- System Demo
+- Inspect & Adapt`,
+          'Ceremonias': `SAFe — Ceremonias
+
+- PI Planning
+- System demo
+- Scrum of scrums y sincronizaciones de program`,
+          'Artefactos': `SAFe — Artefactos
+
+- Backlogs a nivel team/program/portfolio
+- PI objectives
+- Roadmaps`,
+          'Métricas': `SAFe — Métricas
+
+- Cumplimiento de PI objectives
+- Predictability
+- Flow metrics a nivel solución`,
+          'Cuándo usar': `SAFe — Cuándo usarlo
+
+- Organizaciones grandes que requieren coordinación entre muchos equipos y alineación estratégica`,
+          'Cuándo evitar': `SAFe — Cuándo evitarlo
+
+- Organizaciones pequeñas donde el overhead de coordinación sería excesivo`,
+          'Ventajas': `SAFe — Ventajas
+
+- Alineación a gran escala
+- Gobernanza y planificación coordinada`,
+          'Desventajas': `SAFe — Desventajas
+
+- Complejidad y overhead
+- Requiere inversión en cambio organizacional`,
+          'Ejemplos prácticos': `SAFe — Ejemplos prácticos
+
+- Empresas con varios ARTs (Agile Release Trains) que planifican por PI cada 8-12 semanas`,
+        },
+        Scrumban: {
+          '¿Qué es?': `Scrumban — ¿qué es?
+
+Híbrido entre Scrum y Kanban que combina sprints ligeros con límites de WIP para equipos que necesitan estructura y flexibilidad.`,
+          'Roles típicos': `Scrumban — Roles típicos
+
+- Roles similares a Scrum pero con mayor flexibilidad; el equipo adapta prácticas según necesidad.`,
+          'Prácticas clave': `Scrumban — Prácticas clave
+
+- Uso de tablero Kanban con sprints cuando convenga
+- Límites WIP
+- Revisión periódica y mejora continua`,
+          'Fases': `Scrumban — Fases
+
+- Planificación ligera
+- Flujo continuo de trabajo con ventanas de entrega`,
+          'Ceremonias': `Scrumban — Ceremonias
+
+- Standups diarios
+- Revisión y retro periódicas
+- Planning ligero según necesidad`,
+          'Artefactos': `Scrumban — Artefactos
+
+- Tablero híbrido
+- Backlog priorizado`,
+          'Métricas': `Scrumban — Métricas
+
+- Lead time
+- Throughput
+- Cumplimiento de compromisos por iteración`,
+          'Cuándo usar': `Scrumban — Cuándo usarlo
+
+- Equipos que migran de Scrum a Kanban o necesitan ambos enfoques`,
+          'Cuándo evitar': `Scrumban — Cuándo evitarlo
+
+- Cuando se necesita estructura rígida de entrega o sincronización estricta entre muchos equipos`,
+          'Ventajas': `Scrumban — Ventajas
+
+- Flexibilidad y estructura balanceadas
+- Menor overhead que Scrum puro`,
+          'Desventajas': `Scrumban — Desventajas
+
+- Requiere decidir y mantener políticas claras
+- Puede quedar en ambigüedad si no se define bien`,
+          'Ejemplos prácticos': `Scrumban — Ejemplos prácticos
+
+- Equipos que mantienen sprints mensuales pero gestionan tarjetas de mantenimiento con Kanban`,
+        },
+        Crystal: {
+          '¿Qué es?': `Crystal — ¿qué es?
+
+Familia de metodologías adaptables según tamaño y criticidad del equipo; enfatiza personas y comunicación.`,
+          'Roles típicos': `Crystal — Roles típicos
+
+- Roles flexibles; se adapta según el tamaño del equipo y la criticidad del proyecto.`,
+          'Prácticas clave': `Crystal — Prácticas clave
+
+- Comunicación cercana
+- Entrega frecuente
+- Adaptación de prácticas según contexto`,
+          'Fases': `Crystal — Fases
+
+- Iteraciones cortas
+- Entregas incrementales
+- Ajustes según retroalimentación`,
+          'Ceremonias': `Crystal — Ceremonias
+
+- Reuniones de coordinación y retrospectivas adaptadas al equipo`,
+          'Artefactos': `Crystal — Artefactos
+
+- Historias o items priorizados
+- Documentación mínima necesaria`,
+          'Métricas': `Crystal — Métricas
+
+- Ritmo de entregas
+- Calidad percibida por stakeholders`,
+          'Cuándo usar': `Crystal — Cuándo usarlo
+
+- Equipos pequeños o proyectos con necesidad de adaptabilidad y comunicación directa`,
+          'Cuándo evitar': `Crystal — Cuándo evitarlo
+
+- Proyectos que requieren procesos muy rígidos o regulaciones estrictas sin margen de adaptación`,
+          'Ventajas': `Crystal — Ventajas
+
+- Adaptabilidad
+- Enfoque en personas y comunicación`,
+          'Desventajas': `Crystal — Desventajas
+
+- Poca guía prescriptiva; depende mucho de la experiencia del equipo`,
+          'Ejemplos prácticos': `Crystal — Ejemplos prácticos
+
+- Equipos pequeños que ajustan prácticas según aprendizaje`,
+        },
+        FDD: {
+          '¿Qué es?': `FDD — ¿qué es?
+
+Feature-Driven Development: enfoque orientado a entregar funcionalidades bien definidas, con modelado y planificación por features.`,
+          'Roles típicos': `FDD — Roles típicos
+
+- Chief Architect, Feature Owner, Developers; enfoque en roles para modelado y entrega de features.`,
+          'Prácticas clave': `FDD — Prácticas clave
+
+- Modelado por dominios
+- Planificación y diseño por features
+- Entrega incremental de funcionalidades`,
+          'Fases': `FDD — Fases
+
+- Desarrollo de un modelo general
+- Construcción de lista de features
+- Planificación por features
+- Diseño e implementación por feature`,
+          'Ceremonias': `FDD — Ceremonias
+
+- Reuniones de planificación por feature
+- Revisiones de diseño y entrega`,
+          'Artefactos': `FDD — Artefactos
+
+- Lista de features
+- Diseños y modelos de dominio
+- Incrementos de código por feature`,
+          'Métricas': `FDD — Métricas
+
+- Número de features completadas
+- Tiempo por feature
+- Calidad de entrega por feature`,
+          'Cuándo usar': `FDD — Cuándo usarlo
+
+- Proyectos con muchas funcionalidades claramente definibles y necesidad de progreso medible por feature`,
+          'Cuándo evitar': `FDD — Cuándo evitarlo
+
+- Proyectos muy exploratorios donde las features no se pueden definir con antelación`,
+          'Ventajas': `FDD — Ventajas
+
+- Claridad en entregables
+- Buen seguimiento del progreso por features`,
+          'Desventajas': `FDD — Desventajas
+
+- Menos flexible si las features cambian mucho
+- Puede requerir más diseño inicial`,
+          'Ejemplos prácticos': `FDD — Ejemplos prácticos
+
+- Proyectos grandes con catálogo de funcionalidades que pueden planificarse y entregarse por partes`,
+        }
+      }
+
   // Iniciar modo aprendizaje con metodología y tema específico
   const startLearningWithTopic = async (methodology, topic) => {
     setLoading(true)
     try {
-      // Primero activar modo aprendizaje
-      await axios.post(`${base}/chat/message`, {
-        session_id: sessionId,
-        message: 'aprender'
-      }, {
-        headers: { 'Content-Type': 'application/json' }
-      })
-      
-      // Luego enviar el nivel
-      await axios.post(`${base}/chat/message`, {
-        session_id: sessionId,
-        message: selectedLevel
-      }, {
-        headers: { 'Content-Type': 'application/json' }
-      })
-      
-      // Finalmente preguntar sobre el tema específico
+      // Construir la pregunta tal como se haría originalmente
       const question = topic.question.replace('{method}', methodology)
-      const { data } = await axios.post(`${base}/chat/message`, {
-        session_id: sessionId,
-        message: question
-      }, {
-        headers: { 'Content-Type': 'application/json' }
-      })
-      
-      console.log('Respuesta del backend:', data)
-      
-      // Extraer el contenido de la respuesta
-      let responseContent = ''
-      if (typeof data === 'string') {
-        // Intentar parsear si es un string JSON
-        try {
-          const parsed = JSON.parse(data)
-          responseContent = parsed.reply || parsed.response || parsed.content || data
-        } catch {
-          responseContent = data
-        }
-      } else if (data.reply) {
-        responseContent = data.reply
-      } else if (data.response) {
-        responseContent = data.response
-      } else if (data.content) {
-        responseContent = data.content
-      } else {
-        responseContent = JSON.stringify(data)
+
+      // Buscar contenido estático en el objeto local
+      const methodContent = staticContent[methodology] || staticContent[methodology.replace(/\s*\(.*\)$/, '')] || {}
+      let responseContent = methodContent[topic.name]
+
+      if (!responseContent) {
+        responseContent = `No hay contenido estático preparado para "${topic.name}" en ${methodology}.`
       }
-      
-      // Limpiar metadata que pueda venir en el contenido
-      responseContent = responseContent.replace(/\{"reply":"(.+?)","debug".+?\}/g, '$1')
-      responseContent = responseContent.replace(/\\n/g, '\n')
-      // Eliminar frases de navegación del modo formación
-      responseContent = responseContent.replace(/Puedes pedir[^.]*\./g, '')
-      responseContent = responseContent.replace(/Puedes escribir[^.]*\./g, '')
-      responseContent = responseContent.replace(/Pide[^.]*\./g, '')
-      responseContent = responseContent.trim()
-      
-      // Solo mostrar la pregunta del usuario y la respuesta del asistente
+
+      // Normalizar y limpiar
+      responseContent = responseContent.replace(/\\n/g, '\n').trim()
+
       const userMsg = { role: 'user', content: question, ts: new Date().toISOString() }
       const assistantMsg = { role: 'assistant', content: responseContent, ts: new Date().toISOString() }
-      
+
       setMessages([userMsg, assistantMsg])
       setTrainingActive(true)
     } catch (e) {
       console.error('start learning error', e)
-      const errorContent = e?.response?.data?.detail || e.message || 'Error al cargar la información. Intenta de nuevo.'
+      const errorContent = e?.message || 'Error al cargar la información. Intenta de nuevo.'
       setMessages([{ role: 'assistant', content: errorContent, ts: new Date().toISOString() }])
     } finally {
       setLoading(false)
