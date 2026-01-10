@@ -1,11 +1,12 @@
 import React from 'react'
 
 export default function TopNav({
-  current = 'projects', // 'projects' | 'employees' | 'profile' | 'recommendations'
+  current = 'projects', // 'projects' | 'employees' | 'profile' | 'recommendations' | 'aprender'
   onGoProjects,
+  onGoAprender,
+  onGoRecommendations,
   onGoEmployees,
   onGoProfile,
-  onGoRecommendations,
   onLogout,
 }) {
   const item = (key, label, onClick) => (
@@ -23,6 +24,7 @@ export default function TopNav({
   return (
     <nav className="flex items-center gap-2">
       {item('projects', 'Proyectos', onGoProjects)}
+      {item('aprender', 'Aprender', onGoAprender)}
       {item('recommendations', 'Recomendaciones', onGoRecommendations)}
       {item('employees', 'Empleados', onGoEmployees)}
       {item('profile', 'Perfil', onGoProfile)}
