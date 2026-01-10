@@ -312,6 +312,33 @@ def detect_signals(text: str) -> Dict[str, float]:
         
         # EVENTS - Eventos
         "events": 1.0 if has("evento","eventos","conferencia","congreso","seminario","taller","workshop","inscripción","inscripcion","registro","asistente","organizador","ponente","agenda de eventos") else 0.0,
+        
+        # MARKETING TECH - Marketing digital y automatización
+        "marketing_tech": 1.0 if has("marketing","campaña de marketing","campana de marketing","email marketing","newsletter","seo","sem","publicidad","ads","anuncios","segmentación","segmentacion","audience","funnel","conversión","conversion","lead generation","automation","marketing automation","analytics","métricas","metricas","roi marketing","social media","redes sociales","influencer","brand","marca","branding","customer journey") else 0.0,
+        
+        # CONSUMER APPS - Aplicaciones de consumo
+        "consumer_apps": 1.0 if has("consumidor","consumidores","usuario final","b2c","app de consumo","aplicación de consumo","aplicacion de consumo","experiencia de usuario","engagement","onboarding","retención de usuario","retencion de usuario","viral","viralidad","crecimiento orgánico","crecimiento organico","referral","gamificación","gamificacion","notificaciones push","personalización","personalizacion") else 0.0,
+        
+        # INDUSTRY 4.0 / MANUFACTURING - Industria y manufactura
+        "manufacturing": 1.0 if has("manufactura","fabricación","fabricacion","fábrica","fabrica","industria","industrial","producción","produccion","planta","maquinaria","línea de producción","linea de produccion","calidad industrial","control de calidad","trazabilidad","oee","mantenimiento predictivo","industria 4.0","scada","plc","automatización industrial","automatizacion industrial","mes","supply chain","cadena de suministro") else 0.0,
+        
+        # PHARMA / PHARMACEUTICAL - Farmacia y farmacéutica
+        "pharma": 1.0 if has("farmacia","farmacéutico","farmaceutico","farmacéutica","farmaceutica","medicamento","medicamentos","fármaco","farmaco","droga","prescripción","prescripcion","receta médica","receta medica","farmacovigilancia","ensayo clínico","ensayo clinico","trial","fda","ema","gmp","buenas prácticas","buenas practicas","trazabilidad de medicamentos","lote","batch","principio activo","dosificación","dosificacion","interacción medicamentosa","interaccion medicamentosa","adverse event","reacción adversa","reaccion adversa") else 0.0,
+        
+        # ENERGY - Energía y utilities
+        "energy": 1.0 if has("energía","energia","electricidad","eléctrico","electrico","gas","petróleo","petroleo","renovable","solar","eólica","eolica","utilities","medidor","contador","smart meter","grid","red eléctrica","red electrica","subestación","subestacion","distribución eléctrica","distribucion electrica","generación","generacion","consumo energético","consumo energetico") else 0.0,
+        
+        # AUTOMOTIVE - Automoción
+        "automotive": 1.0 if has("automoción","automocion","automóvil","automovil","coche","vehículo","vehiculo","flota de vehículos","flota de vehiculos","taller","reparación de vehículos","reparacion de vehiculos","carsharing","car sharing","alquiler de coches","recambios","piezas","mantenimiento vehicular","telemática","telematica","conectividad vehicular","concesionario") else 0.0,
+        
+        # CONSTRUCTION - Construcción
+        "construction": 1.0 if has("construcción","construccion","obra","edificación","edificacion","contratista","subcontratista","presupuesto de obra","planificación de obra","planificacion de obra","bim","blueprints","planos","arquitectura","ingeniero civil","proyecto de construcción","proyecto de construccion","certificación de obra","certificacion de obra") else 0.0,
+        
+        # FASHION - Moda
+        "fashion": 1.0 if has("moda","colección","coleccion","temporada","pasarela","fashion","diseño de moda","diseno de moda","prenda","talla","sizing","lookbook","estilista","tendencia","trend","boutique") else 0.0,
+        
+        # SPORTS & FITNESS - Deportes y fitness
+        "sports_fitness": 1.0 if has("deporte","deportes","fitness","gimnasio","gym","entrenamiento","training","workout","ejercicio","actividad física","actividad fisica","nutrición deportiva","nutricion deportiva","coach","entrenador","rutina","biometría","biometria","wearable deportivo","club deportivo") else 0.0,
     }
 
 # Puntuación explicable por metodología (reglas sencillas)
@@ -336,6 +363,10 @@ def score_methodologies(text: str) -> List[Tuple[str, float, List[str]]]:
         (s["gaming"]==1.0, +1.5, "Gaming con sprints de desarrollo de features"),
         (s["media"]==1.0, +0.7, "Media con releases frecuentes de contenido"),
         (s["events"]==1.0, +0.6, "Eventos con planificación iterativa"),
+        (s["marketing_tech"]==1.0, +1.3, "Marketing con experimentación y A/B testing"),
+        (s["consumer_apps"]==1.0, +1.4, "Apps de consumo con feedback frecuente de usuarios"),
+        (s["fashion"]==1.0, +0.9, "Moda con colecciones y tendencias cambiantes"),
+        (s["sports_fitness"]==1.0, +0.7, "Sports/Fitness con iteraciones de features"),
         (s["fixed_deadline"]==1.0, -0.8, "Plazo rígido reduce flexibilidad"),
         (s["ops_flow"]==1.0, -0.5, "Operación 24/7 encaja mejor con Kanban")
     ])
@@ -348,6 +379,8 @@ def score_methodologies(text: str) -> List[Tuple[str, float, List[str]]]:
         (s["high_availability"]==1.0, +0.6, "Alta disponibilidad con cambios frecuentes"),
         (s["distributed_team"]==1.0, +0.4, "Equipo distribuido con asincronía"),
         (s["crm"]==1.0, +0.8, "CRM con flujo continuo de leads"),
+        (s["manufacturing"]==1.0, +1.8, "Manufactura con producción continua y WIP control"),
+        (s["construction"]==1.0, +1.0, "Construcción con flujo de tareas y WIP"),
         (s["fixed_deadline"]==1.0, -0.4, "Fechas rígidas piden timeboxing")
     ])
     add("Scrumban", 0.0, [
@@ -362,9 +395,13 @@ def score_methodologies(text: str) -> List[Tuple[str, float, List[str]]]:
         (s["fintech"]==1.0, +2.5, "Fintech requiere máxima calidad y testing (TDD)"),
         (s["insurtech"]==1.0, +2.3, "InsurTech con cálculos críticos y compliance"),
         (s["healthtech"]==1.0, +2.0, "HealthTech con datos sensibles (HIPAA)"),
+        (s["pharma"]==1.0, +2.8, "Farmacia con regulación crítica (FDA/EMA/GMP)"),
         (s["payments"]==1.0, +1.5, "Pagos requieren alta calidad y tests"),
         (s["matching_dating"]==1.0, +1.2, "Matching/citas con algoritmos sensibles"),
         (s["iot"]==1.0, +1.8, "IoT con firmware crítico y edge computing"),
+        (s["manufacturing"]==1.0, +1.6, "Industria 4.0 con control de calidad crítico"),
+        (s["automotive"]==1.0, +1.7, "Automoción con seguridad crítica"),
+        (s["energy"]==1.0, +1.5, "Energía con sistemas críticos de infraestructura"),
         (s["realtime"]==1.0, +1.0, "Tiempo real requiere tests robustos"),
         (s["regulated"]==1.0, +1.5, "Dominios regulados necesitan TDD/pair programming"),
         (s["ml_ai"]==1.0, +0.5, "ML con TDD para prevenir regresiones"),
@@ -375,7 +412,9 @@ def score_methodologies(text: str) -> List[Tuple[str, float, List[str]]]:
         (s["startup"]==1.0, +2.0, "Startup con validación rápida"),
         (s["small_project"]==1.0, +0.5, "Experimentación ligera"),
         (s["marketplace"]==1.0, +1.5, "Marketplace con hipótesis de mercado"),
-        (s["personal_finance"]==1.0, +1.0, "Finanzas personales con MVPs rápidos")
+        (s["personal_finance"]==1.0, +1.0, "Finanzas personales con MVPs rápidos"),
+        (s["marketing_tech"]==1.0, +1.3, "Marketing con experimentación continua"),
+        (s["consumer_apps"]==1.0, +1.2, "Apps consumo con validación rápida de hipótesis")
     ])
     add("Crystal", 0.0, [
         (s["small_project"]==1.0, +1.0, "Equipos pequeños, foco en personas")
@@ -387,6 +426,9 @@ def score_methodologies(text: str) -> List[Tuple[str, float, List[str]]]:
         (s["travel"]==1.0, +1.2, "Travel con features complejas (vuelos, hoteles, tours)"),
         (s["content_heavy"]==1.0, +0.5, "Contenido con features claras"),
         (s["real_estate"]==1.0, +0.8, "PropTech con features bien definidas"),
+        (s["pharma"]==1.0, +1.0, "Farmacia con trazabilidad y módulos bien definidos"),
+        (s["manufacturing"]==1.0, +0.9, "Manufactura con módulos (producción, calidad, inventario)"),
+        (s["automotive"]==1.0, +0.7, "Automoción con features modulares"),
         (s["uncertainty"]==1.0, -0.5, "Descubrimiento continuo no encaja")
     ])
     add("DSDM", 0.0, [
@@ -399,7 +441,11 @@ def score_methodologies(text: str) -> List[Tuple[str, float, List[str]]]:
         (s["erp"]==1.0, +2.5, "ERP enterprise requiere SAFe para coordinar módulos"),
         (s["regulated"]==1.0, +0.8, "Necesidad de gobernanza"),
         (s["distributed_team"]==1.0, +0.4, "Equipos distribuidos con sincronización"),
-        (s["hr_tech"]==1.0, +0.7, "HR Tech enterprise con múltiples equipos")
+        (s["hr_tech"]==1.0, +0.7, "HR Tech enterprise con múltiples equipos"),
+        (s["manufacturing"]==1.0, +2.0, "Manufactura con múltiples plantas y equipos"),
+        (s["pharma"]==1.0, +1.8, "Farmacia enterprise con compliance y trazabilidad"),
+        (s["energy"]==1.0, +1.5, "Energía con múltiples sistemas y regulación"),
+        (s["automotive"]==1.0, +1.3, "Automoción con cadena de suministro compleja")
     ])
     add("DevOps", 0.0, [
         (s["integrations"]==1.0, +0.8, "Integraciones y despliegues continuos"),

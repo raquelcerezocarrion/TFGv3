@@ -1,0 +1,72 @@
+{
+  "Marketing Tech": {
+    "success": true,
+    "methodology": "XP",
+    "team_size": 15,
+    "total_budget": 212847.75,
+    "risks_count": 12
+  },
+  "Consumer App": {
+    "success": true,
+    "methodology": "XP",
+    "team_size": 17,
+    "total_budget": 216177.0,
+    "risks_count": 14
+  },
+  "Manufactura/Industria 4.0": {
+    "success": true,
+    "methodology": "SAFe",
+    "team_size": 19,
+    "total_budget": 508909.5,
+    "risks_count": 14
+  },
+  "Farmacia/Pharma": {
+    "success": true,
+    "methodology": "XP",
+    "team_size": 18,
+    "total_budget": 242190.0,
+    "risks_count": 13
+  },
+  "Gaming": {
+    "success": true,
+    "methodology": "XP",
+    "team_size": 19,
+    "total_budget": 246381.75,
+    "risks_count": 18
+  },
+  "Energía/Utilities": {
+    "success": true,
+    "methodology": "XP",
+    "team_size": 20,
+    "total_budget": 285970.5,
+    "risks_count": 17
+  },
+  "Automoción": {
+    "success": true,
+    "methodology": "XP",
+    "team_size": 13,
+    "total_budget": 171775.5,
+    "risks_count": 9
+  },
+  "Construcción": {
+    "success": true,
+    "methodology": "Kanban",
+    "team_size": 8,
+    "total_budget": 73864.71,
+    "risks_count": 6
+  },
+  "Fashion/Moda": {
+    "success": true,
+    "methodology": "FDD",
+    "team_size": 15,
+    "total_budget": 213313.5,
+    "risks_count": 10
+  },
+  "Sports/Fitness": {
+    "success": true,
+    "methodology": "Scrum",
+    "team_size": 14,
+    "total_budget": 105560.0,
+    "risks_count": 11
+  }
+}

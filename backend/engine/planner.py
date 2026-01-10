@@ -52,6 +52,17 @@ def generate_proposal(requirements_text: str) -> Dict[str, Any]:
     is_startup = signals.get("startup", 0.0) == 1.0
     is_enterprise = signals.get("large_org", 0.0) == 1.0
     
+    # Nuevas industrias
+    is_marketing_tech = signals.get("marketing_tech", 0.0) == 1.0
+    is_consumer_apps = signals.get("consumer_apps", 0.0) == 1.0
+    is_manufacturing = signals.get("manufacturing", 0.0) == 1.0
+    is_pharma = signals.get("pharma", 0.0) == 1.0
+    is_energy = signals.get("energy", 0.0) == 1.0
+    is_automotive = signals.get("automotive", 0.0) == 1.0
+    is_construction = signals.get("construction", 0.0) == 1.0
+    is_fashion = signals.get("fashion", 0.0) == 1.0
+    is_sports_fitness = signals.get("sports_fitness", 0.0) == 1.0
+    
     # Equipo base
     team: List[Dict[str, Any]] = [
         {"role": "PM",           "count": 0.5},
@@ -100,6 +111,62 @@ def generate_proposal(requirements_text: str) -> Dict[str, Any]:
         team.append({"role": "PM", "count": 0.5})
         team.append({"role": "Architect", "count": 0.5})
         team.append({"role": "Backend Dev", "count": 1.0})
+    
+    # Ajustes por marketing tech (analytics, content)
+    if is_marketing_tech:
+        team.append({"role": "Marketing Analyst", "count": 0.5})
+        team.append({"role": "Content Strategist", "count": 0.25})
+        team.append({"role": "Frontend Dev", "count": 0.5})  # Más frontend para dashboards
+    
+    # Ajustes por consumer apps (UX intensivo, growth)
+    if is_consumer_apps:
+        team.append({"role": "UX/UI", "count": 0.5})  # Más UX
+        team.append({"role": "Growth Engineer", "count": 0.25})
+        team.append({"role": "Product Analyst", "count": 0.25})
+    
+    # Ajustes por manufactura/industria (IoT, sistemas industriales)
+    if is_manufacturing:
+        team.append({"role": "Industrial Engineer", "count": 0.5})
+        team.append({"role": "IoT Engineer", "count": 0.5})
+        team.append({"role": "Data Engineer", "count": 0.5})
+        team.append({"role": "QA", "count": 0.5})  # Más QA para sistemas críticos
+    
+    # Ajustes por farmacia (compliance, validación crítica)
+    if is_pharma:
+        team.append({"role": "QA", "count": 1.0})  # Doble QA
+        team.append({"role": "Regulatory Compliance", "count": 0.5})
+        team.append({"role": "Validation Engineer", "count": 0.5})
+        team.append({"role": "Security Engineer", "count": 0.5})
+    
+    # Ajustes por energía (sistemas críticos, SCADA)
+    if is_energy:
+        team.append({"role": "SCADA Engineer", "count": 0.5})
+        team.append({"role": "Security Engineer", "count": 0.5})
+        team.append({"role": "DevOps", "count": 0.5})
+    
+    # Ajustes por automoción (embedded, conectividad)
+    if is_automotive:
+        team.append({"role": "Embedded Engineer", "count": 0.5})
+        team.append({"role": "IoT Engineer", "count": 0.25})
+        team.append({"role": "QA", "count": 0.5})
+    
+    # Ajustes por construcción (BIM, gestión)
+    if is_construction:
+        team.append({"role": "BIM Specialist", "count": 0.25})
+        team.append({"role": "Backend Dev", "count": 0.5})
+    
+    # Ajustes por fashion (diseño, catálogo)
+    if is_fashion:
+        team.append({"role": "UX/UI", "count": 0.5})
+        team.append({"role": "Product Designer", "count": 0.25})
+        team.append({"role": "Frontend Dev", "count": 0.5})
+    
+    # Ajustes por sports/fitness (biometría, UX)
+    if is_sports_fitness:
+        team.append({"role": "Biometric Engineer", "count": 0.25})
+        team.append({"role": "UX/UI", "count": 0.25})
+        if need_mobile:
+            team.append({"role": "Mobile Dev", "count": 0.5})
     
     # Ajustes por startup (reducir overhead)
     if is_startup and not is_enterprise:
@@ -151,12 +218,18 @@ def generate_proposal(requirements_text: str) -> Dict[str, Any]:
     
     if is_erp or is_enterprise:
         duration_multiplier = 1.4  # +40% para enterprise
-    elif is_fintech or is_healthtech or is_insurtech:
+    elif is_fintech or is_healthtech or is_insurtech or is_pharma:
         duration_multiplier = 1.2  # +20% para industrias reguladas (más hardening)
+    elif is_manufacturing or is_energy or is_automotive:
+        duration_multiplier = 1.15  # +15% para industrias con sistemas críticos
     elif is_gaming and chosen == "DevOps":
         duration_multiplier = 0.9  # -10% para gaming con CI/CD (releases rápidos)
-    elif is_startup and not (is_fintech or is_healthtech):
+    elif is_startup and not (is_fintech or is_healthtech or is_pharma):
         duration_multiplier = 0.8  # -20% para startups (MVP rápido)
+    elif is_consumer_apps or is_marketing_tech:
+        duration_multiplier = 0.9  # -10% para apps consumo (tiempo al mercado)
+    elif is_construction or is_fashion or is_sports_fitness:
+        duration_multiplier = 1.0  # Duración estándar
     
     # Aplicar multiplicador a todas las fases
     for phase in phases:
@@ -172,6 +245,14 @@ def generate_proposal(requirements_text: str) -> Dict[str, Any]:
         "HIPAA Compliance": 1400.0, "DevOps": 1200.0,
         "IoT Engineer": 1300.0, "Game Designer": 1100.0,
         "Architect": 1500.0,
+        # Nuevos roles específicos por industria
+        "Marketing Analyst": 1000.0, "Content Strategist": 900.0,
+        "Growth Engineer": 1200.0, "Product Analyst": 1000.0,
+        "Industrial Engineer": 1300.0, "Data Engineer": 1200.0,
+        "Regulatory Compliance": 1400.0, "Validation Engineer": 1300.0,
+        "SCADA Engineer": 1400.0, "Embedded Engineer": 1300.0,
+        "BIM Specialist": 1100.0, "Product Designer": 1000.0,
+        "Biometric Engineer": 1300.0, "Mobile Dev": 1100.0,
     }
     
     # Multiplicador de tarifas por industria
@@ -187,6 +268,9 @@ def generate_proposal(requirements_text: str) -> Dict[str, Any]:
     elif is_healthtech:
         rate_multiplier = 1.30  # +30% healthtech (HIPAA, datos sensibles)
         industry_note = "HealthTech (HIPAA, datos médicos sensibles)"
+    elif is_pharma:
+        rate_multiplier = 1.35  # +35% farmacia (FDA/EMA/GMP, validación crítica)
+        industry_note = "Farmacia (FDA/EMA/GMP, validación crítica, trazabilidad)"
     elif is_legal:
         rate_multiplier = 1.20  # +20% legal (precisión crítica)
         industry_note = "LegalTech (precisión crítica en contratos)"
@@ -199,6 +283,30 @@ def generate_proposal(requirements_text: str) -> Dict[str, Any]:
     elif is_erp or is_enterprise:
         rate_multiplier = 1.12  # +12% enterprise (experiencia en sistemas complejos)
         industry_note = "Enterprise/ERP (sistemas complejos multi-módulo)"
+    elif is_manufacturing:
+        rate_multiplier = 1.18  # +18% manufactura (IoT, sistemas industriales)
+        industry_note = "Manufactura/Industria 4.0 (IoT, SCADA, sistemas críticos)"
+    elif is_energy:
+        rate_multiplier = 1.22  # +22% energía (infraestructura crítica)
+        industry_note = "Energía/Utilities (infraestructura crítica, SCADA)"
+    elif is_automotive:
+        rate_multiplier = 1.20  # +20% automoción (seguridad, embedded)
+        industry_note = "Automoción (seguridad crítica, embedded systems)"
+    elif is_construction:
+        rate_multiplier = 1.08  # +8% construcción (BIM, gestión)
+        industry_note = "Construcción (BIM, gestión de obra)"
+    elif is_marketing_tech:
+        rate_multiplier = 1.05  # +5% marketing (analytics, experimentación)
+        industry_note = "Marketing Tech (analytics, automatización)"
+    elif is_consumer_apps:
+        rate_multiplier = 1.00  # Estándar (competitivo)
+        industry_note = "Consumer Apps (mercado competitivo, UX crítica)"
+    elif is_fashion:
+        rate_multiplier = 0.98  # -2% fashion (mercado competitivo)
+        industry_note = "Fashion/Moda (mercado competitivo, diseño UX)"
+    elif is_sports_fitness:
+        rate_multiplier = 1.03  # +3% sports (wearables, biometría)
+        industry_note = "Sports/Fitness (wearables, biometría)"
     elif is_logistics or is_retail or is_travel:
         rate_multiplier = 0.95  # -5% (mercado competitivo)
         industry_note = "Logistics/Retail/Travel (mercado competitivo)"
@@ -221,12 +329,18 @@ def generate_proposal(requirements_text: str) -> Dict[str, Any]:
     
     # Contingencia ajustada: más alta para industrias críticas
     contingency_pct = 0.10  # 10% base
-    if is_fintech or is_healthtech or is_insurtech:
+    if is_fintech or is_healthtech or is_insurtech or is_pharma:
         contingency_pct = 0.15  # 15% para industrias reguladas
     elif is_erp or is_enterprise:
         contingency_pct = 0.12  # 12% para enterprise
+    elif is_manufacturing or is_energy or is_automotive:
+        contingency_pct = 0.14  # 14% para industrias con sistemas críticos
     elif is_startup:
         contingency_pct = 0.20  # 20% para startups (más incertidumbre)
+    elif is_consumer_apps or is_marketing_tech:
+        contingency_pct = 0.12  # 12% para apps consumo (experimentación)
+    elif is_construction:
+        contingency_pct = 0.13  # 13% para construcción (cambios frecuentes)
     
     contingency = _round_money(contingency_pct * labor)
     total = _round_money(labor + contingency)
@@ -260,6 +374,38 @@ def generate_proposal(requirements_text: str) -> Dict[str, Any]:
         risks += ["Aprobación en tiendas y compatibilidad de dispositivos"]
     if need_ml:
         risks += ["Calidad de datos, sesgo y monitorización de modelos"]
+    
+    # Riesgos específicos por industria
+    if is_fintech:
+        risks += ["Cumplimiento PCI-DSS y prevención de fraude", "Auditorías regulatorias y reporting"]
+    if is_healthtech:
+        risks += ["Cumplimiento HIPAA/GDPR para datos médicos", "Interoperabilidad con sistemas existentes (HL7/FHIR)"]
+    if is_pharma:
+        risks += ["Cumplimiento FDA/EMA/GMP (21 CFR Part 11)", "Validación de sistemas críticos", "Trazabilidad completa de lotes y medicamentos"]
+    if is_insurtech:
+        risks += ["Cálculos actuariales precisos", "Cumplimiento Solvencia II"]
+    if is_manufacturing:
+        risks += ["Integración con sistemas SCADA/PLC existentes", "Conectividad en planta (edge computing)", "Mantenimiento predictivo y calidad en tiempo real"]
+    if is_energy:
+        risks += ["Seguridad de infraestructura crítica (IEC 62443)", "Conectividad con smart meters y grid", "Disponibilidad 24/7 crítica"]
+    if is_automotive:
+        risks += ["Seguridad vehicular (ISO 26262)", "Conectividad telemática", "Actualizaciones OTA seguras"]
+    if is_gaming:
+        risks += ["Balanceo y economía del juego", "Escalabilidad para picos de jugadores", "Anti-cheat y moderación"]
+    if is_marketing_tech:
+        risks += ["Cumplimiento GDPR/CCPA para datos de usuario", "Integración con múltiples plataformas (Google, Meta, etc.)", "Atribución precisa de conversiones"]
+    if is_consumer_apps:
+        risks += ["Retención y engagement de usuarios", "App store guidelines (Apple/Google)", "Onboarding efectivo"]
+    if is_construction:
+        risks += ["Integración BIM con sistemas existentes", "Cambios frecuentes de alcance en obra", "Gestión de múltiples subcontratistas"]
+    if is_fashion:
+        risks += ["Gestión de tallas y devoluciones", "Sincronización de inventario multi-canal", "Tendencias y estacionalidad"]
+    if is_sports_fitness:
+        risks += ["Precisión de sensores biométricos", "Sincronización de wearables", "Motivación y gamificación efectiva"]
+    if is_legal:
+        risks += ["Precisión crítica en contratos", "Cumplimiento normativas locales", "Confidencialidad de datos"]
+    if is_erp or is_enterprise:
+        risks += ["Integración con sistemas legacy", "Gestión de cambio organizacional", "Múltiples stakeholders con prioridades conflictivas"]
 
     # 6) decision_log con FUENTES por área
     decision_log: List[Dict[str, Any]] = []
