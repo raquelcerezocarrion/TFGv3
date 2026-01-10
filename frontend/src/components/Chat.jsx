@@ -666,7 +666,6 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
 
                   // Special case: Long proposal message ending with "¿Quieres comenzar el proyecto ahora?"
                   // This is the complete proposal with employees, assignments, gaps, and phases
-                  // We should NOT show any CTAs that would send more messages to the backend
                   const isCompleteProposal = typeof m.content === 'string' && 
                     m.content.includes('✅ He cargado') && 
                     m.content.includes('empleados de tu base de datos') &&
@@ -674,8 +673,22 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
                     m.content.includes('¿Quieres comenzar el proyecto ahora?')
                   
                   if (isCompleteProposal) {
-                    // Don't render any CTAs - this is the final message
-                    return null
+                    // Show "Terminar proyecto" button
+                    return (
+                      <div className="mt-2 flex flex-col gap-2">
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            className="px-3 py-1 rounded-md border bg-emerald-600 text-white hover:bg-emerald-700 text-sm"
+                            onClick={() => {
+                              setSuggestedCtas([])
+                              setMessages(prev => [...prev, { role: 'assistant', content: 'Ya esta todo listo, puede descargar su pdf', ts: new Date().toISOString() }])
+                            }}
+                          >
+                            Terminar proyecto
+                          </button>
+                        </div>
+                      </div>
+                    )
                   }
 
                   const ctas = detectCtas(m.content)
