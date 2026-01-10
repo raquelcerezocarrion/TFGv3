@@ -681,7 +681,7 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
                             className="px-3 py-1 rounded-md border bg-emerald-600 text-white hover:bg-emerald-700 text-sm"
                             onClick={() => {
                               setSuggestedCtas([])
-                              setMessages(prev => [...prev, { role: 'assistant', content: 'Ya esta todo listo, puede descargar su pdf', ts: new Date().toISOString() }])
+                              setMessages(prev => [...prev, { role: 'assistant', content: '✅ Perfecto. Su proyecto está completamente configurado y listo.\n\nPuede proceder a descargar el PDF con toda la información de la propuesta pulsando el botón "Exportar PDF".', ts: new Date().toISOString() }])
                             }}
                           >
                             Terminar proyecto
