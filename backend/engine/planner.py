@@ -1,6 +1,7 @@
 # backend/engine/planner.py
 from typing import Dict, Any, List
 import math
+import random
 
 from backend.knowledge.methodologies import (
     recommend_methodology,
@@ -325,7 +326,38 @@ def generate_proposal(requirements_text: str) -> Dict[str, Any]:
         by_role.setdefault(role, 0.0)
         by_role[role] += cnt * project_weeks * rate
 
-    labor = _round_money(sum(by_role.values()))
+    base_labor = sum(by_role.values())
+    
+    # Factor de variabilidad basado en complejidad/alcance del proyecto
+    # Analizar complejidad del texto y señales detectadas
+    complexity_factor = 1.0
+    
+    # 1. Complejidad por longitud del texto (más detalle = más alcance)
+    words_count = len(requirements_text.split())
+    if words_count > 80:
+        complexity_factor += 0.08  # +8% para proyectos muy detallados
+    elif words_count > 50:
+        complexity_factor += 0.04  # +4% para proyectos detallados
+    elif words_count < 20:
+        complexity_factor -= 0.05  # -5% para proyectos básicos
+    
+    # 2. Complejidad por número de señales detectadas (más features = más coste)
+    active_signals = sum(1 for v in signals.values() if v > 0)
+    if active_signals > 8:
+        complexity_factor += 0.06  # +6% para proyectos con muchas características
+    elif active_signals > 5:
+        complexity_factor += 0.03  # +3% para proyectos moderadamente complejos
+    
+    # 3. Variación aleatoria ±8% para que cada propuesta sea única
+    # (simula estimación de diferentes equipos, alcance ligeramente diferente)
+    random_variation = random.uniform(-0.08, 0.08)
+    complexity_factor += random_variation
+    
+    # Asegurar que el factor esté en rango razonable (0.85 - 1.20)
+    complexity_factor = max(0.85, min(1.20, complexity_factor))
+    
+    # Aplicar factor de complejidad al labor
+    labor = _round_money(base_labor * complexity_factor)
     
     # Contingencia ajustada: más alta para industrias críticas
     contingency_pct = 0.10  # 10% base
