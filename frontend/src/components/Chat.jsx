@@ -121,6 +121,13 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
         ctas.push({ type: 'decrease_contingency', label: '⬇️ Reducir contingencia' })
       }
       
+      // Detect dedication selection buttons
+      if (txt.includes('__dedication_options__')) {
+        ctas.push({ type: 'select_dedication', label: 'x0.5', data: 'x0.5' })
+        ctas.push({ type: 'select_dedication', label: 'x1', data: 'x1' })
+        ctas.push({ type: 'select_dedication', label: 'x2', data: 'x2' })
+      }
+      
       // Only add changes button if not already added by isCompleteProposal AND not showing change options
       if (!isCompleteProposal && !hasChangeOptions && (txt.includes('hacer cambios') || txt.includes('modific') || txt.includes('realizar cambios') || txt.includes('quieres que lo modifi'))) {
         ctas.push({ type: 'changes', label: 'Solicitar cambios' })
@@ -602,8 +609,74 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
         text = `Regenerar propuesta con metodología ${data}`
       }
       else if (type === 'select_role') {
-        // User selected a specific role
-        text = `Modificar rol ${data}`
+        // User selected a specific role - show dedication options
+        const userMessage = { 
+          role: 'user', 
+          content: data, 
+          ts: new Date().toISOString() 
+        }
+        
+        const assistantMessage = {
+          role: 'assistant',
+          content: `⚙️ Seleccione la dedicación para el rol ${data}:\n\n__DEDICATION_OPTIONS__\n💡 Explicación:\n• 🕐 x0.5 = Dedicación parcial (4 horas/día o 2-3 días/semana)\n• 👤 x1 = Dedicación completa (8 horas/día, tiempo completo)\n• 👥 x2 = Dedicación doble (2 personas a tiempo completo en este rol)`,
+          ts: new Date().toISOString(),
+          _selectedRole: data // Store the selected role for later use
+        }
+        
+        setMessages(prev => [...prev, userMessage, assistantMessage])
+        setSuggestedCtas([])
+        return
+      }
+      else if (type === 'select_dedication') {
+        // User selected a dedication level - update proposal with new role dedication
+        const lastDedicationMsg = messages.findLast(m => 
+          m.role === 'assistant' && 
+          m._selectedRole
+        )
+        
+        if (lastDedicationMsg) {
+          const roleName = lastDedicationMsg._selectedRole
+          const dedication = data // x0.5, x1, or x2
+          
+          // Find the last proposal message
+          const lastProposalMsg = messages.find(m => 
+            m.role === 'assistant' && 
+            typeof m.content === 'string' && 
+            m.content.includes('He generado una propuesta') &&
+            m.content.includes('👥 Equipo:')
+          )
+          
+          if (lastProposalMsg) {
+            // Add user selection message
+            const userMessage = { 
+              role: 'user', 
+              content: dedication, 
+              ts: new Date().toISOString() 
+            }
+            
+            // Update the role dedication in the team section
+            // Match patterns like "Backend Dev x2" or "PM x0.5"
+            const rolePattern = new RegExp(`(${roleName}\\s+x)[0-9.]+`, 'g')
+            const updatedContent = lastProposalMsg.content.replace(
+              rolePattern,
+              `$1${dedication.substring(1)}` // Remove the 'x' from dedication
+            )
+            
+            // Add updated proposal as new assistant message
+            const assistantMessage = {
+              role: 'assistant',
+              content: updatedContent,
+              ts: new Date().toISOString()
+            }
+            
+            setMessages(prev => [...prev, userMessage, assistantMessage])
+            setSuggestedCtas([])
+            return
+          }
+        }
+        
+        // Fallback
+        text = `Modificar dedicación`
       }
       else if (type === 'increase_contingency') text = 'Aumentar contingencia del presupuesto'
       else if (type === 'decrease_contingency') text = 'Reducir contingencia del presupuesto'
@@ -793,6 +866,7 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
                         .replace(/__METHODOLOGY_OPTIONS__/g, '')
                         .replace(/__ROLES_OPTIONS__/g, '')
                         .replace(/__BUDGET_OPTIONS__/g, '')
+                        .replace(/__DEDICATION_OPTIONS__/g, '')
                         .replace(/Si finalmente no quiere realizar ningún cambio pulse el siguiente botón:\s*/g, '')
                         .trim()
                     : m.content
