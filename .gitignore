@@ -28,6 +28,7 @@ pip-wheel-metadata/
 
 # Node
 node_modules/
+frontend/node_modules/
 
 # Frontend builds
 dist/
