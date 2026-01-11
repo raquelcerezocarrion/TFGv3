@@ -22,13 +22,13 @@
 	- [Backend (Python / FastAPI)](#iniciar-backend-desarrollo)
 	- [Frontend (React / Vite)](#iniciar-frontend-desarrollo)
 	- [Iniciar ambos en desarrollo](#instalacion-y-ejecucion-powershell)
+- [Ejecución con Docker Desktop](#ejecucion-con-docker)
 - [API y contratos importantes](#api-y-contratos-importantes)
 - [Flujo crítico (handshake empleados)](#flujo-critico-handshake-empleados)
 - [Tests](#tests)
 	- [Suite TDD (pytest)](#suite-tdd-pytest)
 	- [Tests E2E (Playwright)](#tests-e2e-playwright)
 - [Deploy / producción (notas rápidas)](#deploy--produccion-notas-rapidas)
-- [Acceso al despliegue Docker (local)](#acceso-al-despliegue-docker-local)
 - [Troubleshooting y preguntas frecuentes](#troubleshooting--faqs)
 - [Estructura del repositorio](#estructura-del-repositorio)
 - [Contacto y créditos](#contacto-y-creditos)
@@ -257,6 +257,138 @@ Notes:
 - Ajusta variables de configuración en `backend/core/config.py` (secretos, base de datos). Actualmente la app usa SQLite por conveniencia.
 - Para producción: usar Uvicorn + Gunicorn/Hypercorn, o dockerizar (hay un `docker/` con Dockerfile de ejemplo en el repo).
 - Configura CORS y HTTPS según despliegue.
+
+---
+
+<a name="ejecucion-con-docker"></a>
+## Ejecución con Docker Desktop
+
+Esta sección explica cómo ejecutar la aplicación completa usando Docker Desktop, ideal para pruebas rápidas sin necesidad de instalar Python o Node.js localmente.
+
+### Requisitos previos
+
+- **Docker Desktop** instalado y con el Engine en ejecución (Windows: verificar icono en la bandeja del sistema)
+- Acceso a la carpeta del proyecto `TFGv3`
+
+### Pasos para iniciar la aplicación
+
+1. **Abrir Docker Desktop** y verificar que muestra "Engine running"
+
+2. **Abrir PowerShell** y situarse en la raíz del proyecto:
+```powershell
+cd C:\Users\HP\Desktop\TFGv3
+```
+
+3. **Levantar los servicios** con Docker Compose:
+```powershell
+cd docker
+docker-compose up --build -d
+```
+
+El comando construye las imágenes y arranca dos contenedores:
+- **Backend** (API FastAPI): puerto 8000
+- **Frontend** (React + Vite): puerto 5173
+
+El flag `-d` ejecuta los servicios en segundo plano (detached mode).
+
+4. **Verificar que los servicios están activos**:
+```powershell
+docker-compose ps
+```
+
+Deberías ver dos contenedores corriendo con estado "Up".
+
+### Acceder a la aplicación
+
+- **Frontend (interfaz web)**: http://localhost:5173
+- **Backend (API / documentación Swagger)**: http://localhost:8000/docs
+
+### Ver logs de los servicios
+
+Para monitorear la actividad en tiempo real:
+
+```powershell
+# Logs del backend
+docker-compose logs -f backend
+
+# Logs del frontend
+docker-compose logs -f frontend
+
+# Logs de ambos servicios
+docker-compose logs -f
+```
+
+Presiona `Ctrl+C` para detener el seguimiento de logs (los servicios seguirán corriendo).
+
+### Detener la aplicación
+
+```powershell
+docker-compose down
+```
+
+Este comando para y elimina los contenedores (pero conserva las imágenes construidas y los volúmenes de datos).
+
+### Reiniciar tras cambios
+
+Si modificas el código y necesitas reconstruir:
+
+```powershell
+docker-compose up --build -d
+```
+
+### Gestión desde Docker Desktop (GUI)
+
+Alternativamente, puedes gestionar los contenedores desde la interfaz gráfica de Docker Desktop:
+1. Abre Docker Desktop
+2. Ve a la pestaña "Containers"
+3. Localiza el stack `docker` (o el nombre de tu proyecto)
+4. Usa los botones para:
+   - ▶️ Iniciar/Detener contenedores individuales
+   - 📋 Ver logs
+   - 🔄 Reiniciar
+   - 🗑️ Eliminar
+
+### Persistencia de datos
+
+Los datos se almacenan en `backend/memory/db.sqlite3` (montado como volumen). Este archivo persiste entre reinicios siempre que no ejecutes `docker-compose down -v` (que elimina volúmenes).
+
+### Resolución de problemas comunes
+
+**Error: "No configuration file provided"**
+- Solución: Asegúrate de estar en la carpeta `docker/` o usa la ruta completa:
+```powershell
+docker-compose -f docker/docker-compose.yml up --build -d
+```
+
+**Error: Puerto 8000 o 5173 ya en uso**
+- Solución: Cierra otras aplicaciones usando esos puertos, o modifica los puertos en `docker-compose.yml`:
+```yaml
+ports:
+  - "8001:8000"  # Cambiar puerto externo a 8001
+```
+
+**Frontend muestra "No encuentro el backend"**
+- Solución: Verifica que el backend está corriendo con `docker-compose ps` y revisa los logs del backend.
+
+**Cambios en el código no se reflejan**
+- Solución: Reconstruye las imágenes con `docker-compose up --build -d`
+
+### Limpieza completa
+
+Para eliminar contenedores, volúmenes e imágenes:
+
+```powershell
+# Detener y eliminar contenedores + volúmenes
+docker-compose down -v
+
+# Eliminar imágenes construidas (opcional)
+docker-compose down --rmi all
+
+# Limpiar sistema Docker completo (usar con precaución)
+docker system prune -a
+```
+
+Para más detalles sobre configuración de Docker, consulta [docker/DOCKER_GUIA.md](docker/DOCKER_GUIA.md).
 
 ---
 

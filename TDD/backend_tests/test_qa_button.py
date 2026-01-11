@@ -43,21 +43,25 @@ print(f"   Tag: {tag}")
 print(f"   Response preview: {response[:200]}...")
 
 # Verificar que la propuesta se actualizó
-updated_proposal = get_last_proposal(session_id)
+updated_data = get_last_proposal(session_id)
 
 print(f"\n4. Propuesta actualizada:")
-if updated_proposal:
-    for member in updated_proposal["team"]:
-        print(f"   - {member['role']}: {member['count']}")
-    
-    # Verificar que QA cambió a 2.0
-    qa_member = next((m for m in updated_proposal["team"] if m["role"] == "QA"), None)
-    if qa_member:
-        if qa_member["count"] == 2.0:
-            print(f"\n✅ TEST PASSED: QA cambió correctamente de 1.0 a 2.0")
+if updated_data and len(updated_data) == 2:
+    updated_proposal = updated_data[0]  # get_last_proposal retorna (proposal, req_text)
+    if updated_proposal:
+        for member in updated_proposal["team"]:
+            print(f"   - {member['role']}: {member['count']}")
+        
+        # Verificar que QA cambió a 2.0
+        qa_member = next((m for m in updated_proposal["team"] if m["role"] == "QA"), None)
+        if qa_member:
+            if qa_member["count"] == 2.0:
+                print(f"\n✅ TEST PASSED: QA cambió correctamente de 1.0 a 2.0")
+            else:
+                print(f"\n❌ TEST FAILED: QA debería ser 2.0 pero es {qa_member['count']}")
         else:
-            print(f"\n❌ TEST FAILED: QA debería ser 2.0 pero es {qa_member['count']}")
+            print(f"\n❌ TEST FAILED: No se encontró el rol QA en el equipo")
     else:
-        print(f"\n❌ TEST FAILED: No se encontró el rol QA en el equipo")
+        print(f"\n❌ TEST FAILED: No hay propuesta actualizada")
 else:
-    print(f"\n❌ TEST FAILED: No hay propuesta actualizada")
+    print(f"\n❌ TEST FAILED: get_last_proposal no retornó datos válidos")
