@@ -387,8 +387,11 @@ _ROLE_SYNONYMS = {
     "ux": "UX/UI", "ui": "UX/UI", "diseñ": "UX/UI",
     "pm": "PM", "project manager": "PM",
     "tech lead": "Tech Lead", "arquitect": "Tech Lead", "arquitecto": "Tech Lead",
-    "backend": "Backend Dev", "frontend": "Frontend Dev",
-    "ml": "ML Engineer", "data": "ML Engineer",
+    "backend dev": "Backend Dev", "backend": "Backend Dev",
+    "frontend dev": "Frontend Dev", "frontend": "Frontend Dev",
+    "ml engineer": "ML Engineer", "ml": "ML Engineer", "data": "ML Engineer",
+    "devops": "DevOps", "sre": "DevOps",
+    "security": "Security Engineer", "security engineer": "Security Engineer", "seguridad": "Security Engineer",
 }
 
 def _canonical_role(role_text: str) -> str:
@@ -4119,6 +4122,37 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
             else:
                 return "Tengo un cambio de metodología pendiente. ¿Lo aplico? sí/no", "Esperando confirmación de cambio."
 
+    # Comando explícito: /cambiar: (procesar ANTES de intents para evitar conflictos)
+    if text.lower().startswith("/cambiar:"):
+        arg = text.split(":", 1)[1].strip()
+        target = normalize_method_name(arg)
+        if target in METHODOLOGIES:
+            if not proposal or not req_text:
+                return "Primero necesito una propuesta en esta sesión. Usa '/propuesta: ...' y luego confirma el cambio.", "Cambiar sin propuesta."
+            new_plan = _retune_plan_for_method(proposal, target)
+            set_last_proposal(session_id, new_plan, req_text)
+            try:
+                save_proposal(session_id, req_text, new_plan)
+                log_message(session_id, "assistant", f"[CAMBIO METODOLOGIA → {target}]")
+            except Exception:
+                pass
+            return _pretty_proposal(new_plan), f"Plan reajustado a {target}."
+        # si no, intentar parsear como parche general (equipo, fases, presupuesto, riesgos, …)
+        patch = _parse_any_patch(arg)
+        if patch:
+            if not proposal:
+                return "Primero necesito una propuesta en esta sesión. Usa '/propuesta: ...' y después propón cambios.", "Cambiar: sin propuesta."
+            # Aplicar cambio directamente sin pedir confirmación
+            new_plan = _apply_patch(proposal, patch)
+            set_last_proposal(session_id, new_plan, req_text)
+            try:
+                save_proposal(session_id, req_text, new_plan)
+                log_message(session_id, "assistant", f"[CAMBIO APLICADO → {patch.get('type')}]")
+            except Exception:
+                pass
+            return _pretty_proposal(new_plan), f"Cambio aplicado ({patch.get('type')})."
+        return "No entendí qué cambiar. Puedes usar ejemplos: '/cambiar: añade 0.5 QA', '/cambiar: contingencia a 15%'", "Cambiar: sin parseo."
+
     # === MODO FORMACIÓN DESHABILITADO: redirigir a sección Aprender ===
     # El modo formación ahora está en una sección separada (Aprender)
     if _wants_training(text):
@@ -4588,37 +4622,6 @@ def generate_reply(session_id: str, message: str) -> Tuple[str, str]:
         except Exception:
             pass
         return _pretty_proposal(p), "Propuesta generada."
-
-    # Comando explícito: /cambiar:
-    if text.lower().startswith("/cambiar:"):
-        arg = text.split(":", 1)[1].strip()
-        target = normalize_method_name(arg)
-        if target in METHODOLOGIES:
-            if not proposal or not req_text:
-                return "Primero necesito una propuesta en esta sesión. Usa '/propuesta: ...' y luego confirma el cambio.", "Cambiar sin propuesta."
-            new_plan = _retune_plan_for_method(proposal, target)
-            set_last_proposal(session_id, new_plan, req_text)
-            try:
-                save_proposal(session_id, req_text, new_plan)
-                log_message(session_id, "assistant", f"[CAMBIO METODOLOGIA → {target}]")
-            except Exception:
-                pass
-            return _pretty_proposal(new_plan), f"Plan reajustado a {target}."
-        # si no, intentar parsear como parche general (equipo, fases, presupuesto, riesgos, …)
-        patch = _parse_any_patch(arg)
-        if patch:
-            if not proposal:
-                return "Primero necesito una propuesta en esta sesión. Usa '/propuesta: ...' y después propón cambios.", "Cambiar: sin propuesta."
-            # Aplicar cambio directamente sin pedir confirmación
-            new_plan = _apply_patch(proposal, patch)
-            set_last_proposal(session_id, new_plan, req_text)
-            try:
-                save_proposal(session_id, req_text, new_plan)
-                log_message(session_id, "assistant", f"[CAMBIO APLICADO → {patch.get('type')}]")
-            except Exception:
-                pass
-            return _pretty_proposal(new_plan), f"Cambio aplicado ({patch.get('type')})."
-        return "No entendí qué cambiar. Puedes usar ejemplos: '/cambiar: añade 0.5 QA', '/cambiar: contingencia a 15%'", "Cambiar: sin parseo."
 
     # Cambio natural de metodología: consejo + confirmación
     change_req = _parse_change_request(text)
