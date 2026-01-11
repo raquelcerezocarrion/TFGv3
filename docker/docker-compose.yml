@@ -3,28 +3,42 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.backend
+    container_name: tfg-backend
     volumes:
-      - ../backend:/app/backend:delegated
-      - ../backend/memory:/app/backend/memory:delegated
-      - ../backend/models:/app/backend/models:delegated
+      - ../backend:/app/backend
+      - ../data:/app/data
+      - ../backend/memory:/app/backend/memory
     environment:
       - PYTHONUNBUFFERED=1
       - PORT=8000
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
     ports:
       - "8000:8000"
     restart: unless-stopped
+    networks:
+      - tfg-network
 
   frontend:
-    image: node:18-alpine
-    working_dir: /app/frontend
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.frontend
+    container_name: tfg-frontend
     volumes:
-      - ../frontend:/app/frontend:delegated
+      - ../frontend:/app/frontend
       - /app/frontend/node_modules
     ports:
       - "5173:5173"
-    command: sh -c "npm install --silent && npm run dev -- --host 0.0.0.0"
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    depends_on:
+      - backend
     restart: unless-stopped
+    networks:
+      - tfg-network
 
-# Volumes can be added here if you prefer Docker-managed volumes
+networks:
+  tfg-network:
+    driver: bridge
+
 volumes:
-  db_data: {}
+  node_modules:

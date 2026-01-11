@@ -5,20 +5,25 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# Copy requirements first for better caching
 COPY requirements.txt /app/
 
+# Install dependencies
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends build-essential gcc libpq-dev curl \
+    && apt-get install -y --no-install-recommends build-essential gcc curl \
     && pip install --upgrade pip \
     && pip install --no-cache-dir -r /app/requirements.txt \
     && apt-get purge -y --auto-remove build-essential gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy backend source
+# Copy backend and data directories
 COPY backend /app/backend
-WORKDIR /app
+COPY data /app/data
+
+# Create necessary directories
+RUN mkdir -p /app/backend/memory /app/data
 
 EXPOSE 8000
 
-# Development default: use reload so edits on bind-mounted code are reflected
+# Run with reload for development
 CMD ["uvicorn", "backend.app:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
