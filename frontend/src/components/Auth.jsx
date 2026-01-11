@@ -156,7 +156,7 @@ export default function Auth({ onLogin }){
           <div className="space-y-4">
             {mode === 'register' && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Nombre completo</label>
+                <label className="block text-sm font-medium text-white mb-1.5">Nombre completo</label>
                 <input 
                   className="w-full border-2 border-gray-200 rounded-xl px-4 py-2.5 focus:border-blue-500 focus:outline-none transition" 
                   placeholder="Tu nombre" 
@@ -167,7 +167,7 @@ export default function Auth({ onLogin }){
             )}
             
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
+              <label className="block text-sm font-medium text-white mb-1.5">Email</label>
               <input 
                 className="w-full border-2 border-gray-200 rounded-xl px-4 py-2.5 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 focus:outline-none transition" 
                 placeholder="tu@email.com" 
@@ -177,7 +177,7 @@ export default function Auth({ onLogin }){
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Contraseña</label>
+              <label className="block text-sm font-medium text-white mb-1.5">Contraseña</label>
               <input 
                 type="password" 
                 className="w-full border-2 border-gray-200 rounded-xl px-4 py-2.5 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 focus:outline-none transition" 

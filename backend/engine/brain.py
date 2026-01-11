@@ -396,6 +396,10 @@ _ROLE_SYNONYMS = {
 
 def _canonical_role(role_text: str) -> str:
     t = _norm(role_text)
+    # Intenta match exacto primero (importante para roles cortos como QA, PM, etc.)
+    if t in _ROLE_SYNONYMS:
+        return _ROLE_SYNONYMS[t]
+    # Luego intenta substring match
     for k, v in _ROLE_SYNONYMS.items():
         if k in t:
             return v
