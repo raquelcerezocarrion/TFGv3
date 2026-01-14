@@ -19,6 +19,12 @@ DATA_DIR = Path("data"); DATA_DIR.mkdir(parents=True, exist_ok=True)
 # Default continues to be a local SQLite file for easy development.
 DB_URL = os.getenv("DATABASE_URL", f"sqlite:///{(DATA_DIR / 'app.db').as_posix()}")
 
+# Normalize common Heroku/Render style URL `postgres://...` to the
+# SQLAlchemy expected scheme `postgresql://` so the proper dialect
+# entrypoint is found without forcing changes in the environment.
+if DB_URL and DB_URL.startswith("postgres://"):
+    DB_URL = DB_URL.replace("postgres://", "postgresql://", 1)
+
 # For SQLite we need the `check_same_thread` connect arg in this sync codepath.
 connect_args = {}
 if DB_URL.startswith("sqlite"):
