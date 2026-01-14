@@ -126,7 +126,12 @@ class Catalog(Base):
 
 
 
-Base.metadata.create_all(engine)
+try:
+    Base.metadata.create_all(engine)
+except Exception as e:
+    import traceback
+    print("[state_store] Warning: create_all failed, continuing. Error:", e, flush=True)
+    print(traceback.format_exc(), flush=True)
 
 # Creo las tablas si no existen. Es práctico en desarrollo; en producción
 # preferiría controlarlas con migraciones.
@@ -329,4 +334,9 @@ def list_catalog(kind: str) -> List[Catalog]:
 
 
 # Recrear tablas nuevas si añadimos modelos después del create_all inicial
-Base.metadata.create_all(engine)
+try:
+    Base.metadata.create_all(engine)
+except Exception as e:
+    import traceback
+    print("[state_store] Warning: create_all (second call) failed, continuing. Error:", e, flush=True)
+    print(traceback.format_exc(), flush=True)
