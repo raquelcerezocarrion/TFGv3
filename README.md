@@ -1,5 +1,43 @@
 # TFG
 
+🎯 **TFGv3 — Asistente de propuestas (FastAPI + React)**
+
+**Breve introducción**
+
+TFGv3 es una aplicación full‑stack desarrollada como Trabajo de Fin de Grado. Combina un backend en FastAPI (Python) y un frontend SPA en React (Vite) para ofrecer un asistente conversacional que genera propuestas de proyecto automáticamente a partir de requerimientos textuales. Soporta gestión de usuarios, guardado de chats/propuestas, gestión de empleados, generación de propuestas (metodología, equipo, fases, presupuesto) y exportación a PDF.
+
+🔗 Despliegue público (Render)
+
+La instancia desplegada y pública (misma URL para frontend y backend) está disponible en:
+
+https://tfgv3-version2.onrender.com
+
+Pasos rápidos para desplegar en Render (Git → Render) — sin Docker Desktop:
+
+1. Repositorio: empuja tu rama principal al repositorio remoto (GitHub/GitLab/Bitbucket).
+
+2. En Render: crea un nuevo **Web Service** y conéctalo a tu repositorio y rama.
+
+3. Tipo de despliegue: selecciona **Docker** (Render detectará el Dockerfile en `docker/Dockerfile.backend`).
+
+4. Variables de entorno recomendadas (en la UI de Render → Environment):
+- `VITE_API_BASE` = (dejar vacío para usar same-origin) — importante para que el frontend llame al backend desde la misma URL.
+- `DATABASE_URL` = (opcional) si quieres usar Postgres en lugar de SQLite; si está vacío se usa SQLite local en el contenedor.
+- `WEB_CONCURRENCY` = `1` (recomendado en planes con memoria limitada para evitar OOM en procesos workers).
+- `SECRET_KEY` = cadena larga para producción (si tu app la usa desde `backend/core/config.py`).
+
+5. Build & Start: Render construirá la imagen usando el `Dockerfile`. El `CMD` del `Dockerfile` respeta `WEB_CONCURRENCY` y por defecto arranca 1 worker.
+
+6. Monitorización: usa **Live Tail** en Render para revisar logs y confirmar que no hay errores ni OOM. Si hay problemas de memoria, asigna `WEB_CONCURRENCY=1` o considera un plan con más RAM.
+
+7. Revisiones finales: una vez listo, prueba la URL pública y verifica `/health` y `/docs`.
+
+Notas importantes del despliegue:
+- No uses Docker Desktop para la entrega de la memoria (se ha comprobado que la versión local con Docker Desktop puede dar problemas en Windows para este proyecto). Sigue el flujo Git → Render o ejecuciones locales con `npm` + `uvicorn`.
+- Para mantener same-origin (frontend servido desde backend), deja `VITE_API_BASE` vacío en Render.
+
+---
+
 ## Para arrancar el backend :
 ### .\.venv\Scripts\Activate.ps1
 ### python -m uvicorn backend.app:app --reload --host 0.0.0.0 --port 8000
@@ -261,205 +299,13 @@ Notes:
 ---
 
 <a name="ejecucion-con-docker"></a>
-## Ejecución con Docker Desktop
+## Nota sobre Docker (sección reducida)
 
-Esta sección explica cómo ejecutar la aplicación completa usando Docker Desktop, ideal para pruebas rápidas sin necesidad de instalar Python o Node.js localmente.
+Las instrucciones detalladas de Docker Desktop se han eliminado de esta guía principal para evitar confusión en evaluaciones (Docker Desktop en Windows puede presentar problemas en algunos entornos). Si necesitas ejecutar con Docker por motivos avanzados, encontrarás una guía específica y archivos de ejemplo en [docker/DOCKER_GUIA.md](docker/DOCKER_GUIA.md).
 
-### Requisitos previos
-
-- **Docker Desktop** instalado y con el Engine en ejecución (Windows: verificar icono en la bandeja del sistema)
-- Acceso a la carpeta del proyecto `TFGv3`
-
-### Pasos para iniciar la aplicación
-
-1. **Abrir Docker Desktop** y verificar que muestra "Engine running"
-
-2. **Abrir PowerShell** y situarse en la raíz del proyecto:
-```powershell
-cd C:\Users\HP\Desktop\TFGv3
-```
-
-3. **Levantar los servicios** con Docker Compose:
-```powershell
-cd docker
-docker-compose up --build -d
-```
-
-El comando construye las imágenes y arranca dos contenedores:
-- **Backend** (API FastAPI): puerto 8000
-- **Frontend** (React + Vite): puerto 5173
-
-El flag `-d` ejecuta los servicios en segundo plano (detached mode).
-
-4. **Verificar que los servicios están activos**:
-```powershell
-docker-compose ps
-```
-
-Deberías ver dos contenedores corriendo con estado "Up".
-
-### Acceder a la aplicación
-
-- **Frontend (interfaz web)**: http://localhost:5173
-- **Backend (API / documentación Swagger)**: http://localhost:8000/docs
-
-### Ver logs de los servicios
-
-Para monitorear la actividad en tiempo real:
-
-```powershell
-# Logs del backend
-docker-compose logs -f backend
-
-# Logs del frontend
-docker-compose logs -f frontend
-
-# Logs de ambos servicios
-docker-compose logs -f
-```
-
-Presiona `Ctrl+C` para detener el seguimiento de logs (los servicios seguirán corriendo).
-
-### Detener la aplicación
-
-```powershell
-docker-compose down
-```
-
-Este comando para y elimina los contenedores (pero conserva las imágenes construidas y los volúmenes de datos).
-
-### Reiniciar tras cambios
-
-Si modificas el código y necesitas reconstruir:
-
-```powershell
-docker-compose up --build -d
-```
-
-### Gestión desde Docker Desktop (GUI)
-
-Alternativamente, puedes gestionar los contenedores desde la interfaz gráfica de Docker Desktop:
-1. Abre Docker Desktop
-2. Ve a la pestaña "Containers"
-3. Localiza el stack `docker` (o el nombre de tu proyecto)
-4. Usa los botones para:
-   - ▶️ Iniciar/Detener contenedores individuales
-   - 📋 Ver logs
-   - 🔄 Reiniciar
-   - 🗑️ Eliminar
-
-### Persistencia de datos
-
-Los datos se almacenan en `backend/memory/db.sqlite3` (montado como volumen). Este archivo persiste entre reinicios siempre que no ejecutes `docker-compose down -v` (que elimina volúmenes).
-
-### Resolución de problemas comunes
-
-**Error: "No configuration file provided"**
-- Solución: Asegúrate de estar en la carpeta `docker/` o usa la ruta completa:
-```powershell
-docker-compose -f docker/docker-compose.yml up --build -d
-```
-
-**Error: Puerto 8000 o 5173 ya en uso**
-- Solución: Cierra otras aplicaciones usando esos puertos, o modifica los puertos en `docker-compose.yml`:
-```yaml
-ports:
-  - "8001:8000"  # Cambiar puerto externo a 8001
-```
-
-**Frontend muestra "No encuentro el backend"**
-- Solución: Verifica que el backend está corriendo con `docker-compose ps` y revisa los logs del backend.
-
-**Cambios en el código no se reflejan**
-- Solución: Reconstruye las imágenes con `docker-compose up --build -d`
-
-### Limpieza completa
-
-Para eliminar contenedores, volúmenes e imágenes:
-
-```powershell
-# Detener y eliminar contenedores + volúmenes
-docker-compose down -v
-
-# Eliminar imágenes construidas (opcional)
-docker-compose down --rmi all
-
-# Limpiar sistema Docker completo (usar con precaución)
-docker system prune -a
-```
-
-Para más detalles sobre configuración de Docker, consulta [docker/DOCKER_GUIA.md](docker/DOCKER_GUIA.md).
+Para evaluación y despliegue público preferimos el flujo Git → Render descrito arriba. Para desarrollo local sigue los apartados "Instalación y ejecución (PowerShell)" y "Iniciar backend (desarrollo)" / "Iniciar frontend (desarrollo)".
 
 ---
-
-<a name="acceso-al-despliegue-docker-local"></a>
-## Acceso al despliegue Docker (local) — guía para un usuario
-
-Esta sección explica, paso a paso y de forma no técnica, cómo un usuario normal puede arrancar y acceder al despliegue local usando Docker Desktop y Docker Compose. Está pensada para el Tribunal evaluador o revisores que quieran ver la aplicación en funcionamiento sin instalar dependencias de desarrollo.
-
-Requisitos mínimos (usuario):
-- Docker Desktop instalado y con el Engine en "running" (Windows: comprobar icono en la bandeja).
-- Acceso a la carpeta del proyecto con el `docker/` y `frontend`/`backend` presentes.
-
-Pasos rápidos (ejecución en Windows PowerShell desde la carpeta del proyecto `TFGv3`):
-
-1) Abrir Docker Desktop y asegurarse de que muestra "Engine running".
-
-2) Abrir PowerShell y situarse en la raíz del repo:
-```powershell
-cd C:\Users\HP\Desktop\TFGv3
-```
-
-3) Levantar la aplicación con Docker Compose (usa el fichero `docker/docker-compose.yml` incluido en el repo):
-```powershell
-docker compose -f docker/docker-compose.yml up --build -d
-```
-
-Qué hace este comando: construye las imágenes necesarias y arranca dos servicios — el `backend` (API) y el `frontend` (interfaz). El argumento `-d` ejecuta los servicios en segundo plano.
-
-4) Verificar que los servicios están arriba:
-```powershell
-docker compose -f docker/docker-compose.yml ps
-```
-Deberías ver dos contenedores con los puertos mapeados: `8000->8000` (backend) y `5173->5173` (frontend).
-
-5) Abrir la aplicación en el navegador:
-- Frontend (interfaz): http://localhost:5173
-- Backend (API / documentación): http://localhost:8000/docs
-
-Acciones útiles para un usuario no técnico
-- Ver logs simples (si necesitas comprobar actividad):
-	- `docker compose -f docker/docker-compose.yml logs -f backend`
-	- `docker compose -f docker/docker-compose.yml logs -f frontend`
-- Parar la aplicación:
-	- `docker compose -f docker/docker-compose.yml down`
-- Reiniciar (por ejemplo tras un rebuild):
-	- `docker compose -f docker/docker-compose.yml up --build -d`
-
-Si no quieres usar la terminal
-- En Docker Desktop (GUI) aparece la lista de contenedores; puedes arrancarlos/ detenerlos/ ver logs y abrir puertos directamente desde la interfaz.
-
-Notas sobre datos y persistencia
-- El proyecto monta carpetas locales como volúmenes (por ejemplo `./backend` y `./frontend`) para facilitar desarrollo. Si el evaluador quiere que los datos persistan entre reinicios, asegúrate de que el directorio `backend/memory` (que contiene `db.sqlite3`) no se elimine. Si se prefiere, se puede sustituir SQLite por un servicio de base de datos externo (no incluido por defecto).
-
-Comprobaciones rápidas para confirmar que todo funciona
-- Abrir `http://localhost:8000/docs` y ejecutar el endpoint `/auth/register` desde la interfaz Swagger para crear una cuenta de prueba.
-- Abrir `http://localhost:5173` y usar la interfaz para iniciar sesión con la cuenta creada. Deberías poder crear un proyecto y pedir la exportación a PDF.
-- Si la UI muestra errores de conexión, comprobar la consola del navegador (DevTools → Console) y los logs del backend (comando `logs` arriba).
-
-Errores frecuentes y soluciones
-- "No configuration file provided": usar la opción `-f docker/docker-compose.yml` porque el archivo `docker-compose.yml` está en la carpeta `docker/`.
-- Puertos ocupados: si `8000` o `5173` están en uso, cierra la aplicación que los usa o modifica las líneas `ports:` en `docker/docker-compose.yml` (por ejemplo `8001:8000`) y vuelve a levantar con `up --build`.
-- Si el backend devuelve `{"detail":"Not Found"}` al abrir la raíz `http://localhost:8000`, abrir `http://localhost:8000/docs` (la API no ofrece contenido en `/` por diseño).
-
-Despliegue usando imágenes públicas (opcional)
-- Si prefieres no construir localmente, el workflow de GitHub Actions incluido puede subir imágenes a Docker Hub (mira `.github/workflows/docker-deploy.yml`). Si hay imágenes públicas disponibles, bastará con hacer `docker pull <usuario>/tfg-backend:latest` y `docker pull <usuario>/tfg-frontend:latest` y usar un `docker-compose` que cargue esas imágenes.
-
-Soporte
-- Si tienes dudas mientras realizas estos pasos, pega aquí la salida del comando `docker compose -f docker/docker-compose.yml ps` y los últimos logs (`docker compose -f docker/docker-compose.yml logs backend --tail 100`) y te ayudo a interpretar y solucionar.
-
----
-
 ---
 
 <a name="troubleshooting--faqs"></a>
