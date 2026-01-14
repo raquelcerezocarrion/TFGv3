@@ -126,12 +126,35 @@ class Catalog(Base):
 
 
 
-try:
-    Base.metadata.create_all(engine)
-except Exception as e:
-    import traceback
-    print("[state_store] Warning: create_all failed, continuing. Error:", e, flush=True)
-    print(traceback.format_exc(), flush=True)
+def init_db():
+    """Inicializa las tablas de la base de datos de forma segura.
+
+    Usa un lock por fichero en `data/.init_db_lock` para evitar que múltiples
+    procesos (p. ej. varios workers de Uvicorn) intenten crear las tablas
+    simultáneamente y provoquen errores de tipo "table already exists".
+    """
+    lockfile = DATA_DIR / ".init_db_lock"
+    try:
+        fd = os.open(str(lockfile), os.O_CREAT | os.O_EXCL | os.O_RDWR)
+    except FileExistsError:
+        print("[state_store] init_db skipped: another process is running init", flush=True)
+        return
+    try:
+        try:
+            Base.metadata.create_all(engine)
+        except Exception as e:
+            import traceback
+            print("[state_store] init_db create_all failed:", e, flush=True)
+            print(traceback.format_exc(), flush=True)
+    finally:
+        try:
+            os.close(fd)
+        except Exception:
+            pass
+        try:
+            os.remove(str(lockfile))
+        except Exception:
+            pass
 
 # Creo las tablas si no existen. Es práctico en desarrollo; en producción
 # preferiría controlarlas con migraciones.
@@ -333,10 +356,6 @@ def list_catalog(kind: str) -> List[Catalog]:
         return db.query(Catalog).filter(Catalog.kind == kind).order_by(Catalog.created_at.desc()).all()
 
 
-# Recrear tablas nuevas si añadimos modelos después del create_all inicial
-try:
-    Base.metadata.create_all(engine)
-except Exception as e:
-    import traceback
-    print("[state_store] Warning: create_all (second call) failed, continuing. Error:", e, flush=True)
-    print(traceback.format_exc(), flush=True)
+# Nota: no ejecutamos `create_all` en import-time para evitar carreras entre
+# múltiples procesos. Llamar a `init_db()` desde `backend.app` en el evento
+# `startup` se encargará de crear las tablas de forma segura.
