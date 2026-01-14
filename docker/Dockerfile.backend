@@ -2,7 +2,7 @@ FROM node:18-alpine AS frontend-build
 
 WORKDIR /app/frontend
 
-# Install frontend deps and build
+
 COPY frontend/package*.json ./
 RUN npm ci --silent || npm install --silent
 COPY frontend/ .
@@ -15,10 +15,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Copy requirements first for better caching
+
 COPY requirements.txt /app/
 
-# Install dependencies
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential gcc curl ca-certificates \
     && pip install --upgrade pip \
@@ -26,18 +26,16 @@ RUN apt-get update \
     && apt-get purge -y --auto-remove build-essential gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy backend and data directories
+
 COPY backend /app/backend
 COPY data /app/data
 
-# Copy built frontend from the node stage
 COPY --from=frontend-build /app/frontend/dist /app/frontend/dist
 
-# Create necessary directories
+
 RUN mkdir -p /app/backend/memory /app/data
 
 EXPOSE 8000
 
-# Production-friendly command: respect Render's $PORT and avoid --reload
-# Use sh -c so ${PORT} is expanded at container runtime and run multiple workers.
-CMD ["sh", "-c", "exec uvicorn backend.app:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --workers 4"]
+
+CMD ["sh", "-c", "if [ -n \"$WEB_CONCURRENCY\" ]; then exec uvicorn backend.app:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --workers $WEB_CONCURRENCY; else exec uvicorn backend.app:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --workers 1; fi"]
