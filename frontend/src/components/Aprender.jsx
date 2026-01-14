@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import axios from 'axios'
+import { API_BASE } from '../api'
 
 export default function Aprender({ token }) {
   const [messages, setMessages] = useState([])
@@ -10,7 +11,7 @@ export default function Aprender({ token }) {
   const [selectedLevel, setSelectedLevel] = useState(null)
   const [selectedMethodology, setSelectedMethodology] = useState(null)
 
-  const base = `http://${window.location.hostname}:8000`
+  const base = API_BASE
   
   const topics = [
     { name: '¿Qué es?', icon: '❓', question: '¿Qué es {method}?' },

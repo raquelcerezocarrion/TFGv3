@@ -1,7 +1,8 @@
 # backend/app.py
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from datetime import datetime
@@ -990,6 +991,20 @@ def on_startup():
             print(f"  {getattr(r, 'methods', ['GET'])} {getattr(r, 'path', '')}")
     except Exception:
         pass
+
+
+# --- Static frontend (si existe la build en frontend/dist) ---
+try:
+    # ruta relativa esperada: <repo-root>/frontend/dist
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+    static_dir = os.path.join(base_dir, 'frontend', 'dist')
+    if os.path.isdir(static_dir):
+        app.mount('/', StaticFiles(directory=static_dir, html=True), name='frontend')
+        print(f"[startup] Frontend estático servido desde: {static_dir}")
+    else:
+        print(f"[startup] No se encuentra frontend build en: {static_dir}")
+except Exception as _:
+    pass
 
 @app.get("/health")
 def health():

@@ -1,17 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react'
 import axios from 'axios'
-
-const CANDIDATES = [
-  () => `http://${window.location.hostname}:8000`,
-  () => 'http://127.0.0.1:8000',
-  () => 'http://localhost:8000',
-]
+import { API_BASE } from '../api'
 
 async function detectApiBase() {
-  for (const make of CANDIDATES) {
-    const base = make()
-    try { await axios.get(`${base}/health`, { timeout: 1500 }); return base } catch {}
-  }
+  try { await axios.get(`${API_BASE}/health`, { timeout: 1500 }); return API_BASE } catch {}
   return null
 }
 
@@ -177,7 +169,7 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
     (async () => {
       const base = await detectApiBase()
       if (!base) {
-        setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ No encuentro el backend en :8000. Arranca uvicorn.', ts: new Date().toISOString() }])
+        setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ No encuentro el backend en ${API_BASE}. Arranca uvicorn.`, ts: new Date().toISOString() }])
         return
       }
       setApiBase(base)
@@ -683,7 +675,7 @@ export default function Chat({ token, loadedMessages = null, selectedChatId = nu
   // Load employees from backend and send JSON via WebSocket (mirrors earlier auto-load behavior)
   const loadEmployeesAndSend = async () => {
     if (!apiBase) {
-      setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ Backend no detectado. Arranca uvicorn en :8000.', ts: new Date().toISOString() }])
+      setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ Backend no detectado. Arranca uvicorn en ${API_BASE}.`, ts: new Date().toISOString() }])
       return
     }
 

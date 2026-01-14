@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import axios from 'axios'
+import { API_BASE } from '../api'
 
 export default function Recommendations({ token }) {
   const [query, setQuery] = useState('')
@@ -7,7 +8,7 @@ export default function Recommendations({ token }) {
   const [recommendation, setRecommendation] = useState(null)
   const [error, setError] = useState(null)
 
-  const base = `http://${window.location.hostname}:8000`
+  const base = API_BASE
 
   const search = async () => {
     const q = query.trim()

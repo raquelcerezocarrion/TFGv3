@@ -10,6 +10,8 @@ import Sidebar from './components/Sidebar.jsx'
 import axios from 'axios'
 
 export default function App() {
+  // Base URL para la API: usar variable de entorno en build o el origen actual
+  const API_BASE = import.meta.env.VITE_API_BASE || window.location.origin
   const [token, setToken] = useState(() => localStorage.getItem('tfg_token'))
   const logout = () => { localStorage.removeItem('tfg_token'); setToken(null) }
   const onLogin = (t) => { localStorage.setItem('tfg_token', t); setToken(t) }
@@ -25,8 +27,7 @@ export default function App() {
 
   async function fetchChats() {
     try {
-      const base = `http://${window.location.hostname}:8000`
-      const res = await axios.get(`${base}/user/chats`, { headers: { Authorization: `Bearer ${token}` } })
+      const res = await axios.get(`${API_BASE}/user/chats`, { headers: { Authorization: `Bearer ${token}` } })
       setChats(res.data)
     } catch (e) {
       if (!handleAuthError(e)) console.error('fetch chats', e)
@@ -62,7 +63,7 @@ export default function App() {
       }
       const title = window.prompt('Título del proyecto:', 'Nuevo proyecto')
       if (title === null) return // usuario canceló
-      const base = `http://${window.location.hostname}:8000`
+      const base = API_BASE
       // El endpoint exige 'content' no vacío; usamos un array JSON vacío como contenido inicial
       const payload = { title: title || `Proyecto ${new Date().toLocaleString()}`, content: JSON.stringify([]) }
       let res
@@ -90,8 +91,8 @@ export default function App() {
   const onSaveCurrentChat = async (messages, title = null) => {
     try {
   if (!token) { window.alert('Debes iniciar sesión para guardar proyectos.'); return null }
-      const base = `http://${window.location.hostname}:8000`
-  const payload = { title: title || `Proyecto ${new Date().toLocaleString()}`, content: JSON.stringify(messages) }
+        const base = API_BASE
+      const payload = { title: title || `Proyecto ${new Date().toLocaleString()}`, content: JSON.stringify(messages) }
       try {
         const res = await axios.post(`${base}/user/chats`, payload, { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } })
         const newChatId = res.data?.id || null
@@ -109,7 +110,7 @@ export default function App() {
   const onSaveExistingChat = async (chatId, messages, title = null) => {
     try {
   if (!token) { window.alert('Debes iniciar sesión para guardar cambios.'); return }
-      const base = `http://${window.location.hostname}:8000`
+      const base = API_BASE
       const body = { content: JSON.stringify(messages) }
       if (title) body.title = title
       try {
@@ -124,7 +125,7 @@ export default function App() {
   const onRename = async (chatId, newTitle) => {
     try {
   if (!token) { window.alert('Debes iniciar sesión para renombrar proyectos.'); return }
-      const base = `http://${window.location.hostname}:8000`
+      const base = API_BASE
       // Enviar solo el título para evitar sobreescribir el contenido con cadena vacía
       try {
         await axios.put(`${base}/user/chats/${chatId}`, { title: newTitle }, { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } })
@@ -138,7 +139,7 @@ export default function App() {
   const onDelete = async (chatId) => {
     try {
   if (!token) { window.alert('Debes iniciar sesión para eliminar proyectos.'); return }
-      const base = `http://${window.location.hostname}:8000`
+      const base = API_BASE
       try {
         await axios.delete(`${base}/user/chats/${chatId}`, { headers: { Authorization: `Bearer ${token}` } })
         await fetchChats()
@@ -151,7 +152,7 @@ export default function App() {
   const onContinue = async (chat) => {
     try {
   if (!token) { window.alert('Debes iniciar sesión para continuar proyectos.'); return }
-      const base = `http://${window.location.hostname}:8000`
+      const base = API_BASE
       try {
         const r = await axios.post(`${base}/user/chats/${chat.id}/continue`, {}, { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } })
         const sid = r.data.session_id

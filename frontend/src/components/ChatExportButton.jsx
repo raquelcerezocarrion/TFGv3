@@ -1,10 +1,11 @@
 // frontend/src/components/ChatExportButton.jsx
 import React from "react";
+import { API_BASE } from '../api'
 
 export default function ChatExportButton({ messages, title = "Conversación" }) {
   const handleDownload = async () => {
     try {
-      const res = await fetch("http://localhost:8000/export/chat.pdf", {
+      const res = await fetch(`${API_BASE}/export/chat.pdf`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, messages }),

@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react'
 import axios from 'axios'
+import { API_BASE } from '../api'
 
 export default function Profile({ token, onOpenChat, logout }){
-  const [apiBase, setApiBase] = useState(`http://${window.location.hostname}:8000`)
+  const [apiBase, setApiBase] = useState(API_BASE)
   const [profile, setProfile] = useState(null)
   const [chats, setChats] = useState([])
   const [loading, setLoading] = useState(false)

@@ -1,6 +1,7 @@
 // src/components/Employees.jsx
 import React, { useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
+import { API_BASE } from '../api'
 
 /**
  * Empleados con fallback local:
@@ -23,7 +24,7 @@ const readCache = () => {
 const writeCache = (arr) => localStorage.setItem(CACHE_KEY, JSON.stringify(arr || []))
 
 export default function Employees({ token }) {
-  const apiBase = `http://${window.location.hostname}:8000`
+  const apiBase = API_BASE
   const headers = token ? { Authorization: `Bearer ${token}` } : {}
 
   const [list, setList] = useState([])

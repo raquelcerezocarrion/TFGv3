@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import axios from 'axios'
+import { API_BASE } from '../api'
 
 export default function Auth({ onLogin }){
   const [mode, setMode] = useState('login')
@@ -10,7 +11,7 @@ export default function Auth({ onLogin }){
   const [error, setError] = useState(null)
   const [info, setInfo] = useState(null)
 
-  const apiBase = `http://${window.location.hostname}:8000`
+  const apiBase = API_BASE
 
   // Load saved credentials if present
   React.useEffect(()=>{
