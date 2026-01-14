@@ -993,19 +993,6 @@ def on_startup():
         pass
 
 
-# --- Static frontend (si existe la build en frontend/dist) ---
-try:
-    # ruta relativa esperada: <repo-root>/frontend/dist
-    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
-    static_dir = os.path.join(base_dir, 'frontend', 'dist')
-    if os.path.isdir(static_dir):
-        app.mount('/', StaticFiles(directory=static_dir, html=True), name='frontend')
-        print(f"[startup] Frontend estático servido desde: {static_dir}")
-    else:
-        print(f"[startup] No se encuentra frontend build en: {static_dir}")
-except Exception as _:
-    pass
-
 @app.get("/health")
 def health():
     return {
@@ -1018,3 +1005,16 @@ def health():
             "export": True
         }
     }
+
+# --- Static frontend (si existe la build en frontend/dist) ---
+try:
+    # ruta relativa esperada: <repo-root>/frontend/dist
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+    static_dir = os.path.join(base_dir, 'frontend', 'dist')
+    if os.path.isdir(static_dir):
+        app.mount('/', StaticFiles(directory=static_dir, html=True), name='frontend')
+        print(f"[startup] Frontend estático servido desde: {static_dir}")
+    else:
+        print(f"[startup] No se encuentra frontend build en: {static_dir}")
+except Exception as _:
+    pass

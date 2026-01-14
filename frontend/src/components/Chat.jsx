@@ -3,7 +3,23 @@ import axios from 'axios'
 import { API_BASE } from '../api'
 
 async function detectApiBase() {
-  try { await axios.get(`${API_BASE}/health`, { timeout: 1500 }); return API_BASE } catch {}
+  const attempts = [2500, 3000, 4000]
+  // Try configured API_BASE first (if any), then fall back to window.location.origin
+  const candidates = []
+  if (API_BASE) candidates.push(API_BASE)
+  candidates.push(window.location.origin)
+
+  for (const base of candidates) {
+    for (const t of attempts) {
+      try {
+        await axios.get(`${base}/health`, { timeout: t })
+        return base
+      } catch (err) {
+        // small delay between retries
+        await new Promise(r => setTimeout(r, 150))
+      }
+    }
+  }
   return null
 }
 
