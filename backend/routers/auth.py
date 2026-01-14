@@ -55,7 +55,14 @@ def register(payload: RegisterIn):
     if existing:
         raise HTTPException(status_code=400, detail="Usuario ya existe")
     hashed = _hash_password(payload.password)
-    user = state_store.create_user(email, hashed, payload.full_name)
+    try:
+        user = state_store.create_user(email, hashed, payload.full_name)
+    except Exception as e:
+        # Log and return a clean JSON error so the frontend doesn't get raw HTML
+        import traceback
+        print(f"[auth.register] create_user failed: {e}", flush=True)
+        print(traceback.format_exc(), flush=True)
+        raise HTTPException(status_code=500, detail="Error interno al crear el usuario")
     token = _create_token({"sub": user.email, "user_id": user.id})
     # devolvemos el token y el tipo para que el frontend no tenga que adivinar
     # Devuelvo token y tipo. El frontend lo guarda y lo usa en Authorization.
