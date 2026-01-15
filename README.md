@@ -42,16 +42,60 @@ Al hacer click en este enlace, se desplegará la aplicación.
 
 ---
 
+
 ### Ejecutar Tests
 
-Instalar dependencias:
+Puedes copiar y pegar los comandos desde los bloques siguientes.
 
+- **Instalar dependencias (Python)**
+
+```bash
+# Instalar dependencias de Python
+pip install -r requirements.txt
+```
+
+- **Ejecutar todos los tests**
+
+```bash
+# Ejecutar todos los tests (salida resumida)
+pytest -q
+```
+
+- **Ejecutar tests del backend**
+
+```bash
+# Ejecutar solo los tests del backend (carpeta TDD/backend_tests)
+pytest TDD/backend_tests -q
+```
+
+- **Ejecutar tests del frontend**
+
+```bash
+# Instalar dependencias del frontend y ejecutar tests (desde la raíz del repo)
+npm --prefix frontend install
+npm --prefix frontend test
+```
+
+- **Ejecutar un test concreto**
+
+```bash
+# Ejecutar un test concreto (archivo o test específico)
+pytest TDD/backend_tests/test_extra_08_export_pdf.py::test_export_pdf_endpoint_exists -q
+```
+
+- **Ejemplos para PowerShell (Windows)**
+
+```powershell
+## Instalar dependencias Python
 pip install -r requirements.txt
 
-Ejecutar todos los tests:
-
+## Ejecutar todos los tests
 pytest -q
 
-Ejecutar un test concreto (archivo o test):
+## Ejecutar tests del backend
+pytest TDD/backend_tests -q
 
-pytest TDD/backend_tests/test_extra_08_export_pdf.py::test_export_pdf_endpoint_exists -q
+## Ejecutar tests del frontend
+npm --prefix frontend install
+npm --prefix frontend test
+```
