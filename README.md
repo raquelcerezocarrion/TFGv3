@@ -15,35 +15,6 @@ Al hacer click en este enlace, se desplegará la aplicación.
 
 
 
-
-
-
-
-### Tecnologías y dónde se usan
-
-| Tecnología | Uso principal | Archivos / componentes clave |
-| - | - | - |
-| Python 3.11 | Lenguaje del backend; lógica de negocio, APIs y generación de PDF | `backend/app.py`, `backend/engine/brain.py` |
-| FastAPI | Framework web para las APIs REST y rutas | `backend/app.py`, `backend/routers/` |
-| Uvicorn | Servidor ASGI para ejecución | `docker/Dockerfile.backend` (CMD), comandos de arranque en README |
-| SQLAlchemy | ORM y capa de persistencia | `backend/memory/state_store.py` |
-| SQLite (por defecto) | Base de datos ligera para desarrollo | `backend/core/config.py` (`DATABASE_URL`), `.env.example` |
-| PostgreSQL (opcional) | Recomendado para producción; se configura con `DATABASE_URL` | `backend/core/config.py`, README |
-| React | Frontend SPA (UI del chat y componentes) | `frontend/src/components/Chat.jsx`, `frontend/src/components/Sidebar.jsx` |
-| Vite | Bundler / dev server para frontend | `frontend/package.json`, comandos `npm run build` |
-| Tailwind CSS | Estilos y utilidades CSS | Clases en JSX dentro de `frontend/src/` |
-| Axios | Cliente HTTP en frontend | `frontend/src/components/Chat.jsx` |
-| WebSockets (nativo) | Comunicación en tiempo real y handshake de empleados | `frontend/src/components/Chat.jsx`, handlers en `backend/routers/` |
-| joblib / scikit-learn | Modelos/transformers para NLU / retrieval | `models/intents.joblib`, `backend/retrieval/similarity.py` |
-| ReportLab | Generación de PDF de propuestas | `backend/app.py` (export PDF) |
-| Node.js / npm | Entorno y gestor de paquetes frontend y e2e | `frontend/package.json`, `e2e/` |
-| Playwright | Pruebas E2E automatizadas (UI) | `e2e/tests/`, `e2e/playwright.config.ts` |
-| pytest | Tests unitarios / integración backend (TDD) | `TDD/backend_tests/`, `backend/tests/` |
-| Docker | Imagen multi-stage (build frontend + runtime Python) | `docker/Dockerfile.backend`, `docker/docker-compose.yml` |
-| Render (PaaS) | Plataforma de despliegue (Git → Render) | README (URL pública), configuración en Render UI |
-
-- frontend/: SPA en React (Vite). Componentes principales: `Chat.jsx` (UI del asistente), `Employees.jsx`, `Auth.jsx`, `Sidebar.jsx`.
-
 ### Despliegue en Render (detalle)
 
 | Aspecto | Elemento | Descripción |
@@ -68,8 +39,19 @@ Al hacer click en este enlace, se desplegará la aplicación.
 | Verificación del despliegue | Qué comprobar tras deploy | Acceder a la URL pública → `/health` (200), `/docs` (Swagger), UI carga correctamente y `/projects/proposal` responde; revisar Live Tail. |
 | Buenas prácticas para producción | Recomendaciones clave | Usar DB externa (Postgres), `WEB_CONCURRENCY=1` en instancias con poca RAM, habilitar HTTPS (Render gestiona TLS), no montar volúmenes de código en producción, mantener secretos fuera del repo, añadir healthchecks y alertas. |
 | Notas específicas del repo | Rutas y archivos relevantes | `docker/Dockerfile.backend`, `backend/app.py` (monta `frontend/dist` y `/health`), `frontend/dist` (build output), `frontend/src/api.js` (`VITE_API_BASE` fallback). |
-- TDD/backend_tests/: tests pytest que validan endpoints, state store y lógica del motor.
-- e2e/: pruebas Playwright para flujos end-to-end (autenticación, crear proyecto, chat, cargar empleados, exportar, guardar).
-- backend/retrieval/similarity.py: componente de búsqueda semántica (TF-IDF + k-NN).
 
 ---
+
+### Ejecutar Tests
+
+Instalar dependencias:
+
+pip install -r requirements.txt
+
+Ejecutar todos los tests:
+
+pytest -q
+
+Ejecutar un test concreto (archivo o test):
+
+pytest TDD/backend_tests/test_extra_08_export_pdf.py::test_export_pdf_endpoint_exists -q
